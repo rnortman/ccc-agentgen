@@ -243,6 +243,12 @@ def is_settled(data: dict[str, Any] | None) -> bool:
     return review_state(data) == Review.APPROVED
 
 
+def is_settled_delete(data: dict[str, Any] | None) -> bool:
+    """Whether the standing ruling is `delete` and settled."""
+    ruling = latest_ruling(data)
+    return ruling is not None and ruling.get("disposition") == Disposition.DELETE and is_settled(data)
+
+
 class BlockerState(StrEnum):
     """One `blocked_on` item as `rows()` sees it."""
 
@@ -323,6 +329,11 @@ class Row:
         return is_settled(self.data)
 
     @property
+    def settled_delete(self) -> bool:
+        """Whether the standing ruling is `delete` and settled."""
+        return is_settled_delete(self.data)
+
+    @property
     def disposition(self) -> str | None:
         ruling = self.ruling
         return ruling.get("disposition") if ruling else None
@@ -386,8 +397,7 @@ def rows(store: Store, todo: TodoFile, on: dt.date | None = None) -> list[Row]:
                 base[slug] = (Status.TRIAGED, "")
 
     def blocker_state(dep: str, were_entries: set[str]) -> BlockerState:
-        dep_ruling = latest_ruling(loaded.get(dep))
-        if dep_ruling and dep_ruling.get("disposition") == Disposition.DELETE and is_settled(loaded.get(dep)):
+        if is_settled_delete(loaded.get(dep)):
             return BlockerState.DELETED
         dep_status = base.get(dep, (None, ""))[0]
         if dep_status == Status.RESOLVED or (dep_status is None and dep in were_entries):

@@ -1,6 +1,6 @@
 """todo-triage: parse and lint TODO.md, keep the triage store, answer the workflows' queries.
 
-Exit codes: 0 ok, 1 error, 3 nothing (an empty answer from `next`, `ready` or `inbox`).
+Exit codes: 0 ok, 1 error, 3 nothing (an empty answer from `next`, `ready`, `inbox` or a dry-run `prune`).
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from .store import (
     open_pass,
     rows,
     unblocked_reason,
+    user_ruled,
 )
 
 EXIT_OK, EXIT_ERROR, EXIT_NOTHING = 0, 1, 3
@@ -164,6 +165,22 @@ def find_row(all_rows: list[Row], slug: str, todo_path: str) -> Row:
     raise TriageError(f"`{slug}` is neither in {todo_path} nor in the store")
 
 
+def standing_ruling_document(store: Store, row: Row) -> tuple[str, str | None]:
+    """`show`'s `ruling document:` text and the absolute path it names, if any: the standing
+    ruling's unrejected document as `t<N> <path>`, `(ruled by the user)` for a user ruling,
+    which has none, `(none)` with no ruling or no such document."""
+    record = latest_ruled_pass(row.data)
+    if record is None:
+        return "(none)", None
+    if user_ruled(record["ruling"]):
+        return "(ruled by the user)", None
+    rel = ops.last_unrejected(record, "ruling")
+    if rel is None:
+        return "(none)", None
+    path = str(store.root / rel)
+    return f"t{record.get('pass')} {path}", path
+
+
 def show_row(ctx: Context, store: Store, row: Row,
              all_sites: list[todomd.Site]) -> tuple[list[str], dict[str, Any]]:
     """`show`'s text lines and JSON payload for one row."""
@@ -189,6 +206,8 @@ def show_row(ctx: Context, store: Store, row: Row,
     lines += [f"  t{d['pass']} {d.get('step')}: {store.root / d['path']}"
               + (f" (rejected: {d['rejected']})" if d.get("rejected") else "")
               for d in docs] or ["  (none)"]
+    ruling_text, ruling_path = standing_ruling_document(store, row)
+    lines.append(f"ruling document: {ruling_text}")
     if row.data is not None:
         lines += [f"triage.yaml ({triage_file}):", triage_file.read_text(encoding="utf-8").rstrip()]
     else:
@@ -199,6 +218,7 @@ def show_row(ctx: Context, store: Store, row: Row,
         "entry": row.entry.text if row.entry else None,
         "sites": [s.__dict__ for s in sites],
         "documents": [{**d, "path": str(store.root / d["path"])} for d in docs],
+        "ruling_document": ruling_path,
         "triage": row.data,
     }
     return lines, data
@@ -462,13 +482,16 @@ def cmd_abandon(ctx: Context, args: argparse.Namespace) -> Output:
 
 def cmd_path(ctx: Context, args: argparse.Namespace) -> Output:
     store = ctx.store()
-    if args.selection:
+    if args.selection and args.prune:
+        raise TriageError("give one of --selection or --prune")
+    if args.selection or args.prune:
+        flag = "--selection" if args.selection else "--prune"
         if args.slug or args.step:
-            raise TriageError("--selection takes no SLUG or --step")
-        path = ops.selection_path(store)
+            raise TriageError(f"{flag} takes no SLUG or --step")
+        path = (ops.selection_path if args.selection else ops.prune_report_path)(store)
     else:
         if not args.slug or not args.step:
-            raise TriageError("give SLUG --step ruling|notes, or --selection")
+            raise TriageError("give SLUG --step ruling|notes, --selection, or --prune")
         path = (ops.next_ruling_path if args.step == "ruling" else ops.next_notes_path)(
             store, args.slug)
     return Output([str(path)], {"path": str(path)})
@@ -563,29 +586,41 @@ def cmd_attempt_close(ctx: Context, args: argparse.Namespace) -> Output:
 def cmd_prune(ctx: Context, args: argparse.Namespace) -> Output:
     store = ctx.store()
     todo = ctx.todo(store)
-    doomed = ops.prunable(rows(store, todo))
+    all_rows = rows(store, todo)
+    doomed = ops.prunable(all_rows)
     todo_path = store.config.todo_path
     sites = todomd.code_sites(ctx.repo, todo_path)
-    orphaned = [s for s in sites if s.slug in {r.slug for r in doomed}]
+    doomed_slugs = {r.slug for r in doomed}
+    orphaned = [s for s in sites if s.slug in doomed_slugs]
+    leftover = ops.leftover_sites(all_rows, sites)
     lines = [f"{todo_path}:{r.entry.line}: `{r.slug}`" for r in doomed if r.entry]
-    if not doomed:
-        return Output(["no entries ruled delete"], {"pruned": [], "sites": []})
+    site_data = {"sites": [s.__dict__ for s in orphaned],
+                 "leftover_sites": [s.__dict__ for s in leftover]}
     if args.write:
+        remaining = orphaned + leftover
+        if remaining:
+            raise TriageError("\n".join(
+                [f"{len(remaining)} code site(s) of deleted entries remain; remove them first:"]
+                + [f"  {s.render()}" for s in remaining]))
         if any(i.level == "error" for i in todo.issues):
             raise TriageError(f"{todo_path} has lint errors; fix them before `prune --write`")
+        if not doomed:
+            return Output([f"nothing to remove from {todo_path}"], {"pruned": [], **site_data})
         path = ctx.repo / todo_path
         text = path.read_text(encoding="utf-8")
         path.write_text(ops.prune_text(text, {r.entry.line for r in doomed if r.entry}),
                         encoding="utf-8")
         ops.mark_pruned(store, [r.slug for r in doomed])
-        lines = ["removed " + line for line in lines]
-        lines.append("code sites to remove:" if orphaned else "no code sites to remove")
-    else:
-        lines.append("code sites:" if orphaned else "no code sites")
+        return Output(["removed " + line for line in lines],
+                      {"pruned": [r.slug for r in doomed], **site_data})
+    if not doomed and not leftover:
+        return Output(["nothing to prune"], {"prunable": [], **site_data}, code=EXIT_NOTHING)
+    lines.append("code sites:" if orphaned else "no code sites")
     lines += [f"  {s.render()}" for s in orphaned]
-    data = {"pruned" if args.write else "prunable": [r.slug for r in doomed],
-            "sites": [s.__dict__ for s in orphaned]}
-    return Output(lines, data)
+    lines.append("code sites of entries pruned earlier:" if leftover
+                 else "no code sites of entries pruned earlier")
+    lines += [f"  {s.render()}" for s in leftover]
+    return Output(lines, {"prunable": [r.slug for r in doomed], **site_data})
 
 
 SUMMARY_RE = re.compile(r"^summary-(\d{8}-\d{6})(?:-(\d+))?\.md$")
@@ -774,10 +809,11 @@ def make_parser() -> argparse.ArgumentParser:
     abandon = add("abandon", cmd_abandon, "end each named slug's open pass without a ruling")
     abandon.add_argument("slugs", nargs="+", metavar="SLUG")
 
-    path = add("path", cmd_path, "the next unused ruling, notes or selection path")
+    path = add("path", cmd_path, "the next unused ruling, notes, selection or prune report path")
     path.add_argument("slug", nargs="?")
     path.add_argument("--step", choices=("ruling", "notes"))
     path.add_argument("--selection", action="store_true")
+    path.add_argument("--prune", action="store_true")
 
     log = add("log", cmd_log, "register a document in the open pass")
     log.add_argument("slug")
@@ -828,7 +864,8 @@ def make_parser() -> argparse.ArgumentParser:
     close.add_argument("--adr", required=True, type=Path)
     close.add_argument("--outcome", choices=(Outcome.STOPPED.value,))
 
-    prune = add("prune", cmd_prune, "list entries ruled delete; --write removes them")
+    prune = add("prune", cmd_prune, "list entries ruled delete and their code sites; "
+                "--write removes the entries once no site remains")
     prune.add_argument("--write", action="store_true")
 
     add("summary", cmd_summary, "write a session summary; print its path")

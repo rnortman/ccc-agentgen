@@ -178,10 +178,19 @@ it.
   each ruling with its date; an entry whose text changes, or whose ruling ages
   past `stale_days`, comes back for re-triage. A `blocked` ruling may carry a
   priority too: the entry is then ready for burndown at that priority,
-  without re-triage, once every blocker has left `TODO.md`. The session ends with a summary
-  and, on your word, `todo-triage prune --write`, which removes entries ruled
-  `delete` (and approved) from `TODO.md` and lists the `TODO(slug)` comments
-  left to remove.
+  without re-triage, once every blocker has left `TODO.md`. The session ends
+  with a summary and `todo-triage prune`'s list of entries ruled `delete`
+  (and approved) with their `TODO(slug)` comments. On your word, the
+  `site-remover` removes every such comment, rewriting what a comment also
+  said about the code where that earns its place, and stages its edits with
+  a report at the path `todo-triage path --prune` prints; then `todo-triage
+  prune --write` removes the entries from `TODO.md`, refusing while any of
+  their comments remains. The orchestrator stages `TODO.md` and shows you
+  the staged diff; one commit of both is made only on your word, with your
+  message or a default. Comments left behind by entries pruned in earlier
+  sessions — a slug gone from `TODO.md` whose standing ruling is an approved
+  `delete` — are listed and removed the same way; `todo-triage override` to
+  another disposition keeps a slug's comments where they are.
 - **Review, between the two.** An agent's ruling is pending until you rule
   on it; burndown and `prune` take only approved rulings and your own.
   `todo-triage inbox` lists the pending ones. Per entry: `todo-triage

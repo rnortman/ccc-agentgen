@@ -35,7 +35,7 @@ from .store import (
     today,
     user_ruled,
 )
-from .todomd import ENTRY_START_RE, TodoFile
+from .todomd import ENTRY_START_RE, Site, TodoFile
 
 MAX_RULING_ATTEMPTS = 3
 DOC_STEPS = ("exploration", "sketch", "contrarian")
@@ -296,10 +296,18 @@ def next_notes_path(store: Store, slug: str) -> Path:
     return path
 
 
-def selection_path(store: Store) -> Path:
+def session_path(store: Store, kind: str) -> Path:
     directory = store.root / "sessions"
     directory.mkdir(exist_ok=True)
-    return unused(directory, f"selection-{file_stamp()}", ".md")
+    return unused(directory, f"{kind}-{file_stamp()}", ".md")
+
+
+def selection_path(store: Store) -> Path:
+    return session_path(store, "selection")
+
+
+def prune_report_path(store: Store) -> Path:
+    return session_path(store, "prune")
 
 
 def registered(record: dict[str, Any]) -> set[str]:
@@ -668,7 +676,15 @@ def prunable(all_rows: list[Row]) -> list[Row]:
     """Entries whose standing, settled ruling is `delete`; a `modified` or `open` one is re-triaged first."""
     return [r for r in all_rows
             if r.entry is not None and r.status in READY_STATUSES
-            and r.disposition == Disposition.DELETE and r.settled]
+            and r.settled_delete]
+
+
+def leftover_sites(all_rows: list[Row], sites: list[Site]) -> list[Site]:
+    """Sites of slugs gone from TODO.md, not ignored, whose standing, settled ruling is `delete`."""
+    gone = {r.slug for r in all_rows
+            if r.entry is None and r.status != Status.IGNORED
+            and r.settled_delete}
+    return [s for s in sites if s.slug in gone]
 
 
 def prune_text(text: str, headings: set[int]) -> str:

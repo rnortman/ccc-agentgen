@@ -332,6 +332,36 @@ def test_show_and_sites(repo: Path, store: Store, capsys: pytest.CaptureFixture[
     assert out.strip() == "src/core/engine.py:2: y = 2  # TODO(beta) and TODO(orphan)"
 
 
+def test_show_names_the_standing_ruling_document(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    def doc(step: str, name: str, **extra: str) -> dict[str, str]:
+        return {"step": step, "path": f"entries/alpha/{name}", "date": "2026-09-29", **extra}
+
+    data = approved(entry_hash=hash_of(repo, "alpha"))
+    data["passes"][0]["docs"] = [doc("ruling", "ruling-t1-a1.md")]
+    data["passes"].append({"pass": 2, "started": "t", "docs": [
+        doc("sketch", "sketch-t2.md"), doc("ruling", "ruling-t2-a1.md", rejected="bad"),
+        doc("ruling", "ruling-t2-a2.md")], "ruling": ruled("delete")["passes"][0]["ruling"]})
+    store.save("alpha", data)
+    _, out, _ = run(capsys, "show", "alpha", *opts(repo, store))
+    assert f"ruling document: t2 {store.root}/entries/alpha/ruling-t2-a2.md" in out.splitlines()
+    _, out, _ = run(capsys, "show", "alpha", "--json", *opts(repo, store))
+    assert json.loads(out)["ruling_document"] == f"{store.root}/entries/alpha/ruling-t2-a2.md"
+
+    data["passes"].append({"pass": 3, "started": "t", "docs": [doc("sketch", "sketch-t3.md")]})
+    store.save("alpha", data)
+    code, _, err = run(capsys, "override", "alpha", "--disposition", "delete",
+                       *opts(repo, store))
+    assert code == 0, err
+    _, out, _ = run(capsys, "show", "alpha", *opts(repo, store))
+    assert "ruling document: (ruled by the user)" in out.splitlines()
+    assert "  t3 sketch: " in out
+    _, out, _ = run(capsys, "show", "alpha", "--json", *opts(repo, store))
+    assert json.loads(out)["ruling_document"] is None
+    _, out, _ = run(capsys, "show", "beta", *opts(repo, store))
+    assert "ruling document: (none)" in out.splitlines()
+
+
 def test_related_ranks_clusters_dirs_and_paths(repo: Path, store: Store,
                                               capsys: pytest.CaptureFixture[str]) -> None:
     store.save("gamma", ruled(cluster=["gamma", "alpha"], entry_hash=hash_of(repo, "gamma")))
@@ -412,17 +442,37 @@ def test_path_ordinals_and_cap(repo: Path, store: Store,
     assert lines_of(out)["ruling"] == "none (all ruling attempts used)"
 
 
-def test_path_selection_stamps_and_suffixes(repo: Path, store: Store,
+@pytest.fixture
+def frozen_stamp(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Pin `ops.file_stamp` so two session paths in one test share a stamp."""
+    stamp = "20260929-120000"
+    monkeypatch.setattr(ops, "file_stamp", lambda when=None: stamp)
+    return stamp
+
+
+def test_path_selection_stamps_and_suffixes(repo: Path, store: Store, frozen_stamp: str,
                                             capsys: pytest.CaptureFixture[str]) -> None:
     _, out, _ = run(capsys, "path", "--selection", *opts(repo, store))
     first = Path(out.strip())
-    assert first.parent == store.root / "sessions"
-    assert re.fullmatch(r"selection-\d{8}-\d{6}\.md", first.name)
+    assert first == store.root / "sessions" / f"selection-{frozen_stamp}.md"
     write(first, "x")
     _, out, _ = run(capsys, "path", "--selection", *opts(repo, store))
-    second = Path(out.strip())
-    assert second == first or second.name == first.name.replace(".md", "-2.md")
+    assert Path(out.strip()) == first.with_name(f"selection-{frozen_stamp}-2.md")
     assert run(capsys, "path", "alpha", "--selection", *opts(repo, store))[0] == 1
+
+
+def test_path_prune(repo: Path, store: Store, frozen_stamp: str,
+                    capsys: pytest.CaptureFixture[str]) -> None:
+    _, out, _ = run(capsys, "path", "--prune", *opts(repo, store))
+    first = Path(out.strip())
+    assert first == store.root / "sessions" / f"prune-{frozen_stamp}.md"
+    write(first, "x")
+    _, out, _ = run(capsys, "path", "--prune", *opts(repo, store))
+    assert Path(out.strip()) == first.with_name(f"prune-{frozen_stamp}-2.md")
+    code, _, err = run(capsys, "path", "--prune", "--selection", *opts(repo, store))
+    assert code == 1 and "give one of --selection or --prune" in err
+    code, _, err = run(capsys, "path", "alpha", "--prune", *opts(repo, store))
+    assert code == 1 and "--prune takes no SLUG or --step" in err
 
 
 def sketch(store: Store, slug: str, covers: list[str], t: int = 1) -> Path:
@@ -673,26 +723,106 @@ def test_attempt_close_shipped_when_every_entry_is_gone(
     assert run(capsys, "attempt-close", "--adr", str(tmp_path), *opts(repo, store))[0] == 1
 
 
+ENGINE = "x = 1  # TODO(alpha)\ny = 2  # TODO(beta) and TODO(orphan)\n"
+
+
 def test_prune_dry_run_and_write(repo: Path, store: Store,
                                  capsys: pytest.CaptureFixture[str]) -> None:
-    _, out, _ = run(capsys, "prune", *opts(repo, store))
-    assert out.strip() == "no entries ruled delete"
     store.save("beta", approved("delete", entry_hash=hash_of(repo, "beta")))
     store.save("example-placeholder", approved("delete"))
     code, out, _ = run(capsys, "prune", *opts(repo, store))
     assert code == 0 and out.splitlines() == [
         "TODO.md:9: `beta`", "code sites:",
+        "  src/core/engine.py:2: y = 2  # TODO(beta) and TODO(orphan)",
+        "no code sites of entries pruned earlier"]
+    assert (repo / "TODO.md").read_text(encoding="utf-8") == TODO
+    code, out, err = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 1 and out == ""
+    assert err.splitlines() == [
+        "todo-triage: 1 code site(s) of deleted entries remain; remove them first:",
         "  src/core/engine.py:2: y = 2  # TODO(beta) and TODO(orphan)"]
     assert (repo / "TODO.md").read_text(encoding="utf-8") == TODO
+    assert "pruned" not in store.load("beta")
+    write(repo / "src" / "core" / "engine.py", "x = 1  # TODO(alpha)\ny = 2  # TODO(orphan)\n")
     code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
-    assert code == 0 and out.splitlines()[:2] == ["removed TODO.md:9: `beta`",
-                                                  "code sites to remove:"]
+    assert code == 0 and out.splitlines() == ["removed TODO.md:9: `beta`"]
     text = (repo / "TODO.md").read_text(encoding="utf-8")
     assert "## beta" not in text and "Unbackticked" not in text
     assert "Code site (`TODO(alpha)`): src/core/engine.py.\n\n## `gamma`" in text
     assert text.endswith("Placeholder.\n")
     assert store.load("beta")["pruned"] == dt.date.today().isoformat()
     assert statuses(store, repo)["beta"][0] == "resolved"
+
+
+def test_prune_nothing_exits_3(repo: Path, store: Store,
+                               capsys: pytest.CaptureFixture[str]) -> None:
+    code, out, _ = run(capsys, "prune", *opts(repo, store))
+    assert code == 3 and out.strip() == "nothing to prune"
+    code, out, _ = run(capsys, "prune", "--json", *opts(repo, store))
+    assert code == 3 and json.loads(out) == {"prunable": [], "sites": [], "leftover_sites": []}
+
+
+def test_prune_lists_leftover_sites(repo: Path, store: Store,
+                                    capsys: pytest.CaptureFixture[str]) -> None:
+    engine = repo / "src" / "core" / "engine.py"
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    stamped = approved("delete")
+    stamped["pruned"] = dt.date.today().isoformat()
+    store.save("beta", stamped)
+    store.save("alpha", user_ruled(disposition="delete"))
+    code, out, _ = run(capsys, "prune", *opts(repo, store))
+    assert code == 0 and out.splitlines() == [
+        "no code sites", "code sites of entries pruned earlier:",
+        "  src/core/engine.py:1: x = 1  # TODO(alpha)",
+        "  src/core/engine.py:2: y = 2  # TODO(beta) and TODO(orphan)"]
+    _, out, _ = run(capsys, "prune", "--json", *opts(repo, store))
+    assert [s["slug"] for s in json.loads(out)["leftover_sites"]] == ["alpha", "beta"]
+    code, _, err = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 1 and "2 code site(s) of deleted entries remain" in err
+    write(engine, "x = 1\ny = 2  # TODO(orphan)\n")
+    code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 0 and out.strip() == "nothing to remove from TODO.md"
+    assert run(capsys, "prune", *opts(repo, store))[0] == 3
+
+
+def test_prune_leftovers_skip_unknown_ignored_and_overridden_slugs(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    engine = repo / "src" / "core" / "engine.py"
+    write(repo / "TODO.md", without(TODO, "beta", "`example-placeholder`"))
+    write(engine, ENGINE + "z = 3  # TODO(example-placeholder)\n")
+    store.save("example-placeholder", approved("delete"))
+    assert run(capsys, "prune", *opts(repo, store))[0] == 3
+    store.save("beta", ruled("delete"))
+    assert run(capsys, "prune", *opts(repo, store))[0] == 3
+    store.save("beta", ruled("delete", review="retriage"))
+    assert run(capsys, "prune", *opts(repo, store))[0] == 3
+    assert run(capsys, "prune", "--write", *opts(repo, store))[0] == 0
+    stamped = approved("delete")
+    stamped["pruned"] = dt.date.today().isoformat()
+    store.save("beta", stamped)
+    code, out, _ = run(capsys, "prune", *opts(repo, store))
+    assert code == 0 and "TODO(beta)" in out
+    assert "TODO(orphan)" not in out.replace("TODO(beta) and TODO(orphan)", "")
+    assert "example-placeholder" not in out
+    code, _, err = run(capsys, "override", "beta", "--disposition", "defer", "--defer-until",
+                       "later", "--summary", "the comment stays", *opts(repo, store))
+    assert code == 0, err
+    assert store.load("beta")["pruned"] == dt.date.today().isoformat()
+    assert run(capsys, "prune", *opts(repo, store))[0] == 3
+    code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 0 and out.strip() == "nothing to remove from TODO.md"
+
+
+def test_prune_write_refuses_before_lint_check(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    broken = TODO + "\n## `alpha`\n\nduplicate\n"
+    write(repo / "TODO.md", broken)
+    store.save("beta", approved("delete", entry_hash=hash_of(repo, "beta")))
+    code, _, err = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 1 and "1 code site(s) of deleted entries remain" in err
+    assert "lint errors" not in err
+    assert (repo / "TODO.md").read_text(encoding="utf-8") == broken
+    assert "pruned" not in store.load("beta")
 
 
 def test_prune_removes_the_last_entry_cleanly() -> None:
@@ -788,8 +918,8 @@ def test_prune_skips_delete_rulings_that_no_longer_stand(
     store.save("beta", reopened)
     store.save("gamma", ruled("delete", date=dt.date.today() - dt.timedelta(days=400),
                               entry_hash=hash_of(repo, "gamma")))
-    _, out, _ = run(capsys, "prune", *opts(repo, store))
-    assert out.strip() == "no entries ruled delete"
+    code, out, _ = run(capsys, "prune", *opts(repo, store))
+    assert code == 3 and out.strip() == "nothing to prune"
     for slug in ("alpha", "gamma"):
         assert run(capsys, "approve", slug, *opts(repo, store))[0] == 0
     _, out, _ = run(capsys, "prune", *opts(repo, store))
@@ -801,6 +931,7 @@ def test_prune_write_refuses_a_file_with_lint_errors(
         repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
     broken = TODO + "\n## `alpha`\n\nduplicate\n"
     write(repo / "TODO.md", broken)
+    write(repo / "src" / "core" / "engine.py", "x = 1  # TODO(alpha)\n")
     store.save("beta", approved("delete", entry_hash=hash_of(repo, "beta")))
     code, _, err = run(capsys, "prune", "--write", *opts(repo, store))
     assert code == 1 and "TODO.md has lint errors; fix them before `prune --write`" in err
@@ -1691,8 +1822,8 @@ def test_ready_and_prune_take_only_settled_rulings(
     assert sorted(line.split("\t")[0] for line in out.splitlines()) == ["beta", "gamma"]
     store.save("alpha", ruled("delete", entry_hash=hash_of(repo, "alpha"), review="retriage"))
     store.save("gamma", ruled("delete", entry_hash=hash_of(repo, "gamma")))
-    _, out, _ = run(capsys, "prune", *opts(repo, store))
-    assert out.strip() == "no entries ruled delete"
+    code, out, _ = run(capsys, "prune", *opts(repo, store))
+    assert code == 3 and out.strip() == "nothing to prune"
 
 
 def test_sketch_holds_an_approved_mate(repo: Path, store: Store,

@@ -1,5 +1,5 @@
 ---
-description: Driver for TODO triage. Walks TODO.md entry by entry through sketch, contrarian and ruling via one-shot subagents and the todo-triage tool. Reads and writes no artifacts.
+description: Driver for TODO triage. Walks TODO.md entry by entry through sketch, contrarian and ruling via one-shot subagents and the todo-triage tool, then on the user's word prunes the entries ruled delete with their code comments. Reads and writes no artifacts.
 tools: [Read, Write, Bash, Glob]
 codex_sandbox: workspace-write
 ---
@@ -13,7 +13,9 @@ issues every path, and validates every ruling.
 
 Chain per entry: `next` → `begin` → sketcher → contrarian → triage-forester
 → `record`. Repeat until nothing is left or a limit is reached; then a
-summary.
+summary. On the user's word, a prune: the site-remover removes the code
+comments of the entries ruled `delete`, the tool removes the entries, and
+one commit of both waits for the user's word.
 
 ## Information boundary
 
@@ -34,9 +36,10 @@ not a gap to fill. Consequences:
   ignore it, never forward it, never let it colour the next prompt.
 - **Two write exceptions, both pure transcription:** the user's chat words
   answering an escalated ruling, written verbatim to the notes path the tool
-  prints; and the tool's own stdout and stderr, relayed verbatim to a
-  subagent or to the user. No elaboration, paraphrase, or tidying. The tool
-  is not an agent; its output is not an artifact.
+  prints; and the stdout and stderr of `todo-triage` and of the git
+  commands this definition names, relayed verbatim to a subagent or to the
+  user. No elaboration, paraphrase, or tidying. Neither is an agent; their
+  output is not an artifact.
 
 {% include "partials/user-directives.md.j2" %}
 
@@ -92,6 +95,7 @@ you gave the agent.
 | sketcher | `written` |
 | contrarian | `written` |
 | triage-forester, rule | `ruled` |
+| site-remover | `removed` · `no-sites` |
 
 ## Flow
 
@@ -172,13 +176,65 @@ you gave the agent.
 ### End
 
 1. `todo-triage summary` → surface the path it prints.
-2. `todo-triage prune` → surface its output verbatim: the entries ruled
-   `delete` and settled.
+2. `todo-triage prune`. Exit 3 → nothing to prune; step 3. Exit 0 → surface
+   its output verbatim — the entries ruled `delete` and settled, their code
+   sites, and the sites of entries pruned earlier — then `git status
+   --porcelain` in the repo and, if it prints anything, surface that
+   verbatim as the tree's uncommitted changes.
 3. `todo-triage inbox` → exit 0: surface its output verbatim — the rulings
    this and earlier sessions left awaiting the user's review — and the
    command that reviews them, `ccc launch triage-clerk --cwd <repo>`. Exit 3:
    nothing to surface.
-4. STOP, end turn. The user says prune → `todo-triage prune --write`,
-   surface its output verbatim (the code sites it lists still need
-   removing). Commit `TODO.md` in the repo only on the user's explicit word
-   for that commit. The store is never yours to commit.
+4. STOP, end turn. The user says prune → **Prune**. The store is never
+   yours to commit.
+
+### Prune
+
+Every git command here runs in the repo.
+
+1. `git diff --cached --quiet`. Non-zero → the index already holds changes
+   that would land in the prune commit: STOP, surface `git diff --cached
+   --stat` verbatim, end turn. The user says continue → step 2 (what is
+   staged goes in the commit, on their word); they unstage and say prune →
+   step 1 again. Exit 0 → step 2.
+2. `todo-triage path --prune` → the report path.
+3. `ccc run site-remover`. Standard payload without slug or pass: repo,
+   store, `TODO.md` path, the report path as target, "Write to file. Reply
+   with the status line only." On a relaunch from step 4, + the tool's
+   stderr verbatim and + every earlier report path of this prune.
+   `removed` or `no-sites` → step 4. `ESCALATE` or a missing status line →
+   STOP, surface the report path and the ways on, end turn: the user says
+   again → step 2 (the remover is relaunched; what it already removed stays
+   removed, and it works from the tool's current list); the user says
+   continue → step 4 (they resolved the report's unresolved sites by hand,
+   or changed a ruling with `todo-triage override <slug>`); the user says
+   skip → nothing is pruned, end turn. A cut-off launch → **Cut-off
+   launch**; an unrecovered launch → STOP, surface what that section
+   lists, end turn. The user says resume → `ccc resume <session id>
+   "Continue."`, or with no session recoverable, repeat the launch with the
+   same report path; skip → nothing is pruned, end turn.
+4. `todo-triage prune --write`. Exit 0 → surface its output verbatim, step
+   5. Exit 1 → STOP, surface its stderr verbatim, the report path and the
+   ways on, end turn: the user says again → step 2 (the remover is
+   relaunched with the stderr); the user says continue → step 4 once more
+   (they removed the listed sites by hand, or changed a ruling with
+   `todo-triage override <slug>` so the slug is no longer ruled `delete`
+   and its sites are no longer listed); the user says skip → nothing is
+   pruned, end turn.
+5. `git add -- <TODO.md path>`, then `git diff --cached --stat` → surface
+   it verbatim with the report path. STOP, end turn: the commit waits for
+   the user's word. The user says commit → `git commit -m "<message>"`, the
+   message being the user's words when they gave any, else `Prune deleted
+   TODOs` followed by `: ` and the slugs of the `removed` lines `prune
+   --write` printed, comma-separated, when it printed any — transcription,
+   not a choice made on the output's text. Surface the command's output
+   verbatim, end turn. A non-zero exit → STOP, surface it, end turn: never
+   `--no-verify`, never amend, never reset; the user says what happens
+   next.
+
+You read neither the report nor the diff: the user reads the report at its
+path and the staged diff in the repo before saying commit. Every branch
+here is on an exit code or a status line, never on the text of a report, a
+diff or the dry run. You never stash, reset or partially stage on your own;
+separating the user's own changes from the prune's is theirs to do before
+they say commit.

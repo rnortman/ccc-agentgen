@@ -109,6 +109,7 @@ RESULTS = {
     "triage-forester": {"ruled", "selected", "nothing"},
     # Interactive: the user reads the turn, the line only keeps the grammar closed.
     "triage-clerk": {"pending", "done"},
+    "site-remover": {"removed", "no-sites"},
     # A driver that can itself run under a parent driver.
     "orchestrator": {"shipped", "gate"},
 }
@@ -621,6 +622,13 @@ CUT_OFF_ROUTES = (
         "STOP",
     ),
     (
+        "triage-orchestrator",
+        "A cut-off launch → **Cut-off launch**; an unrecovered",
+        "4. `todo-triage prune --write`",
+        "→ **Cut-off launch**",
+        "STOP",
+    ),
+    (
         "triage-clerk",
         "One explorer per question",
         "says drop it",
@@ -757,6 +765,7 @@ def test_triage_variant_carries_the_clerk(builds):
         "triage-forester",
         "explorer",
         "triage-clerk",
+        "site-remover",
     }
     for filename, body in build.bodies("triage-clerk"):
         assert SPAWNING_PARTIAL_SENTINEL in body, filename
@@ -834,6 +843,52 @@ def test_triage_clerk_frontmatter_pins(builds):
     assert clerk["effort"] == "low"
     assert "Grep" in clerk["tools"]
     assert "Write" not in clerk["tools"]
+
+
+def test_site_remover_frontmatter_pins(builds):
+    """The remover reads code and judges what a comment means: pinned like the sketcher."""
+    remover = builds[TRIAGE_STEM].by_id["site-remover"].frontmatter
+    assert remover["model"] == "claude-fable-5-1[1M]"
+    assert remover["codex_model"] == "gpt-6-sol"
+
+
+def _in_order(text: str, *phrases: str) -> bool:
+    positions = [text.find(p) for p in phrases]
+    return -1 not in positions and positions == sorted(positions)
+
+
+def test_triage_orchestrator_prunes_sites_before_todo_md(builds):
+    """The comments go first, the tool's `--write` checks they are gone, and the
+    one commit of both waits for the user."""
+    for filename, body in builds[TRIAGE_STEM].bodies("triage-orchestrator"):
+        flat = " ".join(body.split())
+        prune = _section(body, "### Prune")
+        assert _in_order(prune, "`git diff --cached --quiet`", "`ccc run site-remover`",
+                         "`todo-triage prune --write`", "`git commit"), filename
+        assert "the commit waits for the user's word" in prune, filename
+        assert "code sites it lists still need removing" not in flat, filename
+
+
+def test_triage_orchestrator_may_relay_git_output(builds):
+    """The Prune section relays git output; the write exception has to allow it."""
+    for filename, body in builds[TRIAGE_STEM].bodies("triage-orchestrator"):
+        flat = " ".join(body.split())
+        boundary = flat[flat.index("## Information boundary") : flat.index("## Flow")]
+        assert "of `todo-triage` and of the git commands" in boundary, filename
+
+
+def test_site_remover_never_commits(builds):
+    build = builds[TRIAGE_STEM]
+    role = build.by_id["site-remover"]
+    assert {"Edit", "Bash"} <= set(role.frontmatter["tools"])
+    for filename, body in build.bodies("site-remover"):
+        flat = " ".join(body.split())
+        for phrase in ("todo-triage sites", "git add --", "git diff --quiet --",
+                       "never a commit", "ruling document: (ruled by the user)",
+                       "ruled_by: user"):
+            assert phrase in flat, (filename, phrase)
+        assert "`git commit" not in flat, filename
+        assert spawn_references(body) == set(), filename
 
 
 def test_burndown_variants_embed_the_review_chain(builds):
