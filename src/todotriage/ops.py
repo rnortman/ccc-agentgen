@@ -28,6 +28,7 @@ from .store import (
     now_stamp,
     open_attempts,
     open_pass,
+    is_settled,
     review_notes,
     review_state,
     rows,
@@ -249,7 +250,7 @@ def begin(store: Store, todo: TodoFile, slug: str, resume: bool) -> Targets:
 def standing_settled(store: Store, slug: str) -> Settled | None:
     """`slug`'s standing ruling when the user ruled or approved it; a sketch cannot re-rule it."""
     data = store.load(slug)
-    if review_state(data) != Review.APPROVED:
+    if not is_settled(data):
         return None
     record = latest_ruled_pass(data)
     assert record is not None
@@ -393,12 +394,17 @@ def validate_ruling(fields: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     if disposition not in Disposition:
         errors.append(f"disposition {disposition!r} is not one of {', '.join(Disposition)}")
     priority = fields.get("priority")
-    if disposition == Disposition.DO:
-        if isinstance(priority, bool) or not isinstance(priority, int) or priority not in PRIORITIES:
-            errors.append(f"priority must be {PRIORITIES[0]}-{PRIORITIES[-1]} for `do`, "
-                          f"got {priority!r}")
-    elif priority is not None:
-        errors.append(f"priority is only for `do`, got {priority!r} with {disposition!r}")
+    priority_ok = (not isinstance(priority, bool) and isinstance(priority, int)
+                   and priority in PRIORITIES)
+    if disposition == Disposition.DO and not priority_ok:
+        errors.append(f"priority must be {PRIORITIES[0]}-{PRIORITIES[-1]} for `do`, "
+                      f"got {priority!r}")
+    elif disposition == Disposition.BLOCKED and priority is not None and not priority_ok:
+        errors.append(f"priority must be {PRIORITIES[0]}-{PRIORITIES[-1]} when given for "
+                      f"`blocked`, got {priority!r}")
+    elif disposition not in (Disposition.DO, Disposition.BLOCKED) and priority is not None:
+        errors.append(f"priority is only for `do` or `blocked`, got {priority!r} "
+                      f"with {disposition!r}")
     blocked_on = fields.get("blocked_on")
     if isinstance(blocked_on, (str, int)):
         blocked_on = [blocked_on]
@@ -421,12 +427,36 @@ def validate_ruling(fields: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         errors.append("summary is missing")
     ruling = {
         "disposition": disposition,
-        "priority": priority if disposition == Disposition.DO else None,
+        "priority": priority if disposition in (Disposition.DO, Disposition.BLOCKED) else None,
         "blocked_on": list(blocked_on) if disposition == Disposition.BLOCKED and blocked_ok else None,
         "defer_until": defer_until if disposition == Disposition.DEFER else None,
         "summary": summary,
     }
     return ruling, errors
+
+
+def blocked_on_errors(todo: TodoFile, store: Store, slug: str,
+                      ruling: dict[str, Any]) -> list[str]:
+    """Blockers of a `blocked` ruling with a priority that the store cannot see clear.
+
+    Each blocker must be another entry in the file, so that its leaving is observable
+    while `slug` is still there. Cycles through other entries' rulings are not detected:
+    like any blocked ruling whose blockers never leave, such an entry returns by age.
+    A ruling without a priority is not checked.
+    """
+    if ruling.get("disposition") != Disposition.BLOCKED or ruling.get("priority") is None:
+        return []
+    errors = []
+    for dep in ruling.get("blocked_on") or []:
+        try:
+            require_entry(todo, store, dep)
+        except TriageError as exc:
+            errors.append(f"priority on blocked needs every blocked_on to be an entry: {exc}")
+            continue
+        if dep == slug:
+            errors.append("priority on blocked needs every blocked_on to be another entry; "
+                          f'"{slug}" blocks on itself')
+    return errors
 
 
 def sketch_covers(record: dict[str, Any], slug: str) -> list[str]:
@@ -482,6 +512,8 @@ def record_ruling(store: Store, todo: TodoFile, slug: str,
             errors.append(f"{where}: `{other}`: ruling must be a mapping")
             continue
         ruling, problems = validate_ruling(fields)
+        if not problems:
+            problems = blocked_on_errors(todo, store, other, ruling)
         errors += [f"{where}: `{other}`: {problem}" for problem in problems]
         normalised[other] = ruling
     if errors:
@@ -533,6 +565,7 @@ def override(store: Store, todo: TodoFile, slug: str, fields: dict[str, Any]) ->
     if slug in store.config.ignore:
         raise TriageError(f"`{slug}` is ignored in store.yaml")
     ruling, errors = validate_ruling({**fields, "summary": fields.get("summary") or "-"})
+    errors = errors or blocked_on_errors(todo, store, slug, ruling)
     if errors:
         raise TriageError("; ".join(errors))
     ruling["summary"] = fields.get("summary") or None
@@ -552,13 +585,14 @@ READY_STATUSES = (Status.TRIAGED, Status.STALE)
 
 def ready(all_rows: list[Row], priority: int | None, max_priority: int | None,
           slugs: list[str] | None, exclude: list[str] | None) -> list[Row]:
-    """Settled `do` entries whose ruling stands, with no open attempt, filtered; unranked."""
+    """Settled `do` entries, and settled `blocked` entries with a priority whose blockers
+    have all left TODO.md, whose ruling stands, with no open attempt, filtered; unranked."""
     wanted = set(slugs or ())
     skip = set(exclude or ())
     out = []
     for row in all_rows:
         if (row.entry is None or row.status not in READY_STATUSES
-                or row.disposition != Disposition.DO or not row.settled):
+                or row.effective_disposition != Disposition.DO or not row.settled):
             continue
         if open_attempts(row.data) or row.slug in skip:
             continue
@@ -581,11 +615,12 @@ def start_attempt(store: Store, todo: TodoFile, selection: Path, adr_root: Path)
         if open_attempts(store.load(slug)):
             raise TriageError(f"`{slug}` already has an open attempt")
         row = by_slug[slug]
-        if (row.disposition != Disposition.DO or row.status not in READY_STATUSES
+        if (row.effective_disposition != Disposition.DO or row.status not in READY_STATUSES
                 or not row.settled):
             raise TriageError(f"`{slug}` is not ready: {row.status}, ruled "
                               f"{row.disposition or 'nothing'}, review {row.review}; only "
-                              "standing, settled `do` rulings can be attempted")
+                              "standing, settled `do` rulings, or `blocked` rulings with a "
+                              "priority whose blockers are all resolved, can be attempted")
     now = dt.datetime.now()
     parent = adr_root / now.strftime("%Y") / now.strftime("%m")
     parent.mkdir(parents=True, exist_ok=True)

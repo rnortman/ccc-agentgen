@@ -222,6 +222,8 @@ def test_blocked_on_a_deleted_or_resolved_slug_is_stale(repo: Path, store: Store
                               entry_hash=hash_of(repo, "gamma")))
     assert statuses(store, repo)["gamma"][0] == "triaged"
     store.save("alpha", ruled("delete", entry_hash=hash_of(repo, "alpha")))
+    assert statuses(store, repo)["gamma"] == ("triaged", "")
+    store.save("alpha", approved("delete", entry_hash=hash_of(repo, "alpha")))
     assert statuses(store, repo)["gamma"] == ("stale", "blocked on `alpha`, which is ruled delete")
     store.save("gamma", ruled("blocked", blocked_on=["gone"], entry_hash=hash_of(repo, "gamma")))
     store.save("gone", ruled())
@@ -580,7 +582,7 @@ def test_ready_ranks_filters_and_hides_open_attempts(
     code, out, _ = run(capsys, "ready", *opts(repo, store))
     rows_ = [line.split("\t") for line in out.splitlines()]
     assert code == 0 and [r[0] for r in rows_] == ["beta", "delta", "alpha"]
-    assert rows_[0] == ["beta", "P2", "triaged", "2026-01-02", "-", "src/core", "-"]
+    assert rows_[0] == ["beta", "P2", "triaged", "-", "2026-01-02", "-", "src/core", "-"]
     _, out, _ = run(capsys, "ready", "--priority", "3", *opts(repo, store))
     assert [line.split("\t")[0] for line in out.splitlines()] == ["alpha"]
     _, out, _ = run(capsys, "ready", "--max-priority", "2", *opts(repo, store))
@@ -885,12 +887,13 @@ def test_json_output_of_list_and_ready(repo: Path, store: Store,
     assert code == 0 and listed["alpha"] == {
         "slug": "alpha", "status": "triaged", "review": "approved", "reason": None,
         "disposition": "do",
-        "priority": 2, "ruled": dt.date.today().isoformat(), "cluster": [], "line": 3}
+        "priority": 2, "unblocked": False, "ruled": dt.date.today().isoformat(), "cluster": [],
+        "line": 3}
     assert listed["beta"]["status"] == "untriaged" and listed["beta"]["ruled"] is None
     code, out, _ = run(capsys, "ready", "--json", *opts(repo, store))
     assert code == 0 and json.loads(out) == [{
-        "slug": "alpha", "priority": 2, "status": "triaged", "first_seen": "2026-01-02",
-        "cluster": [], "site_dirs": ["src/core"], "attempts": []}]
+        "slug": "alpha", "priority": 2, "status": "triaged", "disposition": "do",
+        "unblocked": False, "blocked_on": [], "first_seen": "2026-01-02", "cluster": [], "site_dirs": ["src/core"], "attempts": []}]
     code, out, _ = run(capsys, "ready", "--json", "--priority", "1", *opts(repo, store))
     assert code == 3 and json.loads(out) == []
 
@@ -900,7 +903,8 @@ def test_ready_help_names_its_columns(capsys: pytest.CaptureFixture[str]) -> Non
         main(["ready", "--help"])
     # Undo argparse's line wrapping, which may also break after a hyphen.
     text = re.sub(r"-\s+", "-", re.sub(r"\s+", " ", capsys.readouterr().out))
-    assert ("slug priority status first-seen cluster site-dirs attempts(outcome@date,...)"
+    assert ("slug priority status blocked-on first-seen cluster site-dirs"
+            " attempts(outcome@date,...)"
             in text)
 
 
@@ -1758,3 +1762,268 @@ def test_global_options_in_either_position(repo: Path, store: Store,
     code, out, err = run(capsys, *argv)
     assert code == 0, err
     assert json.loads(out)["review"] == "pending"
+
+
+def without(text: str, *headings: str) -> str:
+    """`text` with the block under each `## <heading>` line removed."""
+    lines = text.split("\n")
+    starts = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    drop: set[int] = set()
+    for index, start in enumerate(starts):
+        if lines[start][3:].split(" ")[0] in headings:
+            stop = starts[index + 1] if index + 1 < len(starts) else len(lines)
+            drop.update(range(start, stop))
+    return "\n".join(line for i, line in enumerate(lines) if i not in drop)
+
+
+def blocked_p2(repo: Path, review: str | None = "approved", **kwargs: Any) -> dict[str, Any]:
+    """`gamma` ruled blocked on `alpha` and `beta` at P2."""
+    fields: dict[str, Any] = {"priority": 2, "blocked_on": ["alpha", "beta"],
+                              "blocked_on_entries": ["alpha", "beta"],
+                              "entry_hash": hash_of(repo, "gamma"), **kwargs}
+    return ruled("blocked", review=review, **fields)
+
+
+def test_validate_ruling_takes_an_optional_priority_on_blocked() -> None:
+    ruling, errors = ops.validate_ruling(
+        {"disposition": "blocked", "blocked_on": ["alpha"], "priority": 2, "summary": "s"})
+    assert errors == [] and ruling["priority"] == 2 and ruling["blocked_on"] == ["alpha"]
+    ruling, errors = ops.validate_ruling(
+        {"disposition": "blocked", "blocked_on": ["alpha"], "summary": "s"})
+    assert errors == [] and ruling["priority"] is None
+    _, errors = ops.validate_ruling(
+        {"disposition": "blocked", "blocked_on": ["alpha"], "priority": 7, "summary": "s"})
+    assert errors == ["priority must be 1-4 when given for `blocked`, got 7"]
+    _, errors = ops.validate_ruling(
+        {"disposition": "defer", "defer_until": "x", "priority": 2, "summary": "s"})
+    assert errors == ["priority is only for `do` or `blocked`, got 2 with 'defer'"]
+    _, errors = ops.validate_ruling({"disposition": "delete", "priority": 1, "summary": "s"})
+    assert errors == ["priority is only for `do` or `blocked`, got 1 with 'delete'"]
+    _, errors = ops.validate_ruling({"disposition": "do", "summary": "s"})
+    assert errors == ["priority must be 1-4 for `do`, got None"]
+
+
+def test_record_a_blocked_ruling_with_a_priority(repo: Path, store: Store,
+                                                 capsys: pytest.CaptureFixture[str]) -> None:
+    run(capsys, "begin", "alpha", *opts(repo, store))
+    run(capsys, "log", "alpha", "--step", "sketch", "--doc",
+        str(sketch(store, "alpha", ["alpha", "beta"])), *opts(repo, store))
+    head = "rulings:\n  alpha:\n    disposition: do\n    priority: 2\n    summary: s\n"
+    for a, blocked_on, message in (
+            (1, '["a capability"]', 'every blocked_on to be an entry: '
+                                    '`a capability` is not an entry in TODO.md'),
+            (2, "[beta]", 'every blocked_on to be another entry; "beta" blocks on itself')):
+        doc = ruling_doc(store, "alpha", a, head + (
+            f"  beta:\n    disposition: blocked\n    blocked_on: {blocked_on}\n"
+            "    priority: 2\n    summary: s\n"))
+        code, _, err = run(capsys, "record", "alpha", "--ruling", str(doc), *opts(repo, store))
+        assert code == 1 and f"{doc}:7: `beta`: priority on blocked needs {message}" in err, err
+        assert store.load("alpha")["passes"][0].get("ruling") is None
+        assert store.load("beta")["passes"][0].get("ruling") is None
+    good = ruling_doc(store, "alpha", 3, head + (
+        "  beta:\n    disposition: blocked\n    blocked_on: [alpha]\n"
+        "    priority: 2\n    summary: after alpha\n"))
+    code, out, err = run(capsys, "record", "alpha", "--ruling", str(good), *opts(repo, store))
+    assert code == 0 and out.strip() == "recorded: alpha, beta", err
+    ruling = store.load("beta")["passes"][0]["ruling"]
+    assert (ruling["priority"], ruling["blocked_on"], ruling["blocked_on_entries"]) == (
+        2, ["alpha"], ["alpha"])
+
+
+def test_record_a_self_block_without_a_priority(repo: Path, store: Store,
+                                                capsys: pytest.CaptureFixture[str]) -> None:
+    run(capsys, "begin", "beta", *opts(repo, store))
+    doc = write(store.entry_dir("beta") / "ruling-t1-a1.md",
+                "---\nrulings:\n  beta:\n    disposition: blocked\n    blocked_on: [beta]\n"
+                "    summary: s\n---\n")
+    code, _, err = run(capsys, "record", "beta", "--ruling", str(doc), *opts(repo, store))
+    assert code == 0, err
+    assert store.load("beta")["passes"][0]["ruling"]["priority"] is None
+
+
+def test_override_blocked_with_a_priority(repo: Path, store: Store,
+                                          capsys: pytest.CaptureFixture[str]) -> None:
+    code, _, err = run(capsys, "override", "gamma", "--disposition", "blocked", "--blocked-on",
+                       "alpha", "a capability", "--priority", "2", *opts(repo, store))
+    assert code == 1 and "`a capability` is not an entry in TODO.md" in err
+    code, _, err = run(capsys, "override", "gamma", "--disposition", "blocked", "--blocked-on",
+                       "alpha", "example-placeholder", "--priority", "2", *opts(repo, store))
+    assert code == 1 and "`example-placeholder` is ignored in store.yaml" in err
+    assert store.load("gamma") is None
+    code, _, err = run(capsys, "override", "gamma", "--disposition", "blocked", "--blocked-on",
+                       "gamma", "--priority", "2", *opts(repo, store))
+    assert code == 1 and '"gamma" blocks on itself' in err
+    code, out, err = run(capsys, "override", "gamma", "--disposition", "blocked", "--blocked-on",
+                         "alpha", "--priority", "2", *opts(repo, store))
+    assert code == 0 and out.strip() == "gamma: blocked (ruled_by: user)", err
+    assert store.load("gamma")["passes"][0]["ruling"]["priority"] == 2
+
+
+def unblocking(store: Store, repo: Path, on: dt.date | None = None) -> tuple[str, str, bool]:
+    row = {r.slug: r for r in rows(store, todomd.read(repo, "TODO.md"), on)}["gamma"]
+    return row.status, row.reason, row.unblocked
+
+
+def test_blocked_with_a_priority_unblocks_when_every_blocker_leaves(
+        repo: Path, store: Store) -> None:
+    store.save("gamma", blocked_p2(repo))
+    assert unblocking(store, repo) == ("triaged", "", False)
+    write(repo / "TODO.md", without(TODO, "`alpha`"))
+    assert unblocking(store, repo) == ("triaged", "", False)
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    assert unblocking(store, repo) == (
+        "triaged", "blocked on `alpha`, `beta`, resolved; ready at P2", True)
+    row = {r.slug: r for r in rows(store, todomd.read(repo, "TODO.md"))}["gamma"]
+    assert (row.disposition, row.effective_disposition, row.priority) == ("blocked", "do", 2)
+    later = dt.date.today() + dt.timedelta(days=181)
+    status, reason, unblocked = unblocking(store, repo, later)
+    assert status == "stale" and reason.endswith("older than 180 days") and unblocked
+
+
+def test_blocked_with_a_priority_unblocks_when_ruled_blockers_resolve(
+        repo: Path, store: Store) -> None:
+    store.save("gamma", blocked_p2(repo))
+    store.save("alpha", approved(entry_hash=hash_of(repo, "alpha")))
+    write(repo / "TODO.md", without(TODO, "`alpha`"))
+    assert unblocking(store, repo) == ("triaged", "", False)
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    assert unblocking(store, repo) == (
+        "triaged", "blocked on `alpha`, `beta`, resolved; ready at P2", True)
+    store.save("beta", approved(entry_hash=""))
+    assert unblocking(store, repo) == (
+        "triaged", "blocked on `alpha`, `beta`, resolved; ready at P2", True)
+
+
+def test_blocked_with_a_priority_on_a_deleted_blocker_is_stale(
+        repo: Path, store: Store) -> None:
+    store.save("gamma", blocked_p2(repo))
+    store.save("alpha", ruled("delete", entry_hash=hash_of(repo, "alpha")))
+    assert unblocking(store, repo) == ("triaged", "", False)
+    store.save("alpha", approved("delete", entry_hash=hash_of(repo, "alpha")))
+    assert unblocking(store, repo) == ("stale", "blocked on `alpha`, which is ruled delete", False)
+    store.save("alpha", ruled("delete", ruled_by="user", entry_hash=hash_of(repo, "alpha")))
+    assert unblocking(store, repo) == ("stale", "blocked on `alpha`, which is ruled delete", False)
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    assert unblocking(store, repo) == ("stale", "blocked on `alpha`, which is ruled delete", False)
+
+
+def test_blocked_with_a_priority_on_a_pending_delete_removed_by_hand_unblocks(
+        repo: Path, store: Store) -> None:
+    store.save("gamma", blocked_p2(repo))
+    store.save("alpha", ruled("delete", entry_hash=hash_of(repo, "alpha")))
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    assert unblocking(store, repo) == (
+        "triaged", "blocked on `alpha`, `beta`, resolved; ready at P2", True)
+
+
+def test_blocked_with_a_priority_on_a_sent_back_delete_stays_triaged(
+        repo: Path, store: Store) -> None:
+    store.save("gamma", blocked_p2(repo))
+    store.save("alpha", ruled("delete", review="retriage", entry_hash=hash_of(repo, "alpha")))
+    assert unblocking(store, repo) == ("triaged", "", False)
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    assert unblocking(store, repo) == (
+        "triaged", "blocked on `alpha`, `beta`, resolved; ready at P2", True)
+
+
+def test_blocked_with_a_priority_goes_stale_when_a_hand_removed_delete_is_approved_as_a_mate(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("gamma", blocked_p2(repo, blocked_on=["alpha"], blocked_on_entries=["alpha"]))
+    for slug in ("alpha", "beta"):
+        store.save(slug, ruled("delete", entry_hash=hash_of(repo, slug), cluster=["alpha", "beta"]))
+    write(repo / "TODO.md", without(TODO, "`alpha`"))
+    assert unblocking(store, repo) == ("triaged", "blocked on `alpha`, resolved; ready at P2", True)
+    assert run(capsys, "approve", "beta", *opts(repo, store))[0] == 0
+    assert unblocking(store, repo) == ("stale", "blocked on `alpha`, which is ruled delete", False)
+
+
+def test_blocked_without_a_priority_on_a_pruned_blocker_reads_ruled_delete(
+        repo: Path, store: Store) -> None:
+    store.save("gamma", blocked_p2(repo, priority=None))
+    alpha_hash = hash_of(repo, "alpha")
+    store.save("alpha", ruled("delete", entry_hash=alpha_hash))
+    write(repo / "TODO.md", without(TODO, "`alpha`"))
+    assert unblocking(store, repo) == ("stale", "blocked on `alpha`, which is resolved", False)
+    store.save("alpha", approved("delete", entry_hash=alpha_hash))
+    assert unblocking(store, repo) == ("stale", "blocked on `alpha`, which is ruled delete", False)
+
+
+def test_ready_and_attempt_take_an_unblocked_entry(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("gamma", blocked_p2(repo))
+    root = tmp_path / "adr"
+    assert run(capsys, "ready", *opts(repo, store))[0] == 3
+    code, _, err = run(capsys, "attempt", "--selection", str(selection(store, ["gamma"])),
+                       "--adr-root", str(root), *opts(repo, store))
+    assert code == 1 and ("`gamma` is not ready: triaged, ruled blocked, review approved; "
+                          "only standing, settled `do` rulings, or `blocked` rulings with a "
+                          "priority whose blockers are all resolved, can be attempted") in err
+    write(repo / "TODO.md", without(TODO, "`alpha`"))
+    assert run(capsys, "ready", *opts(repo, store))[0] == 3
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    code, out, _ = run(capsys, "ready", *opts(repo, store))
+    assert code == 0 and out.splitlines()[0].split("\t")[:4] == [
+        "gamma", "P2", "triaged", "alpha,beta"]
+    code, out, _ = run(capsys, "ready", "--json", *opts(repo, store))
+    (item,) = json.loads(out)
+    assert (item["slug"], item["priority"], item["disposition"], item["unblocked"],
+            item["blocked_on"]) == ("gamma", 2, "blocked", True, ["alpha", "beta"])
+    assert run(capsys, "ready", "--priority", "2", *opts(repo, store))[0] == 0
+    assert run(capsys, "ready", "--priority", "3", *opts(repo, store))[0] == 3
+    assert run(capsys, "ready", "--max-priority", "2", *opts(repo, store))[0] == 0
+    assert run(capsys, "ready", "--max-priority", "1", *opts(repo, store))[0] == 3
+    code, out, _ = run(capsys, "list", "--json", *opts(repo, store))
+    assert {r["slug"]: r for r in json.loads(out)}["gamma"]["unblocked"] is True
+    code, out, err = run(capsys, "attempt", "--selection", str(selection(store, ["gamma"])),
+                         "--adr-root", str(root), *opts(repo, store))
+    assert code == 0, err
+    assert store.load("gamma")["attempts"][0]["slugs"] == ["gamma"]
+
+
+def test_ready_ranks_an_unblocked_entry_among_do_entries(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta")
+          + "\n## `delta`\n\nLater work.\n\n## `epsilon`\n\nUrgent work.\n")
+    store.save("gamma", blocked_p2(repo))
+    store.save("delta", approved(entry_hash=hash_of(repo, "delta"), priority=3))
+    store.save("epsilon", approved(entry_hash=hash_of(repo, "epsilon"), priority=1))
+    code, out, _ = run(capsys, "ready", *opts(repo, store))
+    assert code == 0 and [line.split("\t")[0] for line in out.splitlines()] == [
+        "epsilon", "gamma", "delta"]
+
+
+def test_ready_skips_a_pending_unblocked_entry(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("gamma", blocked_p2(repo, review=None))
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    assert run(capsys, "ready", *opts(repo, store))[0] == 3
+    code, out, _ = run(capsys, "inbox", *opts(repo, store))
+    assert code == 0 and out.splitlines()[0] == (
+        f"gamma\ttriaged\tblocked P2\t-\t{dt.date.today().isoformat()}\ts")
+
+
+def test_next_skips_an_unblocked_entry_unless_stale(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    store.save("gamma", blocked_p2(repo))
+    assert run(capsys, "next", *opts(repo, store))[0] == 3
+    store.save("gamma", blocked_p2(repo, date=dt.date.today() - dt.timedelta(days=400)))
+    code, out, _ = run(capsys, "next", *opts(repo, store))
+    assert code == 0 and lines_of(out)["slug"] == "gamma"
+    assert lines_of(out)["status"] == "stale"
+
+
+def test_summary_lists_unblocked_entries(repo: Path, store: Store,
+                                         capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("gamma", blocked_p2(repo))
+    write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
+    _, out, _ = run(capsys, "summary", *opts(repo, store))
+    text = Path(out.strip()).read_text(encoding="utf-8")
+    assert "- blocked P2: 1 settled, 0 pending" in text
+    assert ("## Unblocked\n\n- `gamma`: blocked on `alpha`, `beta`, resolved; ready at P2\n\n"
+            "## Open passes") in text
+    store.save("gamma", blocked_p2(repo, date=dt.date.today() - dt.timedelta(days=400)))
+    _, out, _ = run(capsys, "summary", *opts(repo, store))
+    text = Path(out.strip()).read_text(encoding="utf-8")
+    assert ("- `gamma`: blocked on `alpha`, `beta`, resolved; ready at P2 (also stale: ruled "
+            in text)

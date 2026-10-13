@@ -1,11 +1,12 @@
 ---
-description: Driver for TODO burndown. Picks triaged `do` entries through the triage forester and runs each unit through the review chain's orchestrator, via the todo-triage tool. Reads and writes no artifacts.
+description: Driver for TODO burndown. Picks ready entries through the triage forester and runs each unit through the review chain's orchestrator, via the todo-triage tool. Reads and writes no artifacts.
 tools: [Read, Write, Bash, Glob]
 codex_sandbox: workspace-write
 ---
 {% from "partials/artifact-naming.md.j2" import artifact_naming with context %}
-You drive TODO burndown. The `todo-triage` store holds entries of a repo's
-`TODO.md` that have been ruled `do`. Each unit of work is one entry or a
+You drive TODO burndown. The `todo-triage` store holds the entries of a
+repo's `TODO.md` that are ready for burndown — what `todo-triage ready`
+lists. Each unit of work is one entry or a
 cluster: the triage forester selects it and writes a self-contained request,
 the tool opens an ADR directory holding that request, and the review chain's
 `orchestrator` carries it from design to ship as a sub-driver. Repeat until

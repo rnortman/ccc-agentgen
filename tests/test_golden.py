@@ -796,6 +796,35 @@ def test_triage_clerk_explains_the_forester_priority_scale(builds):
                 assert f"P{n} {meaning}" in flat, (forester_name, filename, n, meaning)
 
 
+def test_blocked_priority_is_explained_to_forester_and_clerk(builds):
+    """The forester may give `blocked` a priority and the clerk states it as
+    `P<n>`; one without the other leaves the user approving a number nobody
+    showed them, or never offered.
+    """
+    build = builds[TRIAGE_STEM]
+    for filename, body in build.bodies("triage-forester"):
+        flat = " ".join(body.split())
+        assert "`priority` (same 1–4 scale) is optional" in flat, filename
+        assert "# iff do; optional for blocked" in body, filename
+    for filename, body in build.bodies("triage-clerk"):
+        flat = " ".join(body.split())
+        assert "the entry goes to burndown at `P<n>` with no further triage" in flat, filename
+        assert "blocked on … [P<n>]" in flat, filename
+
+
+def test_burndown_orchestrator_defers_to_ready(builds):
+    """Which entries burndown may take is `todo-triage ready`'s rule; the
+    driver names the tool, never a disposition.
+    """
+    for stem in (BURNDOWN_STEM, BURNDOWN_AUTO_STEM):
+        build = builds[stem]
+        assert "`do`" not in build.by_id["burndown-orchestrator"].frontmatter["description"]
+        for filename, body in build.bodies("burndown-orchestrator"):
+            flat = " ".join(body.split())
+            assert "`todo-triage ready`" in flat, filename
+            assert "ruled `do`" not in flat, filename
+
+
 def test_triage_clerk_frontmatter_pins(builds):
     """Opus at low effort is the user's choice for the clerk; a later variant
     edit would otherwise undo it silently.

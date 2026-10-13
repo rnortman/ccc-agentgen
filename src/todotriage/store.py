@@ -238,6 +238,29 @@ def review_state(data: dict[str, Any] | None) -> Review:
     return Review(state) if state in REVIEW_STATES else Review.PENDING
 
 
+def is_settled(data: dict[str, Any] | None) -> bool:
+    """Whether the standing ruling is the user's or user-approved."""
+    return review_state(data) == Review.APPROVED
+
+
+class BlockerState(StrEnum):
+    """One `blocked_on` item as `rows()` sees it."""
+
+    OPEN = "open"
+    CLEARED = "cleared"  # left the file without a settled `delete` ruling
+    DELETED = "deleted"  # ruled `delete` and settled, whether or not pruned yet
+
+
+# How a stale reason names a blocker that has left; covers every non-open BlockerState.
+BLOCKER_STALE_REASONS = {BlockerState.CLEARED: "resolved", BlockerState.DELETED: "ruled delete"}
+
+
+def unblocked_reason(ruling: dict[str, Any]) -> str:
+    """Why a `blocked` ruling with a priority is ready: its blockers and its priority."""
+    names = ", ".join(f"`{dep}`" for dep in ruling.get("blocked_on") or [])
+    return f"blocked on {names}, resolved; ready at P{ruling.get('priority')}"
+
+
 class MateStanding(StrEnum):
     """Whether a slug named in a ruling's cluster still shares that ruling."""
 
@@ -283,6 +306,8 @@ class Row:
     entry: Entry | None
     data: dict[str, Any] | None
     reason: str = ""
+    # A `blocked` ruling with a priority whose blockers have all left the file.
+    unblocked: bool = False
 
     @property
     def ruling(self) -> dict[str, Any] | None:
@@ -295,12 +320,17 @@ class Row:
     @property
     def settled(self) -> bool:
         """Whether the standing ruling is the user's or user-approved."""
-        return self.review == Review.APPROVED
+        return is_settled(self.data)
 
     @property
     def disposition(self) -> str | None:
         ruling = self.ruling
         return ruling.get("disposition") if ruling else None
+
+    @property
+    def effective_disposition(self) -> str | None:
+        """`do` for an unblocked row, else the disposition as ruled."""
+        return Disposition.DO if self.unblocked else self.disposition
 
     @property
     def priority(self) -> int | None:
@@ -316,6 +346,12 @@ class Row:
     def cluster(self) -> list[str]:
         ruling = self.ruling
         return list(ruling.get("cluster") or []) if ruling else []
+
+    @property
+    def blocked_on(self) -> list[str]:
+        """The ruling's blockers as strings; empty without a ruling."""
+        ruling = self.ruling
+        return [str(b) for b in ruling.get("blocked_on") or []] if ruling else []
 
 
 def rows(store: Store, todo: TodoFile, on: dt.date | None = None) -> list[Row]:
@@ -349,23 +385,40 @@ def rows(store: Store, todo: TodoFile, on: dt.date | None = None) -> list[Row]:
             else:
                 base[slug] = (Status.TRIAGED, "")
 
+    def blocker_state(dep: str, were_entries: set[str]) -> BlockerState:
+        dep_ruling = latest_ruling(loaded.get(dep))
+        if dep_ruling and dep_ruling.get("disposition") == Disposition.DELETE and is_settled(loaded.get(dep)):
+            return BlockerState.DELETED
+        dep_status = base.get(dep, (None, ""))[0]
+        if dep_status == Status.RESOLVED or (dep_status is None and dep in were_entries):
+            return BlockerState.CLEARED
+        return BlockerState.OPEN
+
     out: list[Row] = []
     for slug in order:
         status, reason = base[slug]
         data = loaded[slug]
         ruling = latest_ruling(data)
-        if status == Status.TRIAGED and ruling and ruling.get("disposition") == Disposition.BLOCKED:
+        unblocked = False
+        if (status in (Status.TRIAGED, Status.STALE) and ruling
+                and ruling.get("disposition") == Disposition.BLOCKED):
+            blocked_on = list(ruling.get("blocked_on") or [])
             were_entries = set(ruling.get("blocked_on_entries") or ())
-            for dep in ruling.get("blocked_on") or []:
-                dep_status = base.get(dep, (None, ""))[0]
-                dep_ruling = latest_ruling(loaded.get(dep))
-                gone = dep_status is None and dep in were_entries
-                if dep_status == Status.RESOLVED or gone:
-                    status, reason = Status.STALE, f"blocked on `{dep}`, which is resolved"
-                    break
-                if dep_ruling and dep_ruling.get("disposition") == Disposition.DELETE:
-                    status, reason = Status.STALE, f"blocked on `{dep}`, which is ruled delete"
-                    break
+            states = [(dep, blocker_state(dep, were_entries)) for dep in blocked_on]
+            with_priority = ruling.get("priority") is not None
+            # Without a priority any blocker leaving returns the entry; with one, only a
+            # deleted blocker does, and every blocker cleared makes it ready instead.
+            returns = ({BlockerState.DELETED} if with_priority
+                       else {BlockerState.DELETED, BlockerState.CLEARED})
+            first = next(((dep, state) for dep, state in states if state in returns), None)
+            if status == Status.TRIAGED and first is not None:
+                dep, state = first
+                status = Status.STALE
+                reason = f"blocked on `{dep}`, which is {BLOCKER_STALE_REASONS[state]}"
+            elif with_priority and states and all(s == BlockerState.CLEARED for _, s in states):
+                unblocked = True
+                if status == Status.TRIAGED:
+                    reason = unblocked_reason(ruling)
         out.append(Row(slug=slug, status=status, entry=in_file.get(slug), data=data,
-                       reason=reason))
+                       reason=reason, unblocked=unblocked))
     return out

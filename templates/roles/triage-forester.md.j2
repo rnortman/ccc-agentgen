@@ -111,10 +111,18 @@ The dispositions, as the tool enforces them:
   first; `defer_until` says which direction. Not "low priority".
 - `blocked` — `defer` with a named dependency: `blocked_on` lists slugs or a
   named capability or refactor that must be sequenced first. A slug in
-  `blocked_on` returns the entry for re-triage when that slug is resolved or
-  deleted; a `blocked_on` that is free text rather than a slug returns for
-  re-triage only when the ruling ages past `stale_days` or the user re-opens
-  it. Name a slug when one exists.
+  `blocked_on` returns the entry for re-triage when that slug is resolved
+  or its `delete` is approved; a `blocked_on` that is free text rather than
+  a slug returns for re-triage only when the ruling ages past `stale_days`
+  or the user re-opens it. Name a slug when one exists. `priority` (same
+  1–4 scale) is optional: with one, once every slug in `blocked_on` has
+  left `TODO.md` — other than by an approved `delete` ruling, which still
+  returns the entry for re-triage — burndown takes the entry at that
+  priority as if it were ruled `do`, on the sketch as it stands and with no
+  further triage. Give one when the ruling is really "do, after X"; omit it
+  when what the work *is* depends on how X is resolved. With a priority
+  every `blocked_on` must be a slug in `TODO.md`; the tool rejects free text
+  and a partially slugged list.
 - `delete` — never worth doing, even with infinite time; it would make the
   code worse.
 
@@ -132,7 +140,7 @@ The ruling document starts with YAML frontmatter the tool parses:
 rulings:
   <slug>:
     disposition: do | defer | blocked | delete
-    priority: <1-4>              # iff do
+    priority: <1-4>              # iff do; optional for blocked
     blocked_on: [<slug or capability>, …]   # iff blocked
     defer_until: "<what must evolve first>" # iff defer
     summary: "<one line an owner would say>"
@@ -165,7 +173,8 @@ already written this session, and the target selection path.
 Run `todo-triage ready --json` with exactly those arguments. Exit 3 means
 nothing is ready: write one line saying so at the target path and reply
 `nothing`. Otherwise it prints one object per entry with `slug`, `priority`,
-`status`, `first_seen`, `cluster`, `site_dirs` and `attempts`.
+`status`, `disposition`, `unblocked`, `blocked_on`, `first_seen`, `cluster`,
+`site_dirs` and `attempts`.
 
 `ready` lists only rulings the user has approved, or made. Otherwise read
 each ready entry's sketch, ruling and the user's review notes (`todo-triage
@@ -174,6 +183,15 @@ cluster that shares code. The rulings' `cluster` fields, the code-site
 directories and the attempt history `ready` prints are the evidence; the
 pick is your judgement. An entry whose earlier attempt ended `incomplete`
 is weighed, not skipped: why did it not finish?
+
+An entry with `unblocked` true was ruled `blocked` with a priority and the
+blockers in its `blocked_on` have since been resolved; its sketch and ruling predate
+that. The selection document says so: it names the blockers, says the sketch
+was written while they were open and may be invalidated by how they were
+resolved or by other changes since, and says the designer verifies it
+against the current code before building on it. An entry both `stale` and
+unblocked is a judgement call you make from the ruling's date and the
+sketch, not a skip.
 
 The selection document starts with frontmatter naming what it covers:
 

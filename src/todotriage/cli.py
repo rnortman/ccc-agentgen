@@ -33,6 +33,7 @@ from .store import (
     next_pass_ordinal,
     open_pass,
     rows,
+    unblocked_reason,
 )
 
 EXIT_OK, EXIT_ERROR, EXIT_NOTHING = 0, 1, 3
@@ -84,6 +85,7 @@ def row_json(row: Row) -> dict[str, Any]:
         "reason": row.reason or None,
         "disposition": row.disposition,
         "priority": row.priority,
+        "unblocked": row.unblocked,
         "ruled": row.ruled_date.isoformat() if row.ruled_date else None,
         "cluster": row.cluster,
         "line": row.entry.line if row.entry else None,
@@ -536,9 +538,11 @@ def cmd_ready(ctx: Context, args: argparse.Namespace) -> Output:
         attempts = list((row.data or {}).get("attempts") or [])
         history = ",".join(f"{a.get('outcome')}@{str(a.get('started'))[:10]}" for a in attempts)
         lines.append("\t".join([row.slug, f"P{row.priority}", row.status,
-                                dash(seen.get(row.slug)), dash(",".join(row.cluster)),
+                                dash(",".join(row.blocked_on)), dash(seen.get(row.slug)), dash(",".join(row.cluster)),
                                 dash(",".join(dirs.get(row.slug, []))), dash(history)]))
         data.append({"slug": row.slug, "priority": row.priority, "status": row.status,
+                     "disposition": row.disposition, "unblocked": row.unblocked,
+                     "blocked_on": row.blocked_on,
                      "first_seen": seen.get(row.slug), "cluster": row.cluster,
                      "site_dirs": dirs.get(row.slug, []), "attempts": attempts})
     return Output(lines, data)
@@ -617,7 +621,7 @@ def cmd_summary(ctx: Context, args: argparse.Namespace) -> Output:
     by_disposition: dict[str, list[int]] = {}
     for row in all_rows:
         if row.disposition and row.status not in (Status.RESOLVED, Status.IGNORED):
-            key = row.disposition + (f" P{row.priority}" if row.disposition == Disposition.DO else "")
+            key = row.disposition + (f" P{row.priority}" if row.priority is not None else "")
             counts = by_disposition.setdefault(key, [0, 0])
             counts[0 if row.settled else 1] += 1
     retriage = []
@@ -674,6 +678,10 @@ def cmd_summary(ctx: Context, args: argparse.Namespace) -> Output:
         f"## Rulings since {since or 'the start'}", "", *bullets(rulings), "",
         "## Stale", "",
         *bullets([f"`{r.slug}`: {r.reason}" for r in all_rows if r.status == Status.STALE]), "",
+        "## Unblocked", "",
+        *bullets([f"`{r.slug}`: {unblocked_reason(r.ruling or {})}"
+                  + (f" (also stale: {r.reason})" if r.status == Status.STALE else "")
+                  for r in all_rows if r.unblocked]), "",
         "## Open passes", "",
         *bullets([f"`{r.slug}`: pass {open_pass(r.data)['pass']}"  # type: ignore[index]
                   for r in all_rows if r.status == Status.OPEN]), "",
@@ -803,9 +811,10 @@ def make_parser() -> argparse.ArgumentParser:
     add_note_options(retriage, required=True)
 
     rdy = add("ready", cmd_ready,
-              "settled `do` entries ranked by priority then age, one line per entry: slug"
-              " priority status first-seen cluster site-dirs attempts(outcome@date,...);"
-              " exit 3 when none")
+              "settled `do` entries, and `blocked` entries with a priority whose blockers have"
+              " all left TODO.md, ranked by priority then age, one line per entry: slug"
+              " priority status blocked-on first-seen cluster site-dirs"
+              " attempts(outcome@date,...); exit 3 when none")
     rdy.add_argument("--priority", type=int, choices=PRIORITIES, help="exactly P")
     rdy.add_argument("--max-priority", type=int, choices=PRIORITIES, help="P or better")
     rdy.add_argument("--slugs", nargs="+", metavar="SLUG")

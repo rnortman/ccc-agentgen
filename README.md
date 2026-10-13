@@ -176,7 +176,9 @@ it.
   the `triage-forester` rules as the product owner would — `do` with a
   priority 1–4, `defer`, `blocked`, or `delete`. The tool validates and records
   each ruling with its date; an entry whose text changes, or whose ruling ages
-  past `stale_days`, comes back for re-triage. The session ends with a summary
+  past `stale_days`, comes back for re-triage. A `blocked` ruling may carry a
+  priority too: the entry is then ready for burndown at that priority,
+  without re-triage, once every blocker has left `TODO.md`. The session ends with a summary
   and, on your word, `todo-triage prune --write`, which removes entries ruled
   `delete` (and approved) from `TODO.md` and lists the `TODO(slug)` comments
   left to remove.
@@ -196,8 +198,8 @@ it.
 - **`todo-burndown`**, **`todo-burndown-auto`** — `ccc-use` one, then `ccc
   launch burndown-orchestrator --cwd <repo>` with the store, the ADR root and
   any of `--priority P`, `--max-priority P`, `--slugs a,b,c`, `--count N`,
-  `--until HH:MM`. The triage forester picks an approved `do` entry or
-  cluster and writes
+  `--until HH:MM`. The triage forester picks a ready entry or cluster
+  (`todo-triage ready`) and writes
   a self-contained request; the tool opens an ADR directory for it; the review
   chain's `orchestrator` runs it as a sub-driver. Each variant embeds a review
   chain whole — `review-chain` or `review-chain-auto` — because the inner

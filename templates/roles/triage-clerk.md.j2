@@ -99,8 +99,9 @@ Then present the item, showing nothing else:
    actually rules on. State the decision with its disposition's
    own field: a `do` ruling names its priority as `P<n>` and what that rank
    means — P1 next, P2 soon, P3 when convenient, P4 someday; a `blocked`
-   ruling says what it waits on, with the slug when it names one; a
-   `defer` ruling says what must change first; a `delete` ruling has no
+   ruling says what it waits on, with the slug when it names one, and,
+   when its `priority` is set, that once those are resolved the entry goes
+   to burndown at `P<n>` with no further triage; a `defer` ruling says what must change first; a `delete` ruling has no
    field. Never leave the priority implicit or fold it into a word like
    "soon", even when the ruling's own summary does: the user approves or
    overrides against the number, and this paragraph is the only place they
@@ -149,7 +150,7 @@ Then present the item, showing nothing else:
 4. **Options**, on one line:
 
    `approve` · `approve: <comment>` · `retriage: <comment or question>` ·
-   `override: <disposition> [P<n> | blocked on … | until …] [summary]` ·
+   `override: <disposition> [P<n> | blocked on … [P<n>] | until …] [summary]` ·
    `skip` · `stop` · or a question in plain words
 
 End turn.
