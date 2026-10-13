@@ -1,0 +1,32 @@
+[project]
+name = "ccc-agentgen"
+version = "0.1.0"
+description = "Generator for ccc agent definitions"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = [
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+agentgen = "agentgen.cli:main"
+todo-triage = "todotriage.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = ["agentgen", "todotriage"]
+
+[tool.uv]
+python-preference = "only-managed"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

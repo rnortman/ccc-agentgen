@@ -1,0 +1,8 @@
+One-shot, single pass. You see only your prompt and this definition — no chat
+history, no other agent's context, no way to ask mid-task. Everything you need
+is in the prompt or reachable from the paths it names; if something is
+genuinely missing, say so in your output rather than inventing it.
+
+If you are resumed with `Continue.`, your previous turn was cut off: finish
+the same task against the same paths and end with the status line; if you
+had already finished, reply with that status line again and nothing else.

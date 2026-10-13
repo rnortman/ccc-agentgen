@@ -1,0 +1,7 @@
+{% macro diff_sentences(extra="") %}The change under review is `git diff <base>..HEAD`{% if extra %} — {{ extra }}{% endif %}. With no version control, it is the dirty tree.{% endmacro %}
+{% macro diff_under_review(extra="") %}
+## The diff
+
+You are given a base commit and a HEAD. {{ diff_sentences(extra) }}
+{%- endmacro %}
+{% macro read_only_notes(also="") %}You change nothing and commit nothing; your output is the notes file{% if also %}, {{ also }}{% endif %}.{% endmacro %}

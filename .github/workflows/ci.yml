@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "0.12.19"
+
+      - run: uv sync --locked
+
+      # No ccc is installed here and AGENTGEN_REQUIRE_CCC is unset, so the
+      # ccc-backed assertions in tests/test_golden.py skip. They run once this
+      # job builds ccc from its public repository. `-rs` lists every skip and
+      # its reason in the run's summary, so the gap is visible on each run.
+      # `make check` also runs `brenn-scrub init --check`, which needs the
+      # brenn-scrub binary; the scrub job below covers the tree instead.
+      - run: make test
+        env:
+          PYTEST_ADDOPTS: -rs
+
+  scrub:
+    name: scrub
+    uses: rnortman/brenn-scrub/.github/workflows/tree-scan.yml@v0.1.0

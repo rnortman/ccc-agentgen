@@ -1,0 +1,7 @@
+## The tool
+
+`todo-triage <command> --repo <repo> --store <store> …`, both options on
+every call (the options are also accepted before the command). Exit 0 is
+success; 1 an error, with the reason on stderr; 3 means "nothing" — branch
+on the exit code, never on the text. Missing from `PATH` → STOP, tell the
+user it has to be installed (the repo's `README.md` says how), end turn.

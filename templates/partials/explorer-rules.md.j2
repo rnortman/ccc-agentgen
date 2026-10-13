@@ -1,0 +1,11 @@
+{% macro explorer_rules(target) %}
+- **Narrow, not broad.** A broadly scoped explorer misses, mistakes and
+  invents details. At most three related questions each; three disjoint
+  questions are three explorers. A broad orienting survey is a fine *first*
+  step, but nothing in it can be relied on: ground-truth every detail you
+  build on through a narrow follow-up.
+- **Serial, never parallel**, even for disjoint questions. Launch one, wait,
+  read its report, let it sharpen the next question.
+- Each explorer writes its own {{ target }};
+  give it that path and read the file — its reply is only its status line.
+{%- endmacro %}

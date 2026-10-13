@@ -1,0 +1,146 @@
+## Spawning subagents through ccc
+
+```
+ccc run <type> [--cwd DIR] [--prompt-file F | -] [PROMPT]
+```
+
+Name only the agent *type*. `ccc` chooses harness, model, effort and account
+from its own config and live usage data. Never pass `--harness` or
+`--profile`, never set `CCC_*` env vars — those are human debugging controls.
+
+Stdout = the subagent's final message, then a blank line and one trailer:
+
+```
+[ccc] session=<id> harness=<h> model=<m> effort=<e> profile=<p|->
+```
+
+All diagnostics go to stderr. Keep the session id; a follow-up to the same
+subagent with context intact is:
+
+```
+ccc resume <session-id> [--prompt-file F | -] [PROMPT]
+```
+
+Exit codes: 0 success; 1 subagent ran and reported failure (message on stderr);
+2 config/usage/agent-definition error, nothing spawned; 3 harness produced no
+usable result; 4 the subagent hit a usage limit and no other account could
+continue it.
+
+A non-zero exit, or your shell tool stopping the command, is a cut-off
+launch — see **Cut-off launch** — never a reply. Exit 1, 3 or 4 may still
+print the session id in the trailer; exit 2 spawned nothing. Nothing the
+subagent printed before it was cut off is a status line to route on.
+
+Invoke `ccc` as a plain command: `ccc run …` / `ccc resume …` and nothing
+else. No `nohup`, no trailing `&`, no redirects, no wrapper scripts. Read
+its stdout directly.
+
+A subagent may run for an hour or more. Every `ccc run` and `ccc resume`
+goes through your shell tool's long-running mode with the limit at the
+tool's ceiling, and never under one hour in any case. A limit is a maximum,
+not a wait; a subagent that overruns it is killed with everything beneath it
+and must be resumed.
+{%- if harness == "claude" %} Use `run_in_background: true` and `timeout` at
+the ceiling the tool description states (`7200000` ms unless it says more);
+the foreground tool's ten minutes is never enough.
+{%- else %} Set the shell tool's own timeout parameter at its maximum.
+{%- endif %} This matters most where the subagent
+itself launches subagents — a whole orchestrator cycle runs for hours. Then
+wait for it to finish and read its stdout directly — never `&`, `nohup`, a
+wrapper script or a timer of your own.
+
+The prompt is the entire contract: the subagent sees only your prompt and its
+own agent definition. State the task, inputs by absolute path, what to
+produce, and the absolute output path. It cannot ask you anything mid-run.
+
+## Cut-off launch
+
+1. **What it is.** Two kinds, told apart by who stopped the command:
+   - a **failure** — `ccc` itself exited 1, 3 or 4 (a crash, a usage limit,
+     a reported failed turn), or your shell tool stopped the command for any
+     reason other than its time limit;
+   - a **ceiling hit** — your shell tool reported, in whatever words it
+     uses, that it stopped the command because it reached its time limit;
+     no `ccc` exit code comes with that report. The subagent was still
+     working; it, and everything it had launched, were killed with `ccc`.
+
+   In both, the subagent's work may be intact — its files, its commits, its
+   context — and `ccc resume` continues it. Two things are not a cut-off:
+   exit 2 (nothing was spawned; go straight to your role's failure route),
+   and a launch you ended yourself with `ccc kill` on the user's direction
+   (it exits 3 too, but the user is already in the loop: **When a subagent
+   hangs** applies — report and wait). A launch that has no result in your
+   context when you are resumed with `Continue.` was killed together with
+   you; treat it as a ceiling hit.
+2. **Find the session.** The trailer, if one was printed (a ceiling hit
+   prints none). Otherwise `ccc status`: every line carries the
+   invocation's agent type, its `started` time, its state and `session=`.
+   Yours is the invocation of the type you launched whose `started` is after
+   you issued this launch; if the newest of that type is `done`, it is an
+   earlier launch of yours, not this one. No such invocation, or one with
+   `session=-` → there is no session; **repeat** the launch verbatim instead
+   — same prompt, same target paths.
+3. **Still alive?** State `running`, `stopping`, `orphaned` or `unknown`
+   means the subagent is still working without you. `ccc resume` refuses
+   such a session and you never kill it; you do not poll for it either.
+   Report its state and session id through your role's failure route and
+   stop; the user decides.
+4. **Resume.** `ccc resume <session-id> "Continue."`, launched exactly as a
+   run (long-running mode, limit at the ceiling). Route its reply as the
+   original launch's: same step, same target paths, same routing. A resumed
+   subagent that had already finished replies with its status line again.
+5. **Cap.** Two counts per launch, resumes and repeats together. At most
+   **two** failures per launch: the third failure of the same launch is
+   final. At most **four** ceiling hits per launch: the fifth is final. A
+   ceiling hit is not a failure and charges only its own count — nothing
+   failed, the subagent was making progress — but a launch that is cut at
+   the ceiling again and again is one whose in-flight operation never ends,
+   and the user, not the next resume, decides what to do with it. Final
+   means your role's failure route, with what the last attempt printed and
+   the session id. A recovery that comes back with a reply ends the launch;
+   neither count ever resets to allow another attempt.
+
+An **unrecovered launch** is one that ends without a reply: exit 2, a
+session still alive (step 3), or a spent cap — either count — (step 5). Your role's failure
+route takes it, carrying what `ccc` last printed to stderr, verbatim, the
+session id if one is known and, if the session is still alive, its state.
+
+## When a subagent hangs
+
+`ccc kill` exists for one situation: a subagent that has stopped making
+progress and will never return — typically because a test or command it ran
+is hanging. It is not part of normal operation. `ccc status` is read
+whenever you need it — to recover a cut-off launch, or to find the
+invocation the user means. Slow is
+not hung; a large `idle` value is not evidence; you never kill a subagent to
+speed things up, to retry, or because you are impatient. Act only when the
+user tells you a subagent is hung and directs you to stop it. Absent that
+direction, wait.
+
+- `ccc status` lists your own subagents, running and finished — never
+  anything outside your subtree, never yourself. Each line carries the
+  8-character invocation id, the agent type, its state (`running`,
+  `stopping`, `orphaned`, `lost`, `unknown`; `done`, `failed`, `killed`) and
+  `session=<id>`. Use it to find the invocation the user means; if you
+  cannot tell which one that is, ask. Do not pass `--trace`.
+- `ccc kill <inv>` with the invocation id and no flags. It signals the
+  subagent's whole process tree, including the hung command, waits for it
+  to die, and prints `<inv> killed session=<id>`. The `ccc run` that
+  launched it, if it is still waiting, then returns exit 3 with its trailer;
+  that launch produced no result, and that is not a cut-off launch; do not
+  resume it on your own. Report the kill and the session id to the
+  user and wait for direction — resume it, relaunch fresh, or stop — rather
+  than choosing yourself.
+- `ccc kill --now <inv>` only if the plain kill printed `survived`, and
+  only once. Go by the printed state word, not the exit code: `refused` also
+  exits 1 and means ccc will not touch the process — report it, do not
+  escalate. Exit 2 with no line means nothing was signalled — the id is
+  wrong or outside your subtree; recheck `ccc status`, otherwise report it.
+  Never `--all`, `--grace`, `--no-wait`.
+
+**Never `pkill`, `killall`, `kill <pid>`, or any signal to a process you
+found with `ps`.** Every agent on this machine — other sessions' subagents,
+your own parent, and you — is the same `claude` or `codex` binary. A
+name-based or guessed-pid kill is as likely to take out another session's
+agent or yourself as the target. `ccc kill` identity-checks the process and
+is confined to your subtree; it is the only way you stop a subagent.

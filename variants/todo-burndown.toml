@@ -1,0 +1,97 @@
+name = "todo-burndown"
+
+# Frontmatter applied to every role; a `[roles.<id>]` table below overrides it,
+# and an operator's `[agents.<type>]` ccc config overrides that.
+[defaults]
+model = "claude-opus-5-5[1M]"
+effort = "medium"
+codex_model = "gpt-6-sol"
+codex_effort = "medium"
+codex_sandbox = "workspace-write"
+
+[vars]
+increment_target_min = 500
+increment_target_max = 1000
+increment_stop_lines = 1500
+round_cap_lines = 5000
+max_increments = 7
+designer_spawns_explorers = true
+# Forester: "advise" briefs the user before each gate listed; "decide" holds
+# the gate. Gate rounds cap the forester↔designer loop on design and triage.
+forester_autonomy = "advise"
+forester_gates = ["design", "triage", "scan", "ship"]
+forester_gate_rounds = 2
+
+[roles.burndown-orchestrator]
+model = "claude-opus-5-5[1M]"
+effort = "low"
+codex_model = "gpt-5.6-terra"
+
+[roles.triage-forester]
+model = "claude-fable-5-1[1M]"
+codex_model = "gpt-6-astra"
+
+[roles.orchestrator]
+model = "claude-opus-5-5[1M]"
+effort = "low"
+codex_model = "gpt-5.6-terra"
+
+[roles.designer]
+model = "claude-fable-5-1[1M]"
+codex_model = "gpt-6-sol"
+
+[roles.explorer]
+effort = "low"
+model = "claude-opus-5-5[1M]"
+codex_model = "gpt-6-luna"
+codex_effort = "medium"
+
+[roles.design-reviewer]
+model = "claude-opus-5-5[1M]"
+codex_model = "gpt-6-sol"
+
+[roles.eli5-explainer]
+model = "claude-opus-4-6[1M]"
+effort = "low"
+codex_model = "gpt-5.6-terra"
+codex_effort = "low"
+
+[roles.implementer]
+model = "claude-opus-5-5[1M]"
+codex_model = "gpt-5.6-terra"
+
+[roles.comment-rewriter]
+model = "claude-opus-4-6[1M]"
+codex_model = "gpt-6-luna"
+
+[roles.prepass-reviewer]
+model = "claude-sonnet-5"
+codex_model = "gpt-5.6-terra"
+
+[roles.citizen-reviewer]
+codex_model = "gpt-6-sol"
+
+[roles.tracer-reviewer]
+codex_model = "gpt-6-sol"
+
+[roles.test-reviewer]
+codex_model = "gpt-6-sol"
+
+[roles.judge]
+
+[roles.workflow-scanner]
+codex_model = "gpt-6-sol"
+
+[roles.changelog-author]
+model = "claude-opus-4-6[1M]"
+codex_model = "gpt-6-luna"
+
+[roles.forester]
+model = "claude-fable-5-1[1M]"
+codex_model = "gpt-6-astra"
+
+[roles.forester-commentator]
+model = "claude-fable-5-1[1M]"
+effort = "low"
+codex_model = "gpt-6-astra"
+codex_effort = "low"

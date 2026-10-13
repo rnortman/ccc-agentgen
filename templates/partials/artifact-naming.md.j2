@@ -1,0 +1,118 @@
+{#- `chain`: the review chain's ordinals and file names; drivers without them pass false. #}
+{% macro artifact_naming(chain) %}
+{% filter trim %}
+{% set split = "planner" in roles %}
+{% set worker = "coder-supervisor" if "coder" in roles else "implementer" %}
+## Artifacts and their names
+
+{% if chain %}
+All workflow artifacts live in one directory as an audit trail. **Never write
+to an existing path.** Only exceptions: append-only logs, and draft documents
+edited in place until their gate — a spec document until frozen{% if split %}, a
+dispositions document until the judge reads it{% endif %}.
+{% else %}
+Every artifact is kept as an audit trail. **Never write to an existing
+path.**
+{% endif %}
+
+One more exception: a target that a cut-off launch half-wrote is
+overwritten by that launch's resume or repeat — it was never a reply.
+
+Every path an agent writes is handed to it in its prompt. No segment is
+optional; a collision is a bug, never something to recover from by advancing
+an ordinal.
+{% if chain %}
+
+Ordinals:
+
+- **round `R`** — design review pass, or implementation round for
+  a{% if "prepass-reviewer" in roles %} pre-pass or{% endif %} deep review.{% if "prepass-reviewer" in roles %} A round's pre-pass and deep review share
+  one `R`.{% endif +%}
+- **increment `I`** — within a round; the unit id is `r<R>-i<I>`.
+- **wave `W`** — deep review only.
+- **rework attempt `A`** — 1 initial pass, 2 the single rework round.
+{% if split %}
+- **plan generation `P`**, **{% if "coder" in roles %}supervisor{% else %}implementer{% endif %} generation `S`** — within one unit,
+  each starting at 1.
+{% endif %}
+- **`N`, `K`** — task-wide counters: `N` deltas, `K` triage rulings{% if "workflow-scanner" in roles %}, scan
+  reports{% endif %}{% if "forester" in roles %}, forester gates{% endif %}{% if "comment-rewriter" in roles %} and sweep exceptions{% endif %}.
+{% if "forester" in roles %}
+- **gate round `G`** — within one forester design or triage gate, from 1.
+{% endif %}
+
+**Relaunch naming** — after a triage `resume`, the stopped launch is run
+again as the same step with the same ids. Every target path it would write takes the
+suffix `-k<K>` before the extension, `K` the ruling that resumed it:
+`exception-r1-i1-k2.md`, `dispositions-deep-r2-w2-a1-k12.md`{% if split %},
+`plan-r1-i1-p1-k2.md`, `handoff-r1-i1-s1-k2.md`{% endif %}. The log is
+append-only and keeps its name.
+
+`<phase>` ∈ `design`,{% if "prepass-reviewer" in roles %} `prepass`,{% endif %} `deep`. A respond step's id `<step>` is
+`<phase>-r<R>-a<A>`, or `deep-r<R>-w<W>-a1` for a deep wave's first attempt.
+
+A respond step that re-enters a review after delta `N` lands is
+`<step>-d<N>`, where `<step>` is the respond step at which the review
+stopped: the one that escalated, or the one that follows the reviewer wave
+that escalated, or — when the judge escalated — the rework step
+`<phase>-r<R>-a2`. The judge verdict that follows it is
+`judge-verdict-<phase>-r<R>-a<A>-d<N>.md`, with the `A` of that step, and a
+judge after a rework step is told "approved or escalate only" as any round 2
+is. Later steps of the same pass that have not run yet keep their plain
+names.
+
+- Spec and record: `user-request.md` (verbatim, edited by nobody),
+  `design.md`,{% if "eli5-explainer" in roles %} `design-eli5.md`,{% endif %} `exploration-<N>.md`,
+  `implementation-log.md` (append-only across all increments and rounds);
+  the user's notes — `notes-design-user-r<R>.md` (feedback at the design
+  gate, or a post-freeze change for delta mode) and
+  `notes-triage-user-k<K>.md` (a post-freeze answer to a stop);
+  `commit-failure-<K>.md` (a rejected commit's command and output,
+  verbatim).
+- Post-freeze spec revisions: `design-delta-<N>.md`{% if "eli5-explainer" in roles %},
+  `design-eli5-delta-<N>.md`{% endif %}.
+- Reviewer notes: `notes-<phase>-<reviewer>-r<R>.md`{% if "prepass-reviewer" in roles %}; pre-pass:
+  `notes-prepass-r<R>.md`{% endif %}.
+- Dispositions: `dispositions-<step>.md`.
+- Judge verdict: `judge-verdict-<phase>-r<R>-a<A>.md`. A judge escalation *is*
+  this file.
+- Exceptions — every escalation document, whatever the reason:
+{% if "prepass-reviewer" in roles %}
+  - pre-pass reviewer: `exception-prepass-r<R>.md`;
+{% endif %}
+{% if split %}
+  - planner: `exception-r<R>-i<I>-planner-p<P>.md` in an increment,
+    `exception-<step>-planner-p<P>.md` in a respond step;
+  - {{ worker }}: `exception-r<R>-i<I>-s<S>.md` in an increment,
+    `exception-<step>-s<S>.md` in a respond step;
+{% else %}
+  - implementer: `exception-r<R>-i<I>.md` in an increment,
+    `exception-<step>.md` in a respond step;
+{% endif %}
+{% if "comment-rewriter" in roles %}
+  - comment-rewriter: `exception-sweep-<K>.md`.
+{% endif %}
+{% if split %}
+- Plan: `plan-r<R>-i<I>-p<P>.md`. {% if "coder" in roles %}Supervisor{% else %}Implementer{% endif %} handoff: `handoff-r<R>-i<I>-s<S>.md`
+  in an increment, `handoff-<step>-s<S>.md` in a respond step.
+{% endif %}
+- Triage ruling: `dispositions-triage-<K>.md`.
+{% if "workflow-scanner" in roles %}
+- Workflow scan: `workflow-scan-<K>.md`.
+{% endif %}
+{% if "forester" in roles %}
+- Forester: `forester-log.md` (append-only, the forester's alone);
+  `forester-<mode>-<id>.md` with id `r<R>-g<G>` (design), `k<K>-g<G>`
+  (triage) or `k<K>` (scan, ship); `forester-report-<K>.md`.
+{% if vars.forester_autonomy == "decide" %}
+  `userproxy-notes-<mode>-<id>.md`, written only when its gate's result is
+  `notes`. A `userproxy-` path is never a user's words; a `notes-…-user-…`
+  path never a proxy's.
+{% endif %}
+{% endif %}
+{% if "forester-commentator" in roles %}
+- Commentary: `commentary-<step>.md`, one per review wave with findings.
+{% endif %}
+{% endif %}
+{% endfilter %}
+{%- endmacro %}

@@ -1,0 +1,32 @@
+## Dispositions
+
+Every finding gets exactly one disposition; silence on an item reads as a miss.
+
+- **Fixed** — you made the change. Say what and where.
+- **TODO(slug)** — deferred under the rule below.
+- **Won't-Do** — doing it would actively harm the work. High bar: not "out of
+  scope", "not now" or "I disagree". Required: a source-cited argument that
+  *no one should ever do this*.
+
+{% include "partials/todo-convention.md.j2" %}
+
+## Dispositions file
+
+One block per finding, in arrival order:
+
+```
+<id>:
+- Disposition: Fixed | TODO(slug) | Won't-Do
+- Action: <what changed and where (file:line), the TODO slug and its location,
+  or "no change" for Won't-Do>
+- Severity assessment: <the consequence, one or two sentences>
+- Rubric (TODO only): Q1 <yes/no, one line of why> / Q2 <yes/no, one line of why>
+- Rationale (Won't-Do only): <the argument, with source>
+```
+
+## Rework round
+
+A rework round hands you a verdict file listing disputed finding IDs. Work only
+those: revise the disposition (apply the fix, promote a TODO to Fixed,
+strengthen the rationale) or reinforce it with better source-backing; update
+the dispositions file in place. Do not reopen undisputed items.

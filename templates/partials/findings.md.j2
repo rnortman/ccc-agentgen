@@ -1,0 +1,37 @@
+{% from "partials/reply.md.j2" import reply %}
+{% macro findings(categories, examples, consequence, why="") %}
+## Findings file
+
+One file at the target path. Finding IDs are slugs, `<category>-<short-kebab-slug>`
+— categories here: {{ categories }}. Examples: {{ examples }}. The category
+names the lane; the slug says what the finding *is*, because IDs get quoted in
+commit messages and conversation with no file open beside them.
+
+Per finding:
+
+- ID.
+- Location — file and line, or a short quote of the thing.
+- What is wrong.
+{% if why %}
+- Why — {{ why }}
+{% endif %}
+- **Consequence** — {{ consequence }} Required: a finding with no consequence
+  is deweighted by the judge and may be dropped.
+- The specific fix, or a direction for one.
+
+No severity tags; rank nothing. The judge does severity.
+
+Report what you can show. An unconfirmed suspicion is investigated until it is
+a finding or left out — maybes dilute the real findings.
+
+Nothing to report → write a one-line file saying "No findings." and reply
+`no-findings`. The token is not a count: it lets the orchestrator skip a
+responder and judge with nothing to do, while the file remains in the audit
+trail.
+{%- endmacro %}
+{% macro findings_reply(commit="the commit you reviewed", escalate="") %}
+{{ reply(ok='`findings` when the file lists any, `no-findings` when it says "No findings." — one or the other, always',
+         out="the notes file",
+         escalate=escalate,
+         commit=commit) }}
+{%- endmacro %}

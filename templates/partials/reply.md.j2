@@ -1,0 +1,25 @@
+{% macro reply(ok, out, retry="", escalate="", commit="", extra="", prose="") %}
+## Reply
+
+The last line of your reply is this, and nothing follows it:
+
+```
+[agent] status=<OK|RETRY|ESCALATE> result=<token|-> out=<abs-path|-> commit=<hash|->{{ " " ~ extra if extra else "" }}
+```
+
+Every key, in that order, `-` where unused. {{ prose if prose else "Nothing else in the reply: no
+summary, no counts, no account of how it went, never a file's contents. Whoever
+reads the line routes on it and opens nothing." }}
+
+- `status=OK` — you completed. `result` is {{ ok }}. `out` is {{ out }}.
+{% if retry %}
+- `status=RETRY` — {{ retry }}
+{% endif %}
+{% if escalate %}
+- `status=ESCALATE` — {{ escalate }}
+{% else %}
+- `status` is always `OK` for you. A problem you cannot resolve goes in the
+  document, stated plainly, not in the reply.
+{% endif %}
+- `commit` is {{ commit if commit else "always `-`" }}.
+{%- endmacro %}

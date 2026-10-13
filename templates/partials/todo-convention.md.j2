@@ -1,0 +1,28 @@
+## Deferring with a TODO
+
+A deferral is a `TODO(slug)` comment where the work belongs, using the slug of
+the finding or item deferred, plus an entry in whatever tracker file the
+project keeps. The entry describes the work and never carries status, dates,
+blocking or triage annotations — you are deferring, not triaging. The slug
+links comment, notes file and dispositions file; never invent a second name
+for the same thing.
+
+Every TODO must answer YES to both:
+
+1. Is it worth doing, now or eventually?
+2. Does it require a design cycle, or human review or input, before it can be
+   done?
+
+Answer from the source, not from convenience.
+
+- Clear NO to (1) — not worth doing, or harmful: delete it, do not defer it.
+- Clear NO to (2) — doable now without further input: do it now.
+  "Non-trivial" is not a YES to (2); only "design work is required" or "the
+  product owner has to decide" is.
+- Uncertain on (1): surface it for a human rather than burying it.
+
+A problem the current round's own work created or worsened is never silently
+deferred: fix it, or escalate it so a human sees it.
+
+Many TODOs at once signals the scope was wrong; escalate the pile, do not file
+it.

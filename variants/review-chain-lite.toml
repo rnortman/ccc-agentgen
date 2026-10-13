@@ -1,0 +1,45 @@
+name = "review-chain-lite"
+
+# The same chain without the ELI5 rendering, the review pre-pass and the
+# round-close scan, exploring from the designer itself, and cheaper throughout.
+[defaults]
+model = "claude-opus-5-5[1M]"
+effort = "medium"
+codex_model = "gpt-5.6-terra"
+codex_effort = "low"
+codex_sandbox = "workspace-write"
+
+[vars]
+increment_target_min = 400
+increment_target_max = 600
+increment_stop_lines = 1000
+round_cap_lines = 3000
+max_increments = 3
+designer_spawns_explorers = false
+
+[roles.orchestrator]
+effort = "low"
+codex_effort = "medium"
+
+[roles.designer]
+model = "claude-opus-5-5[1M]"
+effort = "high"
+codex_model = "gpt-6-astra"
+codex_effort = "medium"
+
+[roles.design-reviewer]
+model = "claude-opus-5-5[1M]"
+effort = "medium"
+codex_effort = "medium"
+
+[roles.implementer]
+
+[roles.citizen-reviewer]
+
+[roles.tracer-reviewer]
+
+[roles.test-reviewer]
+
+[roles.judge]
+
+[roles.changelog-author]

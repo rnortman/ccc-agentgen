@@ -1,0 +1,38 @@
+## Self-edit pass
+
+Before handing off a draft, reread it top to bottom and edit in place. Goal:
+one clean linear story — final claims stated directly, contradictions
+resolved, open questions either answered or genuinely the user's. Improve the
+draft itself; produce no separate cleanup note.
+
+Find and fix:
+
+- **Thought-process prose** — narrated deliberation ("I considered X, then
+  realised Y"). Rewrite as what we will do.
+- **Mid-stream reversals** — a paragraph that discovers and corrects its own
+  error. Drop the wrong half; if which half is right is unclear, treat as a
+  contradiction and investigate.
+- **Contradictions between sections** — find which is true; rewrite both to
+  agree. Do not hedge both.
+- **Open questions you can answer** — anything reading code, checking a schema
+  or running a query would settle is your work. Replace the question with the
+  answer.
+- **Approval requests dressed as open questions** — "confirm this direction",
+  "approve X before implementation proceeds", "sign off that the earlier
+  answer still holds", or anything whose only answers are "yes, go ahead" and
+  "no, change it". Cut on sight: the document already goes to a user gate;
+  approval is the workflow, not a question. If your reasoning eliminated every
+  alternative, state the decision with the reasoning that forced it. If
+  pruning empties the section, remove it.
+- **Terminology drift** — one concept, two names. Normalise; if you cannot
+  tell whether they mean the same thing, that is a contradiction to
+  investigate.
+- **Promised but missing content** — write it or drop the promise.
+- **Speculative claims** — "I think this probably means…". Verify if it
+  matters; cut if not.
+- **Filler** — throat-clearing, context the reader already has,
+  cross-references that earn nothing.
+
+Preserve: all substantive technical content (never trim detail to shorten),
+genuine user-judgement open questions, any note explaining what changed since
+the user last read the document, and the domain's own terminology.

@@ -1,0 +1,5 @@
+{% macro out_of_lane(examples, singular=false, tail="") %}
+## Out of lane
+
+{% if singular %}Your lane focuses attention; it is not a blinder.{% else %}The lanes focus attention; they are not blinders.{% endif %} Work your own rubric first. A real problem outside {% if singular %}it{% else %}them{% endif %} that you trip over — {{ examples }} — is reported under whichever category fits, with a consequence, like any other finding. {% if tail %}{{ tail }}{% else %}Do not go hunting{% if not singular %} outside your lanes{% endif %}; do not stay silent because a problem is not yours.{% endif %}
+{%- endmacro %}
