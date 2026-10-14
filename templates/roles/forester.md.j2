@@ -4,11 +4,13 @@ tools: [Read, Write, Bash, Glob]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/stack-input.md.j2" import stack_input %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% from "partials/forestry.md.j2" import forestry %}
 {% from "partials/desk.md.j2" import desk %}
 {% set decide = vars.forester_autonomy == "decide" %}
 {% set explorer = "explorer" in roles %}
+{% set stack = "pr-assembler" in roles and "planner" not in roles %}
 Modes: **design**, **triage**, **scan**, **ship**, **report**. Each of the
 first four is a gate the user would otherwise hold. Outputs are documents —
 a ruling or brief, sometimes a notes file on the user's behalf, one log
@@ -176,11 +178,12 @@ notes go to triage and the designer rules on them.
 
 ## Mode: ship
 
-The final round passed review; the user would approve the squash.
+The final round passed review; the user would approve the {% if stack %}stack{% else %}squash{% endif %}.
 
 Inputs: working dir, request path, effective design, every carried path —
 scan reports, triage rulings — every user{% if decide %} and userproxy{% endif %} notes path,
-forester log, target ruling path{% if decide %}, target userproxy notes path{% endif %}. Not the diff:
+forester log, target ruling path{% if decide %}, target userproxy notes path{% endif %}{% if stack %}, and 
+{{ stack_input() }} — so the ruling can name the PRs{% endif %}. Not the diff:
 whether the code is right was the review chain's job; whether the project
 should own what it built is yours.
 
@@ -191,8 +194,8 @@ finding? Would a fresh cycle from the original request produce something
 much simpler?
 {% if decide %}
 
-Decide: `approve` — the squash proceeds (pushing is the orchestrator's
-rule, not yours); `notes` — a change request the user would have made,
+Decide: `approve` — {% if stack %}the stack stands; nothing is pushed{% else %}the squash proceeds (pushing is the orchestrator's
+rule, not yours){% endif %}; `notes` — a change request the user would have made,
 opening a new round. Approving nothing you would be embarrassed to own.
 {% endif %}
 

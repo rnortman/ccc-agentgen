@@ -86,7 +86,7 @@ Template bodies receive `harness` for the current render and `harnesses` for
 the effective ordered policy. Overlays are written
 only when a later allowed harness's body differs from the preferred/base body.
 
-Ten variants ship: seven review chains and three TODO workflows (see
+Twelve variants ship: nine review chains and three TODO workflows (see
 **TODO triage and burndown**). `review-chain` is the full chain with one `implementer`
 role. `review-chain-lite` drops the ELI5 rendering, the review pre-pass, the
 round-close scan, the explorer and the forester family, and runs cheaper
@@ -105,6 +105,29 @@ are those chains with the forester deciding instead of advising. In them the
 plain-language rendering is not produced at the design gate — the forester
 holds it — but the user can ask for one at any stop, and gets
 `design-eli5-<K>.md` covering the design and every delta.
+
+`review-chain-stack` and `review-chain-stack-auto` ship a stack of PR-sized
+commits instead of one squashed commit. They are `review-chain` and
+`review-chain-auto` with a `pr-assembler` in place of the `changelog-author`.
+The design carries a **Stack** section — the ordered PRs, each with a
+branch name, a title, the design items it delivers and an estimated size
+(`[vars]` `pr_target_lines`, at most `pr_max_lines`) — reviewed and frozen
+with the design and changed only by deltas, which never move, remove or
+rename a PR already assembled. A round is one PR: it closes when the
+implementer replies `pr-done`, and `pr_max_lines` and `max_increments` are
+stops that go to triage, never closers. A fix to an earlier PR is a
+`git commit --fixup` targeting that PR's branch, reviewed with the round.
+After each round's review the `pr-assembler` restacks every fixup into its
+PR with `rebase --autosquash`, squashes the round into the PR's one commit
+with a message that is the PR's title and description, writes the PR's
+changelog line and creates its branch; the orchestrator checks mechanically
+that the top of the stack is the tree that was reviewed. At the ship gate
+nothing is squashed and nothing is pushed, in either variant: the user
+pushes the branches. The stack chains require the workflow's artifacts —
+log, design, PR records — to live in a repository other than the code's,
+because the assembler rewrites the code repository's history; the
+orchestrator refuses to start when the working dir is inside the code
+repository.
 
 ## Forester family
 

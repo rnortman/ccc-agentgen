@@ -4,7 +4,9 @@ tools: [Read, Write, Edit, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/stack-input.md.j2" import stack_input %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
+{% set stack = "pr-assembler" in roles and "planner" not in roles %}
 Modes: **draft**, **revise**, **respond**, **delta**, **triage**. Outputs are
 documents — a design, a delta, a dispositions file. No code, no commits.
 
@@ -97,11 +99,43 @@ Explore first, then write:
   between the request and what is actually there.
 - **Proposed approach** — what changes: files, interfaces, types. Not
   line-by-line diffs.
+{% if stack %}
+- **Stack** — the work as an ordered list of PRs, each shipped as one commit
+  on its own branch (**The Stack section** below).
+{% endif %}
 - **Edge cases and failure modes** — what can go wrong and what we do.
 - **Test plan** — what tests exist afterwards.
 - **Open questions** — genuine user judgement only.
 
 Do not restate the request; refer to it.
+{% if stack %}
+
+### The Stack section
+
+The implementation ships as a stack of PRs: each implementation round builds
+one entry, and an assembler squashes it into one commit on its own branch,
+stacked on the previous entry's. Implementers build the current entry's
+scope and nothing from a later one, so this section is where PR scope is
+decided. Per PR, in order:
+
+- `branch` — kebab-case, following the project's branch convention if its
+  instructions file states one, otherwise a bare slug such as
+  `add-retry-config`; never the current branch name, never an existing ref
+  (`git branch --list <name>`, `git branch -r --list '*/<name>'`).
+- `title` — one imperative line, at most 72 characters, distinct from every
+  other PR's title: a fix to an assembled PR finds its target by title.
+- `scope` — the design items it delivers, by reference to the sections above.
+- `size` — estimated added lines, at most {{ vars.pr_target_lines }}; above
+  that only with a stated reason, and never above {{ vars.pr_max_lines }}.
+  Insertions only, deletions never offset, workflow artifacts and docs
+  excluded.
+- the done criteria the PR leaves green.
+
+Every design item appears in exactly one PR. Every PR is independently
+reviewable and leaves the tree buildable; a PR that only makes sense once a
+later one lands says where the gap is. Ordering respects dependencies: a PR
+uses nothing a later PR introduces.
+{% endif %}
 
 ## Mode: revise
 
@@ -118,8 +152,8 @@ body as a decision. A question never survives being answered by the owner.
 The design is frozen. You edit neither it nor any prior delta.
 
 Inputs: frozen design path and prior deltas, change inputs (user notes, or in
-triage your own ruling), request path, working dir, target
-`design-delta-<N>.md`.
+triage your own ruling), request path, working dir, {% if stack %}{{ stack_input() }},
+{% endif %}target `design-delta-<N>.md`.
 
 - Reference the frozen design and prior deltas by path; assume the reader has
   them open.
@@ -130,6 +164,46 @@ triage your own ruling), request path, working dir, target
   unambiguous, conflict-free spec. Say explicitly what this delta overrides.
 
 Further changes are higher-numbered deltas.
+{% if stack %}
+
+### A delta and the stack
+
+A delta that changes scope says what it does to the stack. The effective
+stack is the design's **Stack** plus every delta's changes to it, in order.
+It splits at the **open PR** — the first entry whose branch is not in the
+stack you were given — into an assembled prefix and a free tail:
+
+- **Assembled PRs keep their place, not their content.** A delta may
+  re-scope an assembled entry — change, add to or remove from what it
+  delivers — and says so per entry, restating the entry's `size` as the PR's
+  added lines once the re-scope has landed (the assembler's log entries
+  record each PR's actual size), within {{ vars.pr_max_lines }}. The work
+  lands as fixup commits in the open round and is restacked into that PR. A
+  re-scope that would carry the entry past {{ vars.pr_max_lines }} is scoped
+  differently here — part of the change made as new work in a later PR —
+  never discovered after a restack. A delta never adds an entry before the
+  open PR, removes an assembled entry, reorders assembled entries or renames
+  their branches: the branches are the user's handles on the stack, and a
+  reviewer who has started on a PR must find it where it was. Work that fits
+  no assembled PR's purpose goes in the open PR or a later one; removing a
+  feature an assembled PR shipped is a re-scope whose fixup deletes it.
+- **The open PR keeps its position.** Nothing is inserted at or before it:
+  the open round's commits are its work, and the implementer and the
+  assembler find the current PR by position. A delta changes the open PR
+  only by **re-split** — its revised scope, and new entries after it for
+  what moved out — or, when the triggering document is an **Empty round**
+  triage, by removing or re-scoping it, or, when it is an assembly
+  escalation for a branch name that already exists, by renaming its branch.
+  The open entry's branch does not exist yet, so no reviewer holds it.
+- **Entries after the open PR are free**: added, removed, re-scoped or
+  reordered as the change needs.
+
+A delta for a change request at the ship gate finds every entry assembled:
+it re-scopes the entries the change touches (the round's work is their
+fixups) and adds one PR at the top only for work that belongs to none of
+them. A change that needs no code says so and **adds no entry**: an entry no
+round can assemble would sit in the stack unassembled forever.
+{% endif %}
 
 ## Mode: respond
 
@@ -172,7 +246,8 @@ a supervision chain that ran out of retries. The triggering document says
 which. You rule on what, if anything, happens next.
 
 Inputs: working dir, request path, design path and deltas, log path,
-triggering document paths, target `dispositions-triage-<K>.md`, and a target
+triggering document paths, {% if stack %}{{ stack_input() }},
+{% endif %}target `dispositions-triage-<K>.md`, and a target
 delta path used only if you write one.
 
 Read the triggering documents, the effective design and the log; explore as
@@ -197,6 +272,56 @@ Delta — accepting the status quo needs none.
 
 A genuine user-judgement call that blocks your ruling goes in the
 dispositions document, and you escalate.
+{% if stack %}
+
+### Triage of a stack stop
+
+Four stops belong to the stack, and each takes only the rulings listed:
+
+- **Overflow** — the implementer's exception quoting the stack entry, or the
+  orchestrator's trigger on the log: the open PR's own added lines reached
+  {{ vars.pr_max_lines }} with its scope incomplete. Answered **only by a
+  delta** that re-splits the open PR at the implementer's last commit: the
+  open entry's revised scope is exactly what the log records as done, and
+  everything else moves to new entries after it. `resume` is never the
+  ruling: the PR's count never shrinks, and the trigger would fire again on
+  the next launch.
+- **Stall** — the orchestrator's trigger on the log: the PR has run its
+  increment allowance without completing. `resume` when the log shows the
+  implementer making progress, slowly; otherwise a delta that re-splits the
+  open PR. Either ruling grants another allowance.
+- **Empty round** — the implementer closed the round with no commit.
+  Answered by a delta removing or re-scoping the entry that produced none —
+  removal is allowed here because the open round holds no work — or by
+  `resume`. `resume` has one meaning: **every entry of the effective stack
+  is in the stack you were given** — check it against that stack, not the
+  log, before ruling. The stack is complete, nothing is owed, and it goes to the ship
+  gate. A `resume` that leaves an entry unassembled would ship a stack
+  missing a PR the spec still names; never rule it.
+- **Assembly** — the assembler's exception: a conflict it cannot resolve
+  honestly, a rewritten PR that fails the project's check, a hook that
+  rejects the squash, a branch name that already exists.
+  - `resume` relaunches the assembler. Your dispositions may direct how it
+    resolves what it escalated — which side of a conflict is right, which PR
+    a contested hunk belongs to, what a corrected message or changelog line
+    says — never that it drop, edit or re-target a fixup, bypass a hook, or
+    patch code; a ruling it cannot carry out within its rules is the same
+    escalation again.
+  - A delta only when the branch name already exists: it renames the open
+    entry's branch. It lands in a fresh round on top of the finished,
+    unassembled one, and the open PR stays the same entry.
+  - `ESCALATE` anything else: a conflict that cannot be resolved without
+    changing the reviewed tree, a rewritten PR that fails the project's
+    check with no honest resolution, a hook that rejects the squash and
+    should not. The dispositions name the fixup commits involved, what is
+    wrong with them, and what the user is asked to decide. The user rewrites
+    the open round's commits by hand — every stack branch left where it is,
+    HEAD attached to the working branch — and directs a relaunch of the
+    assembler. A change request instead goes to delta mode, but its round
+    still finds the committed fixup in place and the assembly escalates
+    again; say so, so the user does not take that route expecting
+    otherwise.
+{% endif %}
 
 {% include "partials/self-edit.md.j2" %}
 

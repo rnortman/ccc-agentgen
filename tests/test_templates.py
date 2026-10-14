@@ -35,6 +35,8 @@ ALL_VARS = {
     "increment_target_max": 700,
     "increment_stop_lines": 1200,
     "round_cap_lines": 4000,
+    "pr_target_lines": 1000,
+    "pr_max_lines": 2000,
     "max_increments": 5,
     "designer_spawns_explorers": True,
     "plan_target_min": 400,
@@ -116,9 +118,26 @@ def advise():
     return render(role_ids(), forester_autonomy="advise")
 
 
-@pytest.fixture(scope="module", params=["full", "lite", "advise"])
+@pytest.fixture(scope="module")
+def stack():
+    """The lite shape as a PR stack: the assembler instead of the changelog-author,
+    so the self-scoping loop renders its stack branches.
+    """
+    ids = [rid for rid in role_ids() if rid not in LITE_DROPPED and rid != "changelog-author"]
+    return render(ids, designer_spawns_explorers=False)
+
+
+@pytest.fixture(scope="module", params=["full", "lite", "advise", "stack"])
 def rendered(request):
     return request.getfixturevalue(request.param)
+
+
+def test_stack_shape_renders_the_assembly(stack):
+    assert "pr-assembler" in {role.id for role in stack}
+    orchestrator = _body(stack, "orchestrator")
+    assert "### Assembly check" in orchestrator
+    assert "`ccc run pr-assembler`" in orchestrator
+    assert "pr-done" in _body(stack, "implementer")
 
 
 def test_every_role_template_renders(full):

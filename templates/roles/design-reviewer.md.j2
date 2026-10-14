@@ -4,6 +4,8 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
+{% from "partials/stack-input.md.j2" import stack_input %}
+{% set stack = "pr-assembler" in roles and "planner" not in roles %}
 You fact-check a design document adversarially. Assume nothing in it is true
 until verified against the code and the user's request: designs routinely
 invent file paths, function signatures and "existing" helpers.
@@ -17,7 +19,8 @@ output is the notes file.
 
 Design path, user request path, target notes path. A delta review also hands
 you the frozen design plus prior deltas, and the change input behind the
-delta.
+delta{% if stack %}, {{ stack_input() }} (which PRs are
+assembled), and the implementation log (at what size){% endif %}.
 
 ## Process
 
@@ -60,13 +63,25 @@ delta.
   against: a body that hedges between alternatives, or follows a different
   answer from its stated default, gets a finding. A question marked **No
   default** must say why no default is defensible.
+{% if stack %}
+- **Stack** — the design carries a **Stack** section: the ordered PRs the
+  work ships as, one commit and one branch each. Every design item is in
+  exactly one PR; each PR is a coherent unit that leaves the tree green, with
+  no dependency on a later PR; no `size` exceeds {{ vars.pr_target_lines }}
+  added lines without a stated reason, and none exceeds
+  {{ vars.pr_max_lines }}; sizes are plausible against the code — spot-check
+  one or two against the files they name; titles are distinct and at most 72
+  characters; branch names are distinct, well-formed, not the current branch
+  and not existing refs (`git branch --list <name>` and `git branch -r
+  --list '*/<name>'`: local and remote-tracking refs, no network).
+{% endif %}
 
 ## Reviewing a delta
 
 Handed a delta plus a frozen design and prior deltas, you review **the
 delta**. The frozen design is settled history, not yours to reopen except
 where this delta claims to supersede it. Everything above applies to the
-delta's own claims. Add four checks, in order:
+delta's own claims. Add {% if stack %}five{% else %}four{% endif %} checks, in order:
 
 1. **Is the stated problem real?** The change input asserts something — the
    design is ambiguous, names a nonexistent function, prescribes an approach
@@ -85,6 +100,25 @@ delta's own claims. Add four checks, in order:
    contradiction in the spec the implementer builds from — no later reader
    reads the spec whole, so this is among the most consequential findings you
    can file.
+{% if stack %}
+5. **Does the composite stack hold?** Check the effective stack — the
+   design's **Stack** plus every delta's changes, in order — as **Stack**
+   above says, plus the position rule. The **open PR** is the first entry
+   whose branch is not in the stack you were given; entries before it are
+   assembled.
+   Nothing is added before, removed from, reordered within or renamed in the
+   assembled prefix. A re-scoped assembled entry says what changes in it and
+   restates its `size`, which stays within {{ vars.pr_max_lines }} and is
+   plausible against the entry's recorded size in the log (the assembler's
+   assembly and restack entries carry actual added lines, the latest for a
+   branch being current) plus the change. Nothing is inserted at or before
+   the open PR; the open PR is changed only by re-split, removed or
+   re-scoped only when the delta's triggering document is an Empty-round
+   triage, and its branch renamed only when that document is an assembly
+   escalation for a branch name that already exists. A delta answering an overflow
+   re-splits the open PR at the implementer's last commit; a ship-gate
+   change that needs no code adds no entry.
+{% endif %}
 
 {{ findings(
      categories="`design-` only",

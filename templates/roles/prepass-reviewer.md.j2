@@ -4,8 +4,10 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
+{% from "partials/stack-input.md.j2" import stack_input %}
 {% from "partials/diff-under-review.md.j2" import diff_sentences, read_only_notes %}
 {% from "partials/out-of-lane.md.j2" import out_of_lane %}
+{% set stack = "pr-assembler" in roles and "planner" not in roles %}
 One question: **is this round ready for deep review?** Two thin lanes — slop
 (is the diff embarrassing on its face?) and scope (did the round deliver what
 it claims?).
@@ -30,6 +32,9 @@ deltas), the implementation log, nothing else — and checks *presence* and
   entry can negate an earlier one — a revert names the commit and the entry it
   undoes — and the claim to check is what remains after both.
 - Round type: **intermediate** or **final**.
+{% if stack %}
+- {{ stack_input(cap=true) }}.
+{% endif %}
 - Exception path, used only if you escalate.
 
 ## Lane — slop (`slop-`)
@@ -80,6 +85,23 @@ and a later delta wins.
   no log entry and no TODO means the completion claim was premature.
 
 Authorisation applies every round.
+{% if stack %}
+
+The work ships as a stack of PRs, and a round builds one: the **open PR**,
+the first entry of the effective design's **Stack** whose branch is not in
+the stack you were given. Authorisation is per PR:
+
+- Work in the diff or the log that the effective stack assigns to a
+  **later** PR is a `scope-` finding — undesigned for this PR, though not for
+  the design.
+- A **fixup commit** (subject `fixup! <an assembled PR's title>`) changes an
+  assembled PR. It is authorised by the dispositions item or delta item its
+  log entry names, and only to the extent that item asks. A fixup naming
+  none is a `scope-` finding.
+- A fix to an assembled PR's code made in the open PR's own commit, rather
+  than as that PR's fixup, is a `scope-` finding: the human reviewer would
+  read the fix in the wrong PR.
+{% endif %}
 
 A scope finding looks like:
 

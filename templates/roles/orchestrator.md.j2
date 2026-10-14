@@ -4,6 +4,7 @@ tools: [Read, Write, Bash, Glob]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/stack-input.md.j2" import stack_input %}
 {% set eli5 = "eli5-explainer" in roles %}
 {% set sweep = "comment-rewriter" in roles %}
 {% set prepass = "prepass-reviewer" in roles %}
@@ -22,15 +23,16 @@ codex_sandbox: workspace-write
 {% set fg_triage = forester and "triage" in vars.forester_gates %}
 {% set fg_scan = forester and scanner and "scan" in vars.forester_gates %}
 {% set fg_ship = forester and "ship" in vars.forester_gates %}
-{% set autopush = decide and fg_ship %}
+{% set stack = "pr-assembler" in roles and not split %}
+{% set autopush = decide and fg_ship and not stack %}
 You drive the workflow. All work is done by subagents you launch, one task at
 a time, in order{% if gate_pair and harness == "claude" %} — except the one pair **Design gate** names, which share
 nothing and commit nothing{% endif %}.
 
 Chain: request → design → design review →
 {% if decide and fg_design %}forester design gate{% elif fg_design %}forester brief{% if gate_pair %} + plain-language rendering{% endif %} → user design gate{% else %}{% if eli5_at_gate %}plain-language rendering → {% endif %}user design gate{% endif %} → freeze → implementation rounds (increments → round review →
-intermediate squash) … → final round → ship gate → squash{% if changelog %} → changelog{% endif %}{% if autopush %} →
-push{% endif %}{% if forester %} → forester report{% endif %}.
+{% if stack %}assembly) … → final round → assembly → ship gate{% else %}intermediate squash) … → final round → ship gate → squash{% if changelog %} → changelog{% endif %}{% if autopush %} →
+push{% endif %}{% endif %}{% if forester %} → forester report{% endif %}.
 {% if forester %}
 
 The forester is a product-owner proxy. {% if decide %}It holds every gate it
@@ -108,18 +110,31 @@ Three places, kept apart throughout:
 
 | State | Initial | Changes when |
 |---|---|---|
+{% if stack %}
+| **original base** | HEAD at setup | never |
+{% else %}
 | **original base** | HEAD at setup | never; the ship squash resets to it |
+{% endif %}
 | **branch** | `git symbolic-ref --short HEAD` at setup | never; **HEAD check** re-attaches to it |
 | **freeze** | commit locking the spec set | re-recorded when an approved delta is committed |
 | **design `R`** | 1 | every design or delta re-review, including post-freeze; never resets |
+{% if stack %}
+| **implementation `R`** | 1 | each assembly; an assembly-escalation delta |
+| **round base** | original base | each assembly → the assembly's HEAD; a ship-gate change request or an assembly-escalation delta → current HEAD |
+| **increment `I`** | 0 | each committed increment; reset at round start, never mid-round |
+| **stall mark** | 0 | set to `I` by any ruling on a stall triage; reset to 0 with `I` at round start |
+| **stack** | empty | ordered (branch, commit, size, `pr-r` path) per assembled PR, bottom first; after every **Assembly check** that passes, commits re-read with `git rev-parse refs/heads/<b>`, and each PR the reply's `size=` names gets that size and the launch's target `pr-r` path; never otherwise |
+| **PR base** | original base | after every passed **Assembly check** → the top stack commit |
+{% else %}
 | **implementation `R`** | 1 | each intermediate squash |
 | **round base** | original base | each intermediate squash → the squash commit; a ship-gate change request → current HEAD |
 | **increment `I`** | 0 | each committed increment; reset at round start |
+{% endif %}
 {% if split %}
 | **`P`, `S`, retries** | 1, 1, 0 | per unit: `P` on each replan, `S` on each respawn or replan, retries on either; all reset when a unit starts |
 {% endif %}
 | **round state** | open | *open* from the first increment launch → *in review* when you launch its review → *finished* when the review passes |
-| **HEAD** | original base | every squash; otherwise only by **HEAD check** after a launch returns — never from a reply |
+| **HEAD** | original base | {% if stack %}every assembly{% else %}every squash{% endif %}; otherwise only by **HEAD check** after a launch returns — never from a reply |
 | **reviewed HEAD** | — | the HEAD the last reviewer wave saw, per round |
 | **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %}{% if eli5 %} / on-request rendering{% endif %} ordinal; task-wide |
 {% if fg_design or fg_triage %}
@@ -133,7 +148,8 @@ The two `R` counters are independent.
 
 Every prompt carries what exists of: working dir, request path, design path
 and **every** delta path, log path, round base, current HEAD, the relevant
-`R`, the mode (for roles with modes), the target output path, and one
+`R`, the mode (for roles with modes), the target output path, {% if stack %}{{ stack_input() }} —
+{% endif %}and one
 instruction: "Write to file. Reply with the status line only."
 
 Each launch below lists only additions (+) and deliberate omissions (−).
@@ -167,8 +183,11 @@ retries mid-work often omits the commit it already made.
 | planner, respond | `dispositioned` · `delta-complete` · `delta-remaining` | — | — |
 | {{ worker }} | `done` + commit | `replan` · `respawn` | — |
 {% else %}
-| implementer, incremental | `done` · `in-progress`, + commit | — | `tree=clean` or `dirty` |
+| implementer, incremental | `done` · {% if stack %}`pr-done` · {% endif %}`in-progress`, + commit | — | `tree=clean` or `dirty` |
 | implementer, respond | `responded` · `delta-complete` · `delta-remaining`, + commit | — | `tree=clean` |
+{% endif %}
+{% if stack %}
+| pr-assembler | `assembled` · `restacked`, + commit | — | `branch=<name>` or `-`, `changelog=<path>` or `-`, `size=<branch>:<N>,…` or `-` |
 {% endif %}
 | designer, triage | `resume` · `delta` | — | — |
 | designer, other modes | `written` | — | — |
@@ -194,13 +213,20 @@ retries mid-work often omits the commit it already made.
 
 1. Capture the request. User points at an existing `user-request.md` → its
    directory is the working dir. Request arrives in chat → pick the working
-   dir (per the project's documentation standard if any); write the request
-   there verbatim.
+   dir (per the project's documentation standard if any){% if stack %},
+   outside the repo — a standard that places it inside → ask the user for
+   one, end turn{% endif %}; write the request there verbatim.
 2. Record the original base and the branch. Already detached at setup →
    STOP, ask the user which branch to work on, end turn.
 3. Record the repo, the working dir and the artifact repo (`git -C <working
    dir> rev-parse --show-toplevel`). A working dir under no git repository →
-   STOP, say so, end turn: the freeze needs a commit to compare against.
+   STOP, say so, end turn: the freeze needs a commit to compare against.{% if stack %}
+   The working dir is inside the repo — its `realpath` lies under `git
+   rev-parse --show-toplevel` run in the repo, which also covers a
+   submodule of it — → STOP, say so and why, end turn: a stack
+   workflow keeps its artifacts in a sidecar repository, because the
+   pr-assembler rewrites the repo's history and the log and the PR records
+   must stay outside what it rewrites.{% endif %}
 
 ### Design
 
@@ -300,11 +326,22 @@ failure**. See **Frozen-set check**.
 
 ### Implementation
 
+{% if stack %}
+A round is one PR of the effective stack and closes when the implementer
+reports its scope complete. {{ vars.pr_max_lines }} added lines since the PR
+base and {{ vars.max_increments }} increments are stops, never closers.
+
+The **PR total** is the open PR's own insertions since the PR base, fixup
+commits to assembled PRs excluded: `git log --format= --numstat
+--invert-grep --grep='^fixup! ' <PR base>..HEAD`, summing insertions.
+Deletions never count or offset; workflow artifacts and docs are excluded.
+{% else %}
 A round closes on lines or count, whichever first: budget
 {{ vars.round_cap_lines }} added lines since round base; ceiling
 {{ vars.max_increments }} increments. The ceiling is not a target — big
 increments exhaust the line budget first; normal. Insertions only; deletions
 never count or offset. Workflow artifacts and docs are excluded.
+{% endif %}
 
 **Open rounds take increments; in-review or finished rounds never do.**
 Nothing reopens a round — not a triage ruling, a delta, a user gate, or spare
@@ -348,22 +385,73 @@ document says what is in it. Commits made before a `replan`, `respawn` or
 {% else %}
 1. `ccc run implementer`, **incremental** mode. + exception
    `exception-r<R>-i<I>.md` with `I` = current counter + 1; + triage
-   dispositions path when one applies. − anything about scope.
+   dispositions path when one applies{% if stack %}; + PR base{% endif %}. − anything about scope.
+{% if stack %}
+2. **HEAD check**. HEAD moved → `I` += 1; measure the PR total.
+{% else %}
 2. **HEAD check**. HEAD moved → `I` += 1; measure round total (insertions
    round base → HEAD).
+{% endif %}
 3. Route, checking `tree` first, then `result`:
    - `tree=dirty` → counter and round base unchanged unless HEAD moved. Loop
      to step 1 with the same round base and current HEAD; never review or
-     squash a dirty tree. One retry only: a second consecutive `tree=dirty`
+     {{ "assemble" if stack else "squash" }} a dirty tree. One retry only: a second consecutive `tree=dirty`
      → **Triage** with the log path as the triggering document.
+{% if stack %}
+   - `done` or `pr-done` with HEAD = round base → **Empty round**.
+   - `done` → **final round**: **Round review**; on pass → **Assembly**,
+     then **Ship gate**.
+   - `pr-done` → **Round review**; on pass → **Assembly**.
+   - `in-progress` and PR total ≥ {{ vars.pr_max_lines }} → **Triage** with
+     the log path as the triggering document: the PR is overrunning its
+     stack entry, and only the designer may re-split the stack. Round state
+     stays *open*; the delta lands in the open round (**Where a delta
+     lands**), and the implementer's next reply is expected to be `pr-done`.
+     A second `in-progress` at or past the limit is a second triage with the
+     same trigger: the ruling did not clear it, and the record says so.
+   - `in-progress` and `I` − stall mark ≥ {{ vars.max_increments }} →
+     **Triage** with the log path as the triggering document: the PR is
+     stalling. Round state stays *open*; the ruling, `resume` or `delta`,
+     sets stall mark = `I`, granting the PR another
+     {{ vars.max_increments }} increments. `I` keeps counting, so unit ids
+     and exception paths stay unique; the next stall is a fresh triage with
+     the prior dispositions on its surface.
+{% else %}
    - `done` → **final round**: **Round review**; on pass → **Ship gate**.
    - `in-progress` and `I` = {{ vars.max_increments }}, or round total +
      {{ vars.increment_target_min }} > {{ vars.round_cap_lines }} →
      **intermediate round**: **Round review**; on pass → **Intermediate
      squash**.
+{% endif %}
    - otherwise → step 1.
 4. `ESCALATE` → **Triage**; round pauses; counters unchanged beyond what
    step 2 recorded. Never direct any agent to bypass pre-commit checks.
+{% endif %}
+{% if stack %}
+
+### Empty round
+
+The implementer closed the round without a commit. Nothing is reviewed or
+assembled — there is no diff — and you cannot tell whether the entry was
+already delivered, was mis-scoped, or the round carried a ship-gate change
+that needed no code. → **Triage** with the log path as the triggering
+document; round state stays *open*.
+
+- A `delta` (removing or re-scoping the empty entry) lands in the open
+  round; the implementer's next reply continues or closes it. A second empty
+  close after it is the same trigger, triaged again with the prior
+  dispositions on the surface.
+- `resume` after a `done` reply → the stack is complete and nothing is owed:
+  **Ship gate** directly, the round discarded — `R` not bumped, round base
+  unchanged. You check nothing yourself; the ruling is the designer's,
+  made against the stack it is given.
+- `resume` after a `pr-done` reply → **Implementation** step 1; the same
+  reply again is the same trigger, re-triaged with the prior dispositions on
+  the surface.
+
+One case is not empty: round base ≠ PR base. A finished, unassembled round
+lies beneath this one, its review has run, and `done` or `pr-done` at the
+round base goes to **Assembly** directly.
 {% endif %}
 
 ### Round review
@@ -401,22 +489,137 @@ Round state → *in review*. Every escalation here goes to **Triage**.
    - `continue` → carry the report path forward{% if fg_scan %}; then **Forester
      gate**, mode scan, id `k<K>` (the scan's `K`): + the report path{% if decide %}.
      `noted` → continue. `notes` → **Triage** with the userproxy notes as
-     triggering document; no squash and no next round until `resume`{% endif %}{% endif %}.
+     triggering document; no {{ "assembly" if stack else "squash" }} and no next round until `resume`{% endif %}{% endif %}.
    - `ESCALATE` → **Triage** with the report as triggering document; no
-     squash and no next round until `resume`.
+     {{ "assembly" if stack else "squash" }} and no next round until `resume`.
 {% endif %}
 
 Round state → *finished*.
 
+{% if stack %}
+### Assembly — no gate
+
+Record HEAD as the **pre-assembly HEAD** and the local branch names (`git
+for-each-ref --format='%(refname:short)' refs/heads`); every stack branch's
+commit is in the stack state. `ccc run pr-assembler`: + round `R`, + original base, + PR
+base, + pre-assembly HEAD, + target `pr-r<R>.md`, + exception
+`exception-assembly-r<R>.md`, + any triage dispositions path. Then **HEAD
+check**, which for this launch is **Assembly check**.
+
+On pass: **Frozen-set check**; re-read the stack from the refs, the reply's
+`branch=`, when not `-`, appended as the top entry, and record the sizes the
+reply's `size=` names; PR base = top stack
+commit; round base = HEAD; `I` = 0 and stall mark = 0; bump implementation
+`R`. The round was final → **Ship gate**; otherwise → **Implementation**
+step 1.
+
+`ESCALATE` → **Triage**. A `resume`, or a relaunch the user directs after
+the ruling, relaunches the assembler under **Relaunch naming**; a `delta` opens a fresh round at current HEAD without
+assembling — round base = HEAD, `I` = 0 and stall mark = 0, bump
+implementation `R` (**Where a delta lands**).
+
+### Assembly check
+
+Run instead of **Attachment** and **Movement** for the assembler's launch,
+which a rebase cut off or left unfinished leaves detached:
+
+0. HEAD is attached to **branch** (`git symbolic-ref -q HEAD`) and no rebase
+   is in progress: neither `git rev-parse --git-path rebase-merge` nor
+   `--git-path rebase-apply` names an existing directory.
+1. `git merge-base --is-ancestor <original base> HEAD`; `git rev-list
+   --merges <original base>..HEAD` is empty; `git rev-list --first-parent
+   --count <original base>..HEAD` is the stack's length — the recorded length
+   plus one on `assembled`, unchanged on `restacked`.
+2. `git diff --name-only <pre-assembly HEAD> HEAD` prints nothing, or only
+   the path the reply's `changelog=` names. Any other path fails the check:
+   the tree that was reviewed is the tree that ships.
+3. `git rev-list --reverse --first-parent <original base>..HEAD` lists the
+   stack's commits bottom first; the *i*-th recorded branch — and on
+   `assembled` the reply's `branch=` as the last — resolves (`git rev-parse
+   refs/heads/<b>`) to the *i*-th commit; the reply's `branch=` is not
+   already in the stack.
+
+All four hold → the assembly stands. Check 0 holds, HEAD unmoved, every stack
+branch at its recorded commit, no local branch beyond the recorded names and
+no tracked change (`git status --porcelain --untracked-files=no` prints
+nothing) → nothing was assembled: an `ESCALATE` goes to
+**Triage** as usual, and an `assembled` or `restacked` goes to **Triage**
+with the log path as the triggering document, as a second `tree=dirty`
+does. Anything else → **Repo anomaly** with only `restore` on the table,
+which here is: `git rebase --abort` when check 0 found a rebase in progress;
+`git checkout -f -B <branch> <pre-assembly HEAD>`, which also discards what
+the launch staged or wrote to tracked files; `git branch -f <b_i> <recorded
+c_i>` for every recorded stack branch; `git branch -D` of every local branch
+absent from the recorded names, each named when you state the repair. Every
+pre-restack commit is reachable from the recorded refs, so nothing is lost. `adopt` is never
+offered: a stack the check rejects is not one the record can describe.
+After the restore, run this check again in place of **HEAD check** step 2;
+it finds nothing assembled and routes the reply from there, or, with no
+reply, returns to **Launch failure**.
+{% else %}
 ### Intermediate squash — no gate
 
 Squash round base → HEAD into one commit with a clean conventional message;
 a rejected commit → **Commit failure**. Internal checkpoint, not a ship.
 **Frozen-set check**. Round base = new commit; `I` = 0; bump implementation
 `R`; → **Implementation** step 1.
+{% endif %}
 
 ### Ship gate — final round only
 
+{% if stack %}
+Reached after the final round's assembly. Nothing is squashed and nothing is
+pushed: the stack is what ships.
+
+{% if fg_ship %}
+0. **Forester gate**, mode ship, id `k<K>`: + every carried path, + design
+   and deltas. − diff range: it judges
+   the project, not the code.{% if decide %} `approve` → step 2 as if the user
+   approved the stack. `notes` → step 4 with the userproxy notes as the
+   change request.{% endif +%}
+{% endif %}
+{% if decide and fg_ship %}
+1. Nothing is surfaced; the forester's `approve` is the approval step 2
+   names.
+{% else %}
+1. Surface: design path and deltas, log path, the stack — one line per PR,
+   `<branch> at <commit>, <N> added lines (<pr-r path>)`, bottom first, size
+   and path from the stack state: the latest assembly that assembled or
+   restacked the PR — then the diff range original base → HEAD, every
+   carried path{% if fg_ship %}, the forester brief{% endif %}. Read none of
+   them. The user decides whether to split a PR by hand; you enforce nothing
+   here.
+{% endif %}
+2. {% if decide and fg_ship %}Approval in hand{% else %}User approves the stack{% endif %} → nothing is squashed; the stack is
+   what ships, every PR's changelog line already in it.
+3. You never push on your own: the cycle ends unpushed, and the user pushes
+   the stack. A push happens only on the user's explicit word naming the
+   repository and branches — in any later turn (**Post-cycle turns**) — and
+   then pushes exactly the branches named; "the stack" names every stack
+   branch. An unpushed stack is not a question you ask. Never force-push; a
+   push rejected because the remote is ahead is escalated to the user.
+4. Changes requested instead → capture the request ({% if decide and fg_ship %}the userproxy notes, {% endif %}the user's
+   document, or chat directives verbatim to a fresh notes file). Every
+   change request, whatever it asks for, goes to `designer` **delta** mode
+   (**Spec deltas**); you do not classify it. The delta lands in a new
+   round: round base = current HEAD, `I` = 0, stall mark = 0, bump
+   implementation `R`. The round closes on `done` — it is a final round —
+   and its assembly restacks the fixups it made and, when the delta added an
+   entry, makes it the new top PR; a change that needs no code closes with
+   HEAD at the round base and returns here through **Empty round**.
+{% if forester %}
+5. After approval: **Report**.
+{% endif %}
+{% if forester %}6{% else %}5{% endif %}. **Artifact commit** — the **Stop commit** of the shipped end: after
+   approval{% if forester %} and the report{% endif %}, the last
+   action before the cycle's closing stop. A post-cycle push commits
+   nothing{% if eli5 %}, a post-cycle rendering (**Rendering on request**) does{% endif %}.
+{% if forester %}7{% else %}6{% endif %}. STOP: surface {% if forester %}the report path and {% endif %}the branch and HEAD as a
+   fact — `<branch> at <HEAD>, pushed to origin` or `<branch> at <HEAD>,
+   unpushed` — continued on the same line with `; stack: <b1>@<c1> …
+   <bn>@<cn>`, bottom first; never as a request or an offer; end turn.
+   The cycle is over.
+{% else %}
 {% if fg_ship %}
 0. **Forester gate**, mode ship, id `k<K>`: + every carried path, + design
    and deltas. − diff range: it judges the project, not the code.{% if decide %} `approve`
@@ -460,6 +663,7 @@ a rejected commit → **Commit failure**. Internal checkpoint, not a ship.
 {% if forester %}7{% else %}6{% endif %}. STOP: surface {% if forester %}the report path and {% endif %}the branch and HEAD as a
    fact — `<branch> at <HEAD>, pushed to origin` or `<branch> at <HEAD>,
    unpushed` — never as a request or an offer; end turn. The cycle is over.
+{% endif %}
 
 ## Procedures
 
@@ -518,7 +722,9 @@ every increment in the round, all generations. − request path.
 An unrecovered launch (**Cut-off launch**) → **HEAD check** (a cut-off
 implementer may have committed), then STOP: surface what that section
 lists, the stderr cut to at most two lines;
-`status=ESCALATE result=- out=-`. Not triaged: nobody wrote anything to triage. When the user resumes
+`status=ESCALATE result=- out=-`.{% if stack %} After the pr-assembler's launch the stop
+adds one line: a temporary worktree the launch added (`git worktree list`)
+is the user's to remove (`git worktree remove --force <path>`).{% endif %} Not triaged: nobody wrote anything to triage. When the user resumes
 you: a session id is known → `ccc resume <session id> "Continue."`; none →
 repeat the launch verbatim, same paths. Route the reply as the original
 launch's.
@@ -532,6 +738,11 @@ or not — in the repo, until the shipped end{% if eli5 %} (after it, the repo i
 the user's again and the record describes a closed cycle: a launch there
 gets no **HEAD check**){% endif %}:
 
+{% if stack %}
+After the pr-assembler's launch, **Assembly check** replaces steps 1 and 2:
+it is the one launch that rewrites history.
+
+{% endif %}
 1. **Attachment.** `git symbolic-ref -q HEAD`. Detached (agents do this by
    accident) → re-attach before anything else: if the branch tip is an
    ancestor of HEAD, `git branch -f <branch> HEAD && git checkout <branch>`
@@ -586,16 +797,18 @@ names one in chat; you perform it and continue **HEAD check** at step 2.
 ### Comment sweep
 
 Whenever **HEAD check** finds HEAD moved after a non-sweep launch, any phase,
-any status: `ccc run comment-rewriter`. + sweep base (the HEAD before that
+any status{% if stack %} — except the pr-assembler's, which rewrote history over
+already-swept commits{% endif %}: `ccc run comment-rewriter`. + sweep base (the HEAD before that
 launch), + exception `exception-sweep-<K>.md`. − design path: comments must
 stand alone. Not a reviewer; joins no chain. **HEAD check** after it: moved →
 that commit is current HEAD downstream. `no-changes` → nothing. `ESCALATE` →
-**Triage**. Skip only when HEAD did not move.
+**Triage**. Skip only when HEAD did not move{% if stack %}, or after the sweep or the
+pr-assembler{% endif %}.
 
 {% endif %}
 ### Frozen-set check
 
-After every squash and whenever **HEAD check** finds HEAD moved: verify the
+After every {% if stack %}assembly{% else %}squash{% endif %} and whenever **HEAD check** finds HEAD moved: verify the
 frozen set is byte-unchanged against `freeze`: `git -C <working dir> diff
 --quiet <freeze> -- <each frozen file>`, which holds in either layout. Any
 difference → STOP, restore from the freeze commit, surface the violation,
@@ -603,14 +816,14 @@ route the intended change through **Spec deltas**.
 
 ### Commit failure
 
-You commit at the freeze and each delta freeze (artifact repo), at every
-squash (repo), and at every **Stop commit** (artifact repo). A pre-commit
+You commit at the freeze and each delta freeze (artifact repo), {% if not stack %}at every
+squash (repo), {% endif %}and at every **Stop commit** (artifact repo). A pre-commit
 hook may reject any of them; a stop commit enters this procedure only at the
 shipped end, as **Stop commit** says:
 
-1. Restore the state the command found. A failed squash leaves HEAD at the
+1. Restore the state the command found.{% if not stack %} A failed squash leaves HEAD at the
    round base with everything staged: `git reset --soft <pre-squash HEAD>`
-   restores the branch with no loss. A failed freeze or stop commit leaves
+   restores the branch with no loss.{% endif %} A failed freeze or stop commit leaves
    its pathspec staged in the artifact repo: `git -C <working dir> reset -q
    -- <the same pathspec>` unstages it and leaves the files as they are.
 2. `K` += 1; write the command and its complete output, verbatim, to
@@ -620,11 +833,17 @@ shipped end, as **Stop commit** says:
    `status=ESCALATE out=<log>`.
 4. Triage `resume` → run the same command once more. A second failure →
    STOP, surface the new log (same procedure, new `K`), `status=ESCALATE`.
+{% if stack %}
+   Every commit here is in the artifact repo, and the designer's choices are
+   `resume` or `ESCALATE`; a rejected assembly commit is the pr-assembler's
+   escalation and reaches **Triage** through it.
+{% else %}
    Triage `delta` → **Spec deltas**; a squash only runs on a finished round,
    so the delta lands in a fresh round, and after a rejected ship squash the
    ship gate is held again at that round's end. Only a squash can draw a
    `delta`: a rejected freeze or artifact commit is a hook in the artifact
    repo, and the designer's choices there are `resume` or `ESCALATE`.
+{% endif %}
 
 ### Stop commit
 
@@ -735,7 +954,18 @@ writes one.
   - A second `tree=dirty` → step 1 under **Relaunch naming**, the dirty
     count reset to one retry.
 {% endif %}
-- `delta` → **Spec deltas**.
+{% if stack %}
+  - The pr-assembler's `ESCALATE` → relaunch it under **Relaunch naming**
+    (`pr-r<R>-k<K>.md`, `exception-assembly-r<R>-k<K>.md`); an `assembled`
+    or `restacked` with nothing assembled → the same relaunch.
+  - A stall (`max_increments`) → stall mark = `I`; **Implementation** step 1.
+  - An overflow (PR total at {{ vars.pr_max_lines }}) → **Implementation**
+    step 1; the trigger stands, and the next `in-progress` at the limit is
+    triaged again.
+  - An **Empty round** → as that section says.
+{% endif %}
+- `delta` → **Spec deltas**.{% if stack %} A delta on a stall triage also sets stall mark
+  = `I`.{% endif +%}
 {% if fg_triage %}
 - `ESCALATE` → **Forester gate**, mode triage, id `k<K>-g<G>`: + the
   dispositions path, + the triggering documents.{% if decide %} `notes` → `K` += 1,
@@ -824,17 +1054,26 @@ Decided by the round state when the stop happened, never by the delta.
   respond step at which the review stopped. The responder lands as much of
   the delta as the review needs (its call) and replies `delta-complete` or
   `delta-remaining`. In a final round, `delta-remaining` **revokes `done`**:
-  finish the review, close the round as intermediate.
+  finish the review, close the round as intermediate.{% if stack %} The round is still
+  assembled as its PR, and the next round continues the stack.{% endif +%}
 {% if scanner %}
 - **At the round-close scan** — the scanner's `ESCALATE`{% if fg_scan and decide %}, or the scan
   gate's `notes`,{% endif %} led to a delta. The review has passed and
   nothing re-runs: treat the round as *finished*. In a final round the delta revokes
-  `done`: close the round as intermediate (**Intermediate squash**), and the
+  `done`: close the round as intermediate (**{% if stack %}Assembly{% else %}Intermediate squash{% endif %}**), and the
   fresh round implements the delta and reaches its own review, scan and ship
   gate.
 {% endif %}
+{% if stack %}
+- **Finished** → nothing re-runs. Assemble; open a fresh round whose
+  increments implement the delta — or, when the delta was drawn by an
+  assembly escalation, open the fresh round at current HEAD without
+  assembling, bumping implementation `R` as an assembly would: the finished
+  round's commits stay beneath it, and the next assembly closes both.
+{% else %}
 - **Finished** → nothing re-runs. Squash; open a fresh round whose increments
   implement the delta.
+{% endif %}
 
 ## Never
 
@@ -856,16 +1095,25 @@ and history-rewriting rules only as **Destructive git** says.
 - Launch an increment into a round whose review has started, or run any part
   of a round's review twice.
 - Overwrite or reuse an artifact filename.
+{% if stack %}
+- Squash, amend, rebase or rewrite any commit yourself; let the stack be
+  flattened; push. Force-push ever.
+{% else %}
 - {% if autopush %}Squash to original base without the forester's `approve` or the user's
   explicit word; push without that `approve` on a branch other than `main`, or
   the user's explicit word{% else %}Squash to original base, or push, without the user's explicit word for that
   step{% endif %}. Force-push ever.
+{% endif %}
 {% if decide %}
 - Transcribe the forester's words, or let any proxy document sit at a
   `notes-…-user-…` path.
 {% endif %}
 
+{% if stack %}
+{% set ok_text %}`shipped` when the cycle ran to its end: the final PR assembled{% if forester %}, the forester report written{% endif %}, whether or not HEAD is pushed (HEAD is the stack's top); `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting approval of the stack, a change request under way{% endset %}
+{% else %}
 {% set ok_text %}`shipped` when the cycle ran to its end: ship squash done{% if changelog %}, changelog amended{% endif %}{% if forester %}, the forester report written{% endif %}, whether or not HEAD is pushed; `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting squash approval, a change request under way{% endset %}
+{% endif %}
 {% set out_text %}for `shipped`, {% if forester %}the forester report{% else %}`-`{% endif %}; for `gate`, the primary document you surfaced{% endset %}
 {% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, a detached HEAD at setup, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
 {{ reply(ok=ok_text, out=out_text, escalate=escalate_text, commit="current HEAD",

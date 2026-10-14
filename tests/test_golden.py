@@ -42,6 +42,9 @@ SPLIT_STEMS = (SPLIT_STEM, AUTO_STEM)
 PLANNER_STEM = "review-chain-planner"
 PLANNER_AUTO_STEM = "review-chain-planner-auto"
 PLANNER_STEMS = (PLANNER_STEM, PLANNER_AUTO_STEM)
+STACK_STEM = "review-chain-stack"
+STACK_AUTO_STEM = "review-chain-stack-auto"
+STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM)
 TRIAGE_STEM = "todo-triage"
 BURNDOWN_STEM = "todo-burndown"
 BURNDOWN_AUTO_STEM = "todo-burndown-auto"
@@ -69,6 +72,7 @@ STAGE_VOCABULARY = {
     "coder": ("coder",),
     "coder-supervisor": ("supervisor",),
     "comment-rewriter": ("sweep",),
+    "pr-assembler": ("pr-assembler", "assembl", "stack", "pr-done", "pr-r<", "fixup", "restack"),
 }
 
 # Every model string the shipped variants may name. ccc validates efforts but
@@ -97,6 +101,8 @@ RESULTS = {
     # The implementer behind a planner lands plans, so it speaks the supervisor's
     # vocabulary instead of choosing its own slices.
     "implementer/planned": {"done", "replan", "respawn"},
+    # The implementer of a stack variant also closes a PR short of the design.
+    "implementer/stack": {"done", "pr-done", "in-progress", "responded", "delta-complete", "delta-remaining"},
     "designer": {"written", "resume", "delta"},
     "design-reviewer": {"findings", "no-findings"},
     "prepass-reviewer": {"findings", "no-findings"},
@@ -109,6 +115,7 @@ RESULTS = {
     "eli5-explainer": {"written"},
     "explorer": {"written"},
     "changelog-author": {"written"},
+    "pr-assembler": {"assembled", "restacked"},
     "forester": {"written", "approve", "noted", "notes", "adopt", "restore"},
     "forester-commentator": {"written"},
     "sketcher": {"written"},
@@ -122,7 +129,9 @@ RESULTS = {
 }
 
 # Backticked words in a reply section that are grammar, not `result` tokens.
-GRAMMAR_WORDS = {"status", "result", "out", "commit", "tree", "round", "clean", "dirty", "close", "open"}
+GRAMMAR_WORDS = {
+    "status", "result", "out", "commit", "tree", "round", "clean", "dirty", "close", "open", "branch", "changelog", "size",
+}
 BACKTICKED_TOKEN_RE = re.compile(r"`([a-z][a-z-]*)`")
 
 
@@ -197,6 +206,8 @@ def test_shipped_variants_are_committed():
             PLANNER_AUTO_STEM,
             SPLIT_STEM,
             AUTO_STEM,
+            STACK_STEM,
+            STACK_AUTO_STEM,
             TRIAGE_STEM,
             BURNDOWN_STEM,
             BURNDOWN_AUTO_STEM,
@@ -267,6 +278,20 @@ def test_shipped_variants_together_cover_every_role_template(builds):
     assert shipped == set(role_template_ids(TEMPLATES))
 
 
+def _assert_no_vocabulary(build: Build, forbidden) -> None:
+    """No role of `build` carries a `forbidden` word, lower-cased, in its
+    description or any rendered body.
+    """
+    for role in build.roles:
+        description = role.frontmatter.get("description", "").lower()
+        for word in forbidden:
+            assert word not in description, f"{build.stem}/{role.id}: description: {word}"
+        for filename, body in build.bodies(role.id):
+            lowered = body.lower()
+            for word in forbidden:
+                assert word not in lowered, f"{build.stem}/{filename}: {word}"
+
+
 def test_lite_bodies_carry_no_trace_of_a_dropped_stage(lite: Build, dropped_roles):
     """Pruning has to take the stage's vocabulary with it, not just its id."""
     missing = [d for d in dropped_roles if d not in STAGE_VOCABULARY]
@@ -274,11 +299,7 @@ def test_lite_bodies_carry_no_trace_of_a_dropped_stage(lite: Build, dropped_role
     forbidden = sorted(
         {d for d in dropped_roles} | {w for d in dropped_roles for w in STAGE_VOCABULARY[d]}
     )
-    for role in lite.roles:
-        for filename, body in lite.bodies(role.id):
-            lowered = body.lower()
-            for word in forbidden:
-                assert word not in lowered, f"{filename}: {word}"
+    _assert_no_vocabulary(lite, forbidden)
 
 
 def test_planner_bodies_carry_no_trace_of_the_split_workers(builds):
@@ -289,15 +310,7 @@ def test_planner_bodies_carry_no_trace_of_the_split_workers(builds):
         build = builds[stem]
         dropped = sorted(set(builds[SPLIT_STEM].variant.role_ids) - set(build.variant.role_ids))
         assert dropped == ["coder", "coder-supervisor"], stem
-        forbidden = sorted({w for d in dropped for w in STAGE_VOCABULARY[d]})
-        for role in build.roles:
-            assert not any(w in role.frontmatter.get("description", "").lower() for w in forbidden), (
-                f"{stem}/{role.id}: description"
-            )
-            for filename, body in build.bodies(role.id):
-                lowered = body.lower()
-                for word in forbidden:
-                    assert word not in lowered, f"{filename}: {word}"
+        _assert_no_vocabulary(build, sorted({w for d in dropped for w in STAGE_VOCABULARY[d]}))
 
 
 def test_lite_designer_spawns_nobody(lite: Build):
@@ -628,6 +641,7 @@ def _autopush(variant: Variant) -> bool:
         "forester" in variant.roles
         and variant.vars.get("forester_autonomy") == "decide"
         and "ship" in variant.vars.get("forester_gates", ())
+        and "pr-assembler" not in variant.roles
     )
 
 
@@ -876,6 +890,9 @@ def test_orchestrator_spawns_only_the_variants_increment_roles(builds):
             elif stem in PLANNER_STEMS:
                 assert {"planner", "implementer"} <= spawns, filename
                 assert not ({"coder-supervisor", "coder"} & spawns), filename
+            elif stem in STACK_STEMS:
+                assert {"pr-assembler", "implementer"} <= spawns, filename
+                assert not ({"planner", "coder-supervisor", "coder"} & spawns), filename
             else:
                 assert "implementer" in spawns, filename
                 assert not ({"planner", "coder-supervisor", "coder"} & spawns), filename
@@ -917,6 +934,8 @@ def test_result_vocabulary_is_closed(built: Build):
             key = role.id
             if role.id == "implementer" and "planner" in built.by_id:
                 key = "implementer/planned"
+            elif role.id == "implementer" and "pr-assembler" in built.by_id:
+                key = "implementer/stack"
             assert found == RESULTS[key], filename
             emitted[role.id] |= found
     drivers = [role.id for role in built.roles if role.id in DRIVERS]
@@ -1199,3 +1218,319 @@ def test_ccc_resolves_every_emitted_type(built: Build, tmp_path_factory):
             assert done.returncode == 2, role.id
             assert "rejects harness claude" in done.stderr, role.id
             assert "allowed harnesses: codex" in done.stderr, role.id
+
+
+def _stack_builds(builds) -> list[Build]:
+    stacks = [build for build in builds.values() if "pr-assembler" in build.variant.roles]
+    assert sorted(build.stem for build in stacks) == sorted(STACK_STEMS)
+    return stacks
+
+
+def test_stack_vocabulary_is_absent_elsewhere(builds):
+    """A variant without the assembler keeps no stack; none of the stack's
+    words may leak into it, in a body or a description.
+    """
+    forbidden = STAGE_VOCABULARY["pr-assembler"]
+    for build in builds.values():
+        if "pr-assembler" in build.variant.roles:
+            continue
+        _assert_no_vocabulary(build, forbidden)
+
+
+def test_stack_orchestrator_keeps_the_stack(builds):
+    """The orchestrator verifies the assembler's rewrite and never squashes,
+    rebases or pushes itself.
+    """
+    for build in _stack_builds(builds):
+        for name, body in build.bodies("orchestrator"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert "### Assembly — no gate" in body, where
+            assert "### Assembly check" in body, where
+            assert "### Empty round" in body, where
+            for phrase in (
+                "`git diff --name-only <pre-assembly HEAD> HEAD`",
+                "--first-parent",
+                "--invert-grep",
+                "branch=",
+                "restacked",
+                "stall mark",
+                "; stack: <b1>@<c1>",
+                "--git-path rebase-merge",
+                "git checkout -f -B <branch> <pre-assembly HEAD>",
+                "git for-each-ref --format='%(refname:short)' refs/heads",
+                "absent from the recorded names",
+                "`size=`",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            if "Nothing is surfaced; the forester's `approve`" not in flat:
+                assert "<N> added lines (<pr-r path>)" in flat, where
+            assert "paths under the working dir" not in flat, where
+            setup = _section(body, "### Setup")
+            for phrase in (
+                "outside the repo — a standard that places it inside → ask the user",
+                "The working dir is inside the repo — its `realpath` lies under `git rev-parse --show-toplevel`",
+                "→ STOP, say so and why, end turn: a stack workflow keeps its artifacts in a sidecar repository",
+            ):
+                assert phrase in setup, f"{where}: {phrase}"
+            cut_off = _section(body, "### Launch failure")
+            for phrase in ("git worktree list", "git worktree remove --force"):
+                assert phrase in cut_off, f"{where}: {phrase}"
+            for phrase in ("`PR <branch> assembled` entry", "by hand"):
+                assert phrase not in cut_off, f"{where}: {phrase}"
+            check = _section(body, "### Assembly check")
+            assert "run this check again in place of **HEAD check** step 2" in check, where
+            assert "no longer describes the repository" not in check, where
+            payload = flat.split("## Standard payload")[1].split("## Replies")[0]
+            assert "the stack — branch and commit per assembled PR" in payload, where
+            assert "or a relaunch the user directs after the ruling" in _section(body, "### Assembly — no gate"), where
+            naming = _section(body, "## Artifacts and their names")
+            assert "relaunch of the pr-assembler the user directs" in naming, where
+            ship = _section(body, "### Ship gate")
+            assert "**Artifact commit** — the **Stop commit** of the shipped end:" in ship, where
+            assert "artifact repo is not the repo" not in ship, where
+            assert "### Intermediate squash" not in body, where
+            assert "squash to **original base**" not in flat, where
+            assert "folding every round into one" not in flat, where
+            assert "changelog-author" not in flat, where
+            never = _section(body, "## Never")
+            for word in ("Squash", "rebase", "push"):
+                assert word in never, f"{where}: {word}"
+            assert "A failed squash" not in _section(body, "### Commit failure"), where
+            assert "REBASE_HEAD" not in flat, where
+            assert "`pr-r<R>.md` names the branch" not in flat, where
+            naming = _section(body, "## Artifacts and their names")
+            for entry in ("`pr-r<R>.md`", "`exception-assembly-r<R>.md`"):
+                assert entry in naming, f"{where}: {entry}"
+
+
+def test_stack_assembler_keeps_history_safe(builds):
+    """The assembler checks before it writes, never moves a ref it does not
+    own, restores everything on an escalation, and reports what it measured.
+    """
+    for build in _stack_builds(builds):
+        for name, body in build.bodies("pr-assembler"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            identify = flat.split("2. **Restack**")[0]
+            for phrase in (
+                "git status --porcelain --untracked-files=no",
+                "git rev-parse -q --verify refs/heads/<name>",
+                "before you write anything",
+                "not in the stack the orchestrator passed",
+            ):
+                assert phrase in identify, f"{where}: {phrase}"
+            assert "no `PR <branch> assembled` entry" not in identify, where
+            for phrase in (
+                "GIT_SEQUENCE_EDITOR=true git -c core.commentChar=';' rebase -i --autosquash",
+                "git diff --quiet <pre-assembly HEAD> HEAD",
+                "`git branch <name> HEAD` — never `-f`",
+                "git rebase --abort",
+                "git worktree remove --force <path>",
+                "git checkout -f -B <working branch> <pre-assembly HEAD>",
+                "git branch -f <b_i> <recorded c_i>",
+                "git branch -D <name>",
+                "Never push",
+                f"past {build.variant.vars['pr_max_lines']} stays whole",
+                "size=<sizes|->",
+            ):
+                assert phrase.lower() in flat.lower(), f"{where}: {phrase}"
+            log_entry = flat.split("5. **Compose the log entry**")[1].split("6. **Squash**")[0]
+            assert "the last write before the reply" in log_entry, where
+            assert "No escalation writes it" in log_entry, where
+            for removed in ("log-only", "--amend", "inside the repo", "same-repo", "**fold**", "or the fold", "withdraw"):
+                assert removed not in flat, f"{where}: {removed}"
+            assert re.search(r"\bsed\b", flat) is None, where
+            restack = flat.split("2. **Restack**")[1].split("3. **Measure**")[0]
+            assert "`amend! <that PR's commit subject>`" in restack, where
+            assert "--allow-empty" in restack, where
+            for phrase in (
+                "at most one `amend!` per PR",
+                "No other `amend!` carries content",
+                "at the top of the stack and nowhere else",
+                "git log -1 --format=%B <its branch>",
+                "git -c core.commentChar=';' rebase --continue",
+            ):
+                assert phrase in restack, f"{where}: {phrase}"
+            for removed in ("correct both", "stage only that path", "folds it into", "one per corrected pr"):
+                assert removed not in restack.lower(), f"{where}: {removed}"
+            assert flat.count("core.commentChar=';'") == 2, where
+            squash = flat.split("6. **Squash**")[1].split("7. **Branches**")[0]
+            assert "correcting any restacked PR's line" in squash, where
+            message = flat.split("## Commit message standard")[1].split("## Changelog standard")[0]
+            assert "No line begins with `;`" in message, where
+            assert "how the next implementer finds" not in flat, where
+            assert "`reword`" not in flat and "`edit` in the same rebase" not in flat, where
+            assert "names nothing beyond the path you reply as `changelog=`" in flat, where
+            assert "relative to the repository root" in flat, where
+            assert flat.count("GIT_SEQUENCE_EDITOR") == flat.count("GIT_SEQUENCE_EDITOR=true") == 1, where
+            for line in flat.lower().split(". "):
+                if "push" in line:
+                    assert "never push" in line or "pushes" not in line, f"{where}: {line}"
+
+
+def test_stack_assembly_ruling_bounds_agree(builds):
+    """What an assembly `resume` ruling may and may not direct reads the same
+    in the designer that writes the ruling and the assembler that obeys it.
+    """
+    bounds = (
+        "which side of a conflict is right, which PR a contested hunk belongs to, "
+        "what a corrected message or changelog line says",
+        "drop, edit or re-target a fixup, bypass a hook, or patch code",
+        "cannot carry out within",
+        "is the same escalation again",
+    )
+    for build in _stack_builds(builds):
+        for name, body in build.bodies("designer"):
+            triage = " ".join(_section(body, "### Triage of a stack stop").split())
+            for phrase in bounds:
+                assert phrase in triage, f"{build.stem}/{name}: {phrase}"
+        for name, body in build.bodies("pr-assembler"):
+            identify = " ".join(body.split()).split("2. **Restack**")[0]
+            for phrase in bounds:
+                assert phrase in identify, f"{build.stem}/{name}: {phrase}"
+
+
+def test_stack_forester_approves_the_stack(builds):
+    """In a stack build the forester's ship ruling approves a stack it can
+    name, and never a squash.
+    """
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        stack = "pr-assembler" in build.variant.roles and "planner" not in build.variant.roles
+        for name, body in build.bodies("forester"):
+            ship = " ".join(body.split("## Mode: ship")[1].split("## Mode: repo")[0].split())
+            where = f"{build.stem}/{name}"
+            assert ("would approve the stack" in ship) == stack, where
+            assert (STACK_INPUT in ship) == stack, where
+            if "Decide: `approve`" in ship:
+                assert ("the stack stands; nothing is pushed" in ship) == stack, where
+                assert ("the squash proceeds" in ship) == (not stack), where
+
+
+STACK_INPUT = "stack — branch and commit per assembled PR, bottom first; empty before the first assembly"
+
+
+STACK_INPUT_MODES = {
+    "orchestrator": (),
+    "implementer": ("## Mode: incremental", "## Mode: respond"),
+    "designer": ("## Mode: delta", "## Mode: triage"),
+    "design-reviewer": (),
+    "prepass-reviewer": (),
+    "pr-assembler": (),
+    "forester": ("## Mode: ship",),
+}
+
+
+def test_stack_input_is_described_once(builds):
+    """Every role handed the stack describes it in the one shared wording, once
+    per mode that takes it, and the payload carries it, so no launch line adds
+    it again.
+    """
+    for build in _stack_builds(builds):
+        for role, modes in STACK_INPUT_MODES.items():
+            if role not in build.by_id:
+                continue
+            for name, body in build.bodies(role):
+                where = f"{build.stem}/{name}"
+                assert " ".join(body.split()).count(STACK_INPUT) == max(len(modes), 1), where
+                for mode in modes:
+                    section = " ".join(_raw_section(body, mode).split())
+                    assert STACK_INPUT in section, f"{where}: {mode}"
+        for name, body in build.bodies("orchestrator"):
+            assert "+ the stack" not in " ".join(body.split()), f"{build.stem}/{name}"
+
+
+def test_stack_implementer_knows_its_pr(builds):
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        if "implementer" not in build.by_id:
+            continue
+        stack = "pr-assembler" in build.variant.roles
+        for name, body in build.bodies("implementer"):
+            flat = " ".join(body.split())
+            phrases = ("pr-done", "within the current PR", "--fixup=")
+            for phrase in phrases:
+                assert (phrase in flat) == stack, f"{stem}/{name}: {phrase}"
+            if stack:
+                assert f"**{build.variant.vars['pr_max_lines']}**" in flat, f"{stem}/{name}"
+                assert "in the stack you were given" in flat, f"{stem}/{name}"
+                for removed in (
+                    "log-only",
+                    "When the log lives in the repository",
+                    "withdraw",
+                    "revert --no-commit",
+                    "`PR <branch> assembled`",
+                    "TODO(quality-open-pr-decided-by-two-sources)",
+                ):
+                    assert removed not in flat, f"{stem}/{name}: {removed}"
+
+
+def test_stack_variants_have_no_changelog_author(builds):
+    """The assembler writes each PR's changelog line, to the standard the
+    changelog-author keeps for the squashing chains.
+    """
+    standard = "A changelog is not a commit log."
+    for build in _stack_builds(builds):
+        assert "changelog-author" not in build.variant.roles, build.stem
+        for name, body in build.bodies("pr-assembler"):
+            assert standard in body, f"{build.stem}/{name}"
+    for name, body in builds[FULL_STEM].bodies("changelog-author"):
+        assert standard in body, name
+
+
+def test_stack_variants_use_the_self_scoping_loop(builds):
+    """A stack round is scoped by the implementer against its PR; no planner
+    splits it, and the implementer renders the self-scoping loop.
+    """
+    for build in _stack_builds(builds):
+        assert not ({"planner", "coder", "coder-supervisor"} & set(build.variant.roles)), build.stem
+        for name, body in build.bodies("implementer"):
+            flat = " ".join(body.split())
+            assert "## Mode: incremental" in body, f"{build.stem}/{name}"
+            assert "`in-progress`" in flat, f"{build.stem}/{name}"
+            for word in ("`replan`", "`respawn`", "planner"):
+                assert word not in flat, f"{build.stem}/{name}: {word}"
+
+
+def test_stack_designer_and_reviewer_carry_the_stack_section(builds):
+    """PR scope is decided in the design's Stack section and checked at design
+    and delta review; the pre-pass holds each round to its own PR.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = "pr-assembler" in build.variant.roles
+        target = build.variant.vars.get("pr_target_lines")
+        limit = build.variant.vars.get("pr_max_lines")
+        for name, body in build.bodies("designer"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            assert ("- **Stack** —" in flat) == stack, where
+            assert ("keep their place, not their content" in flat) == stack, where
+            assert ("### Triage of a stack stop" in body) == stack, where
+            if stack:
+                assert f"at most {target};" in flat, where
+                assert f"never above {limit}" in flat, where
+                assert "whose branch is not in the stack you were given" in flat, where
+            assert "assembly entry in the log" not in flat, where
+        if "design-reviewer" not in build.by_id:
+            continue
+        for name, body in build.bodies("design-reviewer"):
+            enforce = " ".join(body.split("## Enforce")[1].split("## Reviewing a delta")[0].split())
+            where = f"{stem}/{name}"
+            assert ("**Stack** —" in enforce) == stack, where
+            if stack:
+                assert f"exceeds {target} added lines" in enforce, where
+                assert f"none exceeds {limit}" in enforce, where
+                assert "**Does the composite stack hold?**" in body, where
+                delta_check = " ".join(body.split("**Does the composite stack hold?**")[1].split())
+                assert "whose branch is not in the stack you were given" in delta_check, where
+            assert "assembly entry in the log" not in " ".join(body.split()), where
+        if "prepass-reviewer" not in build.by_id:
+            continue
+        for name, body in build.bodies("prepass-reviewer"):
+            flat = " ".join(body.split())
+            assert ("assigns to a **later** PR" in flat) == stack, f"{stem}/{name}"
+            assert ("whose branch is not in the stack you were given" in flat) == stack, f"{stem}/{name}"
+            assert "assembly entry in the log" not in flat, f"{stem}/{name}"

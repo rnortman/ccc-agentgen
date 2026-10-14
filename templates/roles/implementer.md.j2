@@ -4,7 +4,9 @@ tools: [Read, Write, Edit, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/stack-input.md.j2" import stack_input %}
 {% set planned = "planner" in roles %}
+{% set stack = "pr-assembler" in roles and not planned %}
 {% if planned %}
 You turn a planner's document into committed code: a plan in an increment, a
 dispositions document in a respond step. A planner chose the slice and made
@@ -100,7 +102,7 @@ goes on top.{% else %}Every increment and every respond round is one commit.{% e
 - Stage only files you touched, plus the log when it lives in the repository
   you are committing to; an artifact outside it is committed by nobody but
   the orchestrator. Never the whole tree.
-- No amending, rewriting history or squashing — that is the orchestrator's.
+- No amending, rewriting history or squashing — that is the {% if stack %}pr-assembler's{% else %}orchestrator's{% endif %}.
 - **Every commit passes the project's pre-commit checks; bypassing them is
   forbidden.** Sole exception: a state the design explicitly declares cannot
   commit green — quote the design's words in the log entry. "My increment is
@@ -112,6 +114,37 @@ design does not declare the state → do not commit, weaken or skip the hooks,
 or hack the code to appease them. Leave the work in the tree, write the
 exception document (what you changed, which check failed with what output,
 your read on why), and escalate.
+{% if stack %}
+
+### The stack: the open PR's commits and fixups
+
+The design's **Stack** section, with deltas applied, is the ordered list of
+PRs this workflow ships, one commit and one branch each. An entry is
+**assembled** when it is in the stack you were given; the **open PR** is the
+first entry that is not. The log says what earlier rounds did and why, and
+is what the `pr-done` and `done` walks read; it never decides which entry
+is open. Every commit you make is either
+**the open PR's** or **a fixup to one assembled PR**, never both.
+
+- A change belongs to an assembled PR when a reviewer of that PR, reading it
+  after the stack is final, would see it as part of what that PR does: a
+  defect in code it introduced, a reviewer finding against it, a delta
+  re-scoping it. A change belongs to the open PR when the effective stack
+  assigns the work to the open PR, even where it edits lines an earlier PR
+  added — extending in PR 3 a function PR 1 introduced is PR 3's work.
+- A fixup is `git commit --fixup=refs/heads/<branch>`: git writes the
+  subject `fixup! <that PR's title>`, which is how the assembler finds its
+  target. It holds only that PR's changes — one fixup per target PR per
+  increment or respond round — and its log entry names the target branch
+  and the finding or delta item it lands.
+- A fixup is an ordinary commit in every other way: hooks pass, nothing is
+  amended or rebased, and no other branch is ever checked out. Folding it
+  into its PR is the pr-assembler's restack, the one history rewrite in the
+  chain.
+- A fixup never touches the **changelog** — the pr-assembler owns it;
+  implementers add no entries — and never the **log**, which in a stack
+  workflow lives outside the repository.
+{% endif %}
 
 {% if planned %}
 ## Inputs
@@ -194,11 +227,22 @@ says so in its document.
 ## Mode: incremental
 
 Inputs: design path and deltas, working dir, log path, round base, current
-HEAD, exception path, sometimes a triage dispositions path.
+HEAD, {% if stack %}PR base — the commit the open PR sits on,
+{{ stack_input() }}, {% endif %}exception path, sometimes a triage dispositions path.
 
 1. Read the design, deltas, log and any triage ruling — nothing else yet.
+{% if stack %}
+   Find the open PR from the stack (**The stack**).
+2. Choose the slice **within the current PR's scope**; write it into the
+   log as draft scope *before* exploring source. Work belonging to a later
+   PR is never taken, however adjacent; the band below and the stop apply
+   within the PR. Work a delta assigns to an assembled PR is taken as part
+   of the slice and committed as that PR's fixup. Walk the tests below
+   against the draft; redraft if any trips.
+{% else %}
 2. Choose the slice; write it into the log as draft scope *before* exploring
    source. Walk the tests below against the draft; redraft if any trips.
+{% endif %}
 3. Explore source only as the slice requires; implement it.
 4. Build the changed modules and run their tests. Whole-repo green is not
    required of an intermediate increment; the final one must pass the
@@ -257,12 +301,38 @@ log-reading task, not a code-reading one.
 
 "I finished my increment, so I am done" is the failure mode. `done` claims the
 whole design, not your slice. In doubt → `in-progress`.
+{% if stack %}
+
+### `pr-done` means the *PR* is done
+
+Reply `pr-done` iff the open PR's scope is complete and committed and the
+design is not. Walk the open entry's `scope` against the log — the same
+log-reading task as `done`. `done` implies the PR is complete; `in-progress`
+means it is not. A round with no open entry — every entry assembled, the
+round carrying a ship-gate change whose work is all fixups — closes on
+`done`.
+
+### Overflow
+
+Count the open PR's own insertions since the PR base — its own commits plus
+the open PR's share of your uncommitted work; fixup commits, and the fixup
+share of what you have not committed, never count. At
+**{{ vars.pr_max_lines }}** with the PR's scope incomplete: reach the nearest
+green commit, commit it, write the exception document — the stack entry
+quoted, what is done, what remains and its likely size, a proposed re-split
+at that commit — and `ESCALATE`. Running past the limit "to finish" is the
+failure mode. The designer re-splits by delta so that the open entry's scope
+is what is done; your successor, finding the revised entry complete against
+the log, replies `pr-done` without committing. A ruling that leaves the
+open entry incomplete at or past {{ vars.pr_max_lines }} is escalated again,
+the ruling quoted, not worked around.
+{% endif %}
 
 ## Mode: respond
 
 Inputs: design path and deltas, working dir, log path, base, current HEAD,
 notes file paths for this pass, target dispositions path, exception path, the
-round, sometimes a triage dispositions path.
+round, {% if stack %}{{ stack_input() }}, {% endif %}sometimes a triage dispositions path.
 
 {% include "partials/commentary-context.md.j2" %}
 
@@ -280,7 +350,12 @@ round, sometimes a triage dispositions path.
 3. Disposition each remaining finding per the rules below, applying fixes.
 4. Re-run build and tests, commit, append a log entry for what the commit
    changed. Respond-mode entries are short — the dispositions document carries
-   per-finding detail — but the same rules bind.
+   per-finding detail — but the same rules bind.{% if stack %} The open PR's fixes go
+   in one commit and each assembled PR's in its fixup (**The stack**); the
+   dispositions document says which PR each `Fixed` item landed in. Fixing a
+   defect in the PR that introduced it is the rule, not an option: a fix to
+   an assembled PR's code landed in the open PR is the churn this workflow
+   exists to avoid, and review treats it as a scope finding.{% endif %}
 5. Write the dispositions document.
 
 A rework round hands you a verdict naming disputed findings; work only those.
@@ -329,7 +404,7 @@ such a comment is right, and the disposition is to fix it.
          escalate="you wrote the exception document: design wrong or ambiguous, hooks you cannot pass, a toolchain failure, or anything else that blocks a green commit and is not the plan's fault. `result=-`; `out` is the exception path.",
          commit="your work commit on `done`; `-` otherwise") }}
 {% else %}
-{{ reply(ok="incremental: `done` or `in-progress`; respond: `responded`, or `delta-complete` / `delta-remaining` when a delta was handed to you",
+{{ reply(ok="incremental: `done`" ~ (", `pr-done`" if stack else "") ~ " or `in-progress`; respond: `responded`, or `delta-complete` / `delta-remaining` when a delta was handed to you",
          out="`-`",
          escalate="you wrote the exception document: design wrong or ambiguous, hooks you cannot pass, aggregate scope beyond patching, or a toolchain failure. `result=-`; `out` is the exception path.",
          commit="the commit you made; with `tree=dirty`, the HEAD you started from",

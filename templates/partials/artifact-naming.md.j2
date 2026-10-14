@@ -45,9 +45,11 @@ Ordinals:
 - **gate round `G`** — within one forester design or triage gate, from 1.
 {% endif %}
 
-**Relaunch naming** — after a triage `resume`, the stopped launch is run
+**Relaunch naming** — after a triage `resume`{% if "pr-assembler" in roles and not split %}, or a
+relaunch of the pr-assembler the user directs after a triage `ESCALATE`{% endif %}, the stopped launch is run
 again as the same step with the same ids. Every target path it would write takes the
-suffix `-k<K>` before the extension, `K` the ruling that resumed it:
+suffix `-k<K>` before the extension, `K` the ruling that resumed it{% if "pr-assembler" in roles and not split %} or
+preceded the user's direction{% endif %}:
 `exception-r1-i1-k2.md`, `dispositions-deep-r2-w2-a1-k12.md`{% if split %},
 `plan-r1-i1-p1-k2.md`, `handoff-r1-i1-s1-k2.md`{% endif %}. The log is
 append-only and keeps its name.
@@ -98,11 +100,18 @@ names.
 {% if "comment-rewriter" in roles %}
   - comment-rewriter: `exception-sweep-<K>.md`.
 {% endif %}
+{% if "pr-assembler" in roles and not split %}
+  - pr-assembler: `exception-assembly-r<R>.md`.
+{% endif %}
 {% if split %}
 - Plan: `plan-r<R>-i<I>-p<P>.md`. {% if "coder" in roles %}Supervisor{% else %}Implementer{% endif %} handoff: `handoff-r<R>-i<I>-s<S>.md`
   in an increment, `handoff-<step>-s<S>.md` in a respond step.
 {% endif %}
 - Triage ruling: `dispositions-triage-<K>.md`.
+{% if "pr-assembler" in roles and not split %}
+- Assembled PR: `pr-r<R>.md` — the PR's branch, the restacked branches, the
+  added lines of each, and the PR's commit message.
+{% endif %}
 {% if "workflow-scanner" in roles %}
 - Workflow scan: `workflow-scan-<K>.md`.
 {% endif %}

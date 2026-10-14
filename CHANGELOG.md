@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **New `review-chain-stack` and `review-chain-stack-auto` workflows ship a
+  stack of reviewable PRs instead of one squashed commit.** The design
+  splits the work into PRs of about 1,000 added lines (2,000 at most; both
+  configurable), each with its branch name and title. Each PR is built and
+  deep-reviewed on its own, then becomes one commit on its own branch,
+  stacked on the previous PR's, with a commit message you can use as the
+  PR's title and description and its own changelog line. A defect found
+  later in an earlier PR is fixed in that PR, so every PR reads as if it was
+  right the first time. Nothing is pushed: you post the branches when the
+  cycle ends. The workflow's documents must live in a separate repository
+  from your code; it refuses to start otherwise.
 - **The forester's answers to open questions now reach the design.** In
   `review-chain-auto`, `review-chain-split-auto`,
   `review-chain-planner-auto` and `todo-burndown-auto`, the forester's
