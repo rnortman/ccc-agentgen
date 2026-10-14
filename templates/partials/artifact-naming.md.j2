@@ -1,14 +1,17 @@
-{#- `chain`: the review chain's ordinals and file names; drivers without them pass false. #}
-{% macro artifact_naming(chain) %}
+{#- `chain`: the review chain's ordinals and file names; drivers without them pass false.
+    `eli5_at_gate`: the caller's flag for an automatic rendering at the design gate; read only under `chain`. #}
+{% macro artifact_naming(chain, eli5_at_gate=false) %}
 {% filter trim %}
 {% set split = "planner" in roles %}
 {% set worker = "coder-supervisor" if "coder" in roles else "implementer" %}
+{% set eli5 = "eli5-explainer" in roles %}
 ## Artifacts and their names
 
 {% if chain %}
 All workflow artifacts live in one directory as an audit trail. **Never write
 to an existing path.** Only exceptions: append-only logs, and draft documents
-edited in place until their gate — a spec document until frozen{% if split %}, a
+edited in place until their gate — a spec document until frozen{% if eli5_at_gate %}, and
+its rendering with it{% endif %}{% if split %}, a
 dispositions document until the judge reads it{% endif %}.
 {% else %}
 Every artifact is kept as an audit trail. **Never write to an existing
@@ -36,7 +39,8 @@ Ordinals:
   each starting at 1.
 {% endif %}
 - **`N`, `K`** — task-wide counters: `N` deltas, `K` triage rulings{% if "workflow-scanner" in roles %}, scan
-  reports{% endif %}{% if "forester" in roles %}, forester gates{% endif %}{% if "comment-rewriter" in roles %} and sweep exceptions{% endif %}.
+  reports{% endif %}{% if "forester" in roles %}, forester gates{% endif %}{% if eli5 %}, on-request
+  renderings{% endif %}{% if "comment-rewriter" in roles %} and sweep exceptions{% endif %}.
 {% if "forester" in roles %}
 - **gate round `G`** — within one forester design or triage gate, from 1.
 {% endif %}
@@ -62,14 +66,16 @@ is. Later steps of the same pass that have not run yet keep their plain
 names.
 
 - Spec and record: `user-request.md` (verbatim, edited by nobody),
-  `design.md`,{% if "eli5-explainer" in roles %} `design-eli5.md`,{% endif %} `exploration-<N>.md`,
+  `design.md`,{% if eli5_at_gate %} `design-eli5.md`,{% endif %} `exploration-<N>.md`,
   `implementation-log.md` (append-only across all increments and rounds);
   the user's notes — `notes-design-user-r<R>.md` (feedback at the design
   gate, or a post-freeze change for delta mode) and
   `notes-triage-user-k<K>.md` (a post-freeze answer to a stop);
   `commit-failure-<K>.md` (a rejected commit's command and output,
-  verbatim).
-- Post-freeze spec revisions: `design-delta-<N>.md`{% if "eli5-explainer" in roles %},
+  verbatim){% if eli5 %}; `design-eli5-<K>.md` (a rendering of the whole
+  effective spec, made on the user's request; never part of the frozen
+  set){% endif %}.
+- Post-freeze spec revisions: `design-delta-<N>.md`{% if eli5_at_gate %},
   `design-eli5-delta-<N>.md`{% endif %}.
 - Reviewer notes: `notes-<phase>-<reviewer>-r<R>.md`{% if "prepass-reviewer" in roles %}; pre-pass:
   `notes-prepass-r<R>.md`{% endif %}.

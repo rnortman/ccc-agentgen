@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The plain-language (ELI5) rendering is made only when someone will
+  read it.** In `review-chain-auto`, `review-chain-split-auto`,
+  `review-chain-planner-auto` and `todo-burndown-auto`, where the forester
+  approves the design, the orchestrator no longer renders the design before
+  every forester design gate. Instead you can ask for a rendering at any
+  stop — a gate, an escalation, the end of the cycle or afterwards — and
+  get one document covering the design and every delta. Under
+  `todo-burndown-auto` the stops you see are a unit's gates and
+  escalations (a shipped unit closes without stopping): at a gate, ask in
+  your answer; at an escalation, ask with `resume: <request>`. In the other
+  chains with a forester, a Claude orchestrator now launches the rendering
+  and the forester's brief together, so the design gate stops sooner; a
+  Codex orchestrator runs them one after the other, as before.
 - **Deleting a TODO entry now removes its code comments too.** In the
   `todo-triage` workflow, pruning entries ruled `delete` used to leave
   their `TODO(slug)` comments behind in the code. Now a new

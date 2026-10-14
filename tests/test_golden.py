@@ -333,8 +333,37 @@ def test_non_spawning_roles_know_nothing_of_kill(builds):
             assert phrase not in body, f"{name}: {phrase}"
 
 
+def _forester_holds_design(variant: Variant, autonomy: str) -> bool:
+    return (
+        "forester" in variant.roles
+        and variant.vars.get("forester_autonomy") == autonomy
+        and "design" in variant.vars.get("forester_gates", ())
+    )
+
+
+def _pair_at_gate(variant: Variant) -> bool:
+    """The forester's brief and the rendering both precede the user's design gate."""
+    return "eli5-explainer" in variant.roles and _forester_holds_design(variant, "advise")
+
+
+def _eli5_on_request_only(variant: Variant) -> bool:
+    """The forester holds the design gate, so nobody reads an automatic rendering."""
+    return "eli5-explainer" in variant.roles and _forester_holds_design(variant, "decide")
+
+
+PAIR_CLAUDE_PHRASES = (
+    "Issue both `ccc run` commands before waiting on either",
+    "Nothing is routed until both launches are over",
+    "except the one pair",
+)
+PAIR_CODEX_PHRASE = "the forester first, the rendering second"
+
+
 def test_drivers_launch_one_task_at_a_time(builds):
-    """A driver can only wait on one `ccc` at a time; no wave runs concurrently."""
+    """A Codex driver can only wait on one `ccc` at a time; a Claude
+    orchestrator may overlap the design gate's brief and rendering, which
+    share nothing and commit nothing, and no other launches.
+    """
     for build in builds.values():
         for driver in DRIVERS & set(build.by_id):
             for name, body in build.bodies(driver):
@@ -343,6 +372,85 @@ def test_drivers_launch_one_task_at_a_time(builds):
                 if driver == "orchestrator":
                     assert "one after the other" in body, f"{build.stem}/{name}"
                     assert "never in parallel" in body, f"{build.stem}/{name}"
+        if "orchestrator" not in build.by_id:
+            continue
+        role = build.by_id["orchestrator"]
+        pair = _pair_at_gate(build.variant)
+        for harness in role.harnesses:
+            flat = " ".join(role.body_for(harness).split())
+            where = f"{build.stem}/orchestrator/{harness}"
+            for phrase in PAIR_CLAUDE_PHRASES:
+                assert (phrase in flat) == (pair and harness == "claude"), f"{where}: {phrase}"
+            assert (PAIR_CODEX_PHRASE in flat) == (pair and harness != "claude"), where
+
+
+def test_eli5_is_rendered_only_where_the_user_holds_the_gate(builds):
+    """Where the forester holds the design gate the rendering is made only on
+    the user's request; elsewhere it is made at the gate and frozen with the
+    design.
+    """
+    variants = [build.variant for build in builds.values()]
+    assert any(map(_eli5_on_request_only, variants)) and any(map(_pair_at_gate, variants))
+    for build in builds.values():
+        if "orchestrator" not in build.by_id:
+            continue
+        eli5 = "eli5-explainer" in build.variant.roles
+        on_request = _eli5_on_request_only(build.variant)
+        for name, body in build.bodies("orchestrator"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert ("`design-eli5-<K>.md`" in flat) == eli5, where
+            assert ("### Rendering on request" in body) == eli5, where
+            assert ("`design-eli5.md`" in flat) == (eli5 and not on_request), where
+            assert ("`design-eli5-delta-<N>.md`" in flat) == (eli5 and not on_request), where
+            freeze = _section(body, "### Freeze")
+            assert ("`design-eli5.md`" in freeze) == (eli5 and not on_request), where
+            design = _section(body, "### Design ")
+            assert "eli5-explainer" not in design, where
+            assert ("and its rendering with it" in flat) == (eli5 and not on_request), where
+            post_cycle = _section(body, "### Post-cycle turns")
+            assert ("**Rendering on request**" in post_cycle) == eli5, where
+            if not eli5:
+                continue
+            on_demand = _section(body, "### Rendering on request")
+            for phrase in ("mode `spec`", "`design-eli5-<K>.md`", "`rendering failed:", "**Stop commit**"):
+                assert phrase in on_demand, f"{where}: {phrase}"
+
+
+def _explainer_modes_named(orchestrator_body: str) -> set[str]:
+    """Every mode the orchestrator passes in an `eli5-explainer` launch."""
+    flat = " ".join(orchestrator_body.split())
+    modes = set()
+    for launch in re.finditer(r"`ccc run eli5-explainer`(.*?)(?:\. |$)", flat):
+        modes.update(re.findall(r"mode `(\w+)`", launch.group(1)))
+    return modes
+
+
+def test_orchestrator_names_only_modes_the_explainer_defines(builds):
+    """The explainer's mode names are a contract with the orchestrator that
+    launches it; a mode it does not define would leave it guessing.
+    """
+    named_anywhere = set()
+    for build in builds.values():
+        if "eli5-explainer" not in build.by_id or "orchestrator" not in build.by_id:
+            continue
+        defined = set()
+        for _, body in build.bodies("eli5-explainer"):
+            defined.update(re.findall(r"^- \*\*(\w+)\*\* —", _raw_section(body, "## Modes"), re.M))
+        for name, body in build.bodies("orchestrator"):
+            named = _explainer_modes_named(body)
+            named_anywhere |= named
+            assert named, f"{build.stem}/{name}"
+            assert named <= defined, f"{build.stem}/{name}: {named - defined}"
+    assert named_anywhere == {"spec", "delta"}
+
+
+def _raw_section(body: str, heading: str) -> str:
+    """The text from `heading` to the next heading of the same level, lines kept."""
+    level = heading.split(" ", 1)[0]
+    start = body.index(heading)
+    end = body.find(f"\n{level} ", start + len(heading))
+    return body[start:] if end == -1 else body[start:end]
 
 
 ORCHESTRATOR_FAILURE_PHRASES = (

@@ -1,8 +1,9 @@
 """Contract and content checks over the shipped templates/ tree.
 
-Every role template is rendered against two synthetic variants — one naming all
-of them, one lite shape that drops optional stages — so a template is covered
-here from the moment it exists, in both the full and the pruned shape.
+Every role template is rendered against three synthetic variants — one naming
+all of them with the forester deciding, the same with the forester advising,
+and one lite shape that drops optional stages — so a template is covered here
+from the moment it exists, in both the full and the pruned shape.
 """
 
 from __future__ import annotations
@@ -102,7 +103,13 @@ def lite():
     return render(ids, designer_spawns_explorers=False)
 
 
-@pytest.fixture(scope="module", params=["full", "lite"])
+@pytest.fixture(scope="module")
+def advise():
+    """The forester briefs the user, so the design gate renders the ELI5 too."""
+    return render(role_ids(), forester_autonomy="advise")
+
+
+@pytest.fixture(scope="module", params=["full", "lite", "advise"])
 def rendered(request):
     return request.getfixturevalue(request.param)
 

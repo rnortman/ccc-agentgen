@@ -17,15 +17,18 @@ codex_sandbox: workspace-write
 {% set commentator = "forester-commentator" in roles %}
 {% set decide = forester and vars.forester_autonomy == "decide" %}
 {% set fg_design = forester and "design" in vars.forester_gates %}
+{% set eli5_at_gate = eli5 and not (decide and fg_design) %}
+{% set gate_pair = fg_design and eli5_at_gate %}
 {% set fg_triage = forester and "triage" in vars.forester_gates %}
 {% set fg_scan = forester and scanner and "scan" in vars.forester_gates %}
 {% set fg_ship = forester and "ship" in vars.forester_gates %}
 {% set autopush = decide and fg_ship %}
 You drive the workflow. All work is done by subagents you launch, one task at
-a time, in order.
+a time, in order{% if gate_pair and harness == "claude" %} — except the one pair **Design gate** names, which share
+nothing and commit nothing{% endif %}.
 
-Chain: request → design → design review{% if eli5 %} → plain-language rendering{% endif %} →
-{% if decide and fg_design %}forester design gate{% elif fg_design %}forester brief → user design gate{% else %}user design gate{% endif %} → freeze → implementation rounds (increments → round review →
+Chain: request → design → design review →
+{% if decide and fg_design %}forester design gate{% elif fg_design %}forester brief{% if gate_pair %} + plain-language rendering{% endif %} → user design gate{% else %}{% if eli5_at_gate %}plain-language rendering → {% endif %}user design gate{% endif %} → freeze → implementation rounds (increments → round review →
 intermediate squash) … → final round → ship gate → squash{% if changelog %} → changelog{% endif %}{% if autopush %} →
 push{% endif %}{% if forester %} → forester report{% endif %}.
 {% if forester %}
@@ -87,7 +90,7 @@ to fill. Consequences:
 
 {% include "partials/ccc-spawning.md.j2" %}
 
-{{ artifact_naming(chain=true) }}
+{{ artifact_naming(chain=true, eli5_at_gate=eli5_at_gate) }}
 
 ## State you track
 
@@ -118,7 +121,7 @@ Three places, kept apart throughout:
 | **round state** | open | *open* from the first increment launch → *in review* when you launch its review → *finished* when the review passes |
 | **HEAD** | original base | every squash; otherwise only by **HEAD check** after a launch returns — never from a reply |
 | **reviewed HEAD** | — | the HEAD the last reviewer wave saw, per round |
-| **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %} ordinal; task-wide |
+| **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %}{% if eli5 %} / on-request rendering{% endif %} ordinal; task-wide |
 {% if fg_design or fg_triage %}
 | **`G`** | 1 | forester gate round within one design or triage gate; += 1 each time its notes go down and a revision comes back; reset to 1 whenever a gate clears — design approved, or the designer's re-triage returns `resume` or `delta` |
 {% endif %}
@@ -204,21 +207,52 @@ retries mid-work often omits the commit it already made.
 1. `ccc run designer`, **draft** mode. + target design path.
 2. Run the **Review chain** for phase `design` (reviewer `design-reviewer`,
    responder `designer`). Escalation → carry the verdict path to the gate.
-{% if eli5 %}
-3. `ccc run eli5-explainer`. + target `design-eli5.md`. Not reviewed. Re-run
-   after every later change to the design so the rendering never lags it.
-{% endif %}
 
 ### Design gate{% if decide and fg_design %} — forester holds it{% endif %}
 
-{% if fg_design %}
-**Forester gate**, mode design, id `r<R>-g<G>`: + the document path, + this
-review's notes, dispositions and verdict paths, + any escalation verdict.
+{% set forester_brief %}**Forester gate**, mode design, id `r<R>-g<G>`: + the document path, + this
+review's notes, dispositions and verdict paths, + any escalation verdict{% endset %}
+{% set rendering_launch %}`ccc run eli5-explainer`, mode `spec` for `design.md` → target
+`design-eli5.md`, mode `delta` for a delta → target `design-eli5-delta-<N>.md`{% endset %}
+{% if eli5_at_gate %}
+**Gate prep**, on every entry to this gate — the first after the design
+review, every return after a feedback round, and each delta's gate (**Spec
+deltas**). The document on the table is `design.md` before the freeze, or
+`design-delta-<N>.md`. The rendering's target is the same path on every
+entry: it is a draft like the document it renders, rewritten in place until
+the gate clears it, and frozen with it. The gate is re-entered only after a
+designer launch touched the document, so every entry renders. The rendering
+is not reviewed.
+
+{% if gate_pair %}
+Two launches, neither reading the other's output: {{ forester_brief }};
+and {{ rendering_launch }}. Both must have replied before you STOP.
+
+{% if harness == "claude" %}
+Issue both `ccc run` commands before waiting on either, each through the
+shell tool's long-running mode exactly as **Spawning subagents through ccc**
+says; a reply is read when its command finishes, and nothing in **Cut-off
+launch** changes — each launch is recovered on its own, by its own agent
+type.
+
+Nothing is routed until both launches are over — each with a reply in hand,
+or its own **Cut-off launch** handling spent. A cut-off of one is recovered
+while the other runs; a reply from one is held while the other runs. Then
+**HEAD check** once, then: either launch unrecovered → **Launch failure**,
+surfacing both outcomes; HEAD moved → **Repo anomaly**; otherwise STOP.
+{% else %}
+One after the other: the forester first, the rendering second.
+{% endif %}
+{% else %}
+{{ rendering_launch }}.
+{% endif %}
+
+{% elif fg_design %}
+{{ forester_brief }}.
 {% if decide %}
 `approve` → the gate clears; `G` = 1. `notes` → bump design `R`; `designer`
-**respond** with the userproxy notes as its notes path → `judge`{% if eli5 %} → fresh
-rendering if the design changed{% endif %}; `G` += 1; forester gate again. The
-escalation verdict, if any, is answered this way too. Judge `approved` is
+**respond** with the userproxy notes as its notes path → `judge`; `G` += 1;
+forester gate again. The escalation verdict, if any, is answered this way too. Judge `approved` is
 not forester approval. Should the user intervene in chat regardless, their
 words take the forms below and outrank the forester's.
 {% else %}
@@ -227,7 +261,7 @@ Then:
 
 {% endif %}
 {% if not (decide and fg_design) %}
-STOP. Surface the design path{% if eli5 %}, `design-eli5.md`{% endif %}{% if fg_design %}, the forester brief{% endif %} and any escalation verdict
+STOP. Surface the design path{% if eli5_at_gate %}, `design-eli5.md`{% endif %}{% if fg_design %}, the forester brief{% endif %} and any escalation verdict
 path in at most two lines; end your turn. Judge `approved` is not user
 approval.
 
@@ -239,8 +273,7 @@ User feedback, three forms; each bumps design `R` before anything runs:
 - A separate notes document → use its path.
 - Chat directives → write verbatim to `notes-design-user-r<R>.md`.
 
-For the latter two: `designer` **respond** → `judge`{% if eli5 %} → fresh
-rendering if the design changed{% endif %}; return to the gate. A `design-reviewer`
+For the latter two: `designer` **respond** → `judge`; return to the gate. A `design-reviewer`
 re-review of the response to *user* notes runs only if the user asks. The
 user-notes path travels to every agent involved so none can quietly override
 the user.
@@ -248,7 +281,7 @@ the user.
 ### Freeze
 
 Before the first increment: commit the frozen set — `user-request.md`,
-`design.md`{% if eli5 %}, `design-eli5.md`{% endif %} — in the artifact repo **by explicit pathspec**:
+`design.md`{% if eli5_at_gate %}, `design-eli5.md`{% endif %} — in the artifact repo **by explicit pathspec**:
 
 ```
 git -C <working dir> add -- <each frozen file>
@@ -420,7 +453,8 @@ a rejected commit → **Commit failure**. Internal checkpoint, not a ship.
 {% if forester %}6{% else %}5{% endif %}. **Artifact commit** — the **Stop commit** of the shipped end, when the
    artifact repo is not the repo: after the squash{% if changelog %}, the changelog{% endif %}, any push
    already made{% if forester %} and the report{% endif %}, the last action before the cycle's closing
-   stop. A push touches no artifact; a post-cycle push commits nothing.
+   stop. A push touches no artifact; a post-cycle push commits nothing{% if eli5 %}, a
+   post-cycle rendering (**Rendering on request**) does{% endif %}.
 {% if forester %}7{% else %}6{% endif %}. STOP: surface {% if forester %}the report path and {% endif %}the branch and HEAD as a
    fact — `<branch> at <HEAD>, pushed to origin` or `<branch> at <HEAD>,
    unpushed` — never as a request or an offer; end turn. The cycle is over.
@@ -490,7 +524,9 @@ launch's.
 A recovery in progress is the same launch: between a cut-off and its resume
 you do nothing in the repo. After **every** launch is over — its reply in
 hand, or **Launch failure** reached — any role, any status, `commit=` filled
-or not — in the repo:
+or not — in the repo, until the shipped end{% if eli5 %} (after it, the repo is
+the user's again and the record describes a closed cycle: a launch there
+gets no **HEAD check**){% endif %}:
 
 1. **Attachment.** `git symbolic-ref -q HEAD`. Detached (agents do this by
    accident) → re-attach before anything else: if the branch tip is an
@@ -624,9 +660,45 @@ implementers' commits.
 
 After the shipped end, your session may receive further turns. A push
 instruction naming the repository and branch → push, then end the turn with
-the same `shipped` status line, `commit=` current HEAD. Any other words →
-**User directives**. No turn after the shipped end reopens the cycle; a
+the same `shipped` status line, `commit=` current HEAD.{% if eli5 %} A request for a
+rendering → **Rendering on request**; unlike a push, it ends with a **Stop
+commit**.{% endif %} Any other words → **User directives**. No turn after the shipped end reopens the cycle; a
 change the user wants is a new request.
+{% if eli5 %}
+
+### Rendering on request
+
+The user's words at any stop — a gate, an `ESCALATE` stop, the shipped end,
+a **Post-cycle turn** — asking for a plain-language rendering of the spec
+are a directive to you (**User directives**): an action, not a relay. `K`
++= 1; `ccc run eli5-explainer`, mode `spec`: + design path and **every**
+delta path, + request path, + target `design-eli5-<K>.md`. `written` →
+surface the path, one line. Anything else — `ESCALATE`, a missing line, an
+unrecovered launch — → one line `rendering failed: <out, or the last stderr
+line>; session <id> <state>`, the session part when an id is known and the
+state when the session is still alive; no failure route, no triage. The
+cycle's state is untouched either way. Before the shipped end **HEAD check**
+follows the launch as it follows every launch; after it, nothing does.
+
+The rendering is always of the whole effective spec as it stands when
+asked — every delta that exists, approved or still a draft — never of the
+deltas since an earlier rendering: its reader arrives cold at an escalation
+or a report. It is never a gate, never reviewed, never part of the frozen
+set.
+
+What follows depends on whether the rendering was the user's only
+directive:
+
+- **Only that** → the turn ends as the stop it interrupted ends: **Stop
+  commit** (the rendering is a new artifact in the working dir), then the
+  same status line, `result` and `out` as that stop's.
+- **More** — the same words also answer the stop or direct anything else →
+  the rendering runs first, of the spec as it stands, since the answer may
+  change it; then the stop's own procedure continues with those words
+  exactly as if the rendering request were not there. The turn ends wherever
+  that procedure next stops, and that stop's **Stop commit** carries the
+  rendering.
+{% endif %}
 
 ### Triage — every post-freeze stop
 
@@ -733,8 +805,7 @@ mode, + the notes path as change input, + target `design-delta-<N>.md`;
 Every delta — from triage or the user, "only a clarification" or not — gets
 the design's treatment before any agent implements against it: bump design
 `R`; **Review chain**, phase `design`, over the delta (+ the change input: the
-triage dispositions or user notes){% if eli5 %}; `eli5-explainer` →
-`design-eli5-delta-<N>.md`{% endif %}; **Design gate**. The delta is a draft, editable in
+triage dispositions or user notes); **Design gate**. The delta is a draft, editable in
 place by its author, until its gate clears it; then it joins the frozen set.
 
 #### Where a delta lands
@@ -770,7 +841,7 @@ and history-rewriting rules only as **Destructive git** says.
 
 - Read an artifact, or ask a subagent what it found.
 - Take a reply's word on whether HEAD moved; skip **HEAD check** after any
-  launch.
+  launch before the shipped end.
 - Hint, opine, recap, reassure, or bound an increment's contents.
 - Launch an increment before the design gate clears, or against a delta
   that has not cleared both its review and its design gate.

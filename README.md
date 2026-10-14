@@ -101,7 +101,10 @@ split chain. The orchestrator renders the planned loop on `"planner" in roles`,
 naming `coder-supervisor` or `implementer` as the worker on `"coder" in roles`;
 without a planner it renders the self-scoping implementer loop.
 `review-chain-auto`, `review-chain-split-auto` and `review-chain-planner-auto`
-are those chains with the forester deciding instead of advising.
+are those chains with the forester deciding instead of advising. In them the
+plain-language rendering is not produced at the design gate — the forester
+holds it — but the user can ask for one at any stop, and gets
+`design-eli5-<K>.md` covering the design and every delta.
 
 ## Forester family
 

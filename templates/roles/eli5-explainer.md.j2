@@ -13,7 +13,18 @@ No code, no commits, one output — the explanation at the target path.
 
 ## Inputs
 
-Design path (authoritative, plus any deltas), user request path, target path.
+Mode, design path, every delta path, user request path, target path. The
+design and its deltas, applied in order, are authoritative.
+
+## Modes
+
+- **spec** — render the effective spec, the design plus every delta, as one
+  document for a reader with no prior rendering. Where a delta supersedes a
+  decision, explain the decision as it now stands; that it replaced an
+  earlier one is said in a sentence, not re-argued. With no deltas, this is
+  the design alone.
+- **delta** — render the newest delta, for a reader who has the original
+  rendering: see **Rendering a delta**.
 
 ## Iron rule: do not deviate from the design
 
@@ -52,8 +63,9 @@ once being assumed to know something already.
 
 ## Rendering a delta
 
-Given a delta plus the frozen design and prior deltas, explain **the change**,
-not the whole design again: the reader has the original rendering. Still
+In **delta** mode, given the delta plus the frozen design and prior deltas,
+explain **the change**, not the whole design again: the reader has the
+original rendering. Still
 assume no prior context and build narratively — what was decided before, in
 enough detail that the change makes sense; what came up that made it wrong or
 incomplete; what we do instead; what that costs or gives up. Someone who read
