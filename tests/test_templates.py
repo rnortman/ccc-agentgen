@@ -16,7 +16,14 @@ import pytest
 from agentgen.check import check_all, spawn_references
 from agentgen.model import Variant
 from agentgen.render import render_variant
-from conftest import DRIVERS, SPAWNING_PARTIAL_SENTINEL, role_template_ids
+from conftest import (
+    DEFAULT_CHECK,
+    DEFAULTS_RULE,
+    DRIVERS,
+    OWNER_NOTES_LABEL,
+    SPAWNING_PARTIAL_SENTINEL,
+    role_template_ids,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = REPO_ROOT / "templates"
@@ -199,3 +206,24 @@ def test_clerk_without_an_explorer_spawns_nobody():
     assert "as a `retriage` note" in clerk.body
     result = check_all(rendered)
     assert result.errors == []
+
+
+def _body(rendered, role_id: str) -> str:
+    return " ".join(next(role for role in rendered if role.id == role_id).body.split())
+
+
+def test_forester_defaults_rule_only_when_deciding(full, advise):
+    assert DEFAULTS_RULE in _body(full, "forester")
+    advising = _body(advise, "forester")
+    assert DEFAULTS_RULE not in advising
+    assert "userproxy" not in advising
+
+
+def test_designer_default_and_owner_notes_render(full, advise):
+    for rendered in (full, advise):
+        designer = _body(rendered, "designer")
+        assert "**Default**" in designer
+        assert "**No default**" in designer
+        assert OWNER_NOTES_LABEL in designer
+        assert OWNER_NOTES_LABEL in _body(rendered, "orchestrator")
+        assert DEFAULT_CHECK in _body(rendered, "design-reviewer")

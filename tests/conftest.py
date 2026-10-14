@@ -13,6 +13,15 @@ TEMPLATE_PREFIX, TEMPLATE_SUFFIX = role_template_name("\x00").split("\x00")
 # A heading from `partials/ccc-spawning.md.j2`, present iff the partial is.
 SPAWNING_PARTIAL_SENTINEL = "Spawning subagents through ccc"
 
+# The forester's decide-mode rule that `approve` accepts every open question
+# at its default, and the design-reviewer's default-consistency check.
+DEFAULTS_RULE = "at their defaults"
+DEFAULT_CHECK = "default must be the answer the body is actually written against"
+
+# The label a designer respond launch puts on the owner's notes file, and the
+# designer's matching respond-mode rule.
+OWNER_NOTES_LABEL = "as the owner's notes"
+
 # Roles that drive a workflow: each routes a `## Replies` table over the
 # results of the roles in its own variant, and takes the user's directives.
 DRIVERS = {"orchestrator", "triage-orchestrator", "burndown-orchestrator"}

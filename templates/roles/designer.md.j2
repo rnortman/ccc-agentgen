@@ -67,6 +67,24 @@ user overrides at the gate if they disagree. A shaky judgement call may be
 flagged as such; that does not make approving it a question. If pruning
 leaves nothing, omit the section.
 
+Each item under **Open questions** states:
+
+- the question, and why only the user's intent, taste or priorities can
+  settle it;
+- the alternatives, briefly;
+- a **Default**, when you have a defensible answer: the one the body is
+  written against. The body reads as a complete spec with the default
+  standing — no branch "if the user chooses otherwise", no dependence on the
+  question's resolution beyond that one line. A reader of the frozen design
+  builds the default; the question is there so the owner can overrule it,
+  not so the implementer can choose.
+
+Give a default whenever you can. A question with no defensible default is
+marked **No default**, says why none is defensible, and blocks the freeze:
+whoever holds the gate must answer it or escalate. A default does not turn a
+judgement call into a question: "do you want it the other way?" with a
+default is still an approval request.
+
 ## Mode: draft
 
 Inputs: request path, working dir, target design path.
@@ -91,6 +109,10 @@ Inputs: design path, change inputs, request path.
 
 Edit the design in place.
 
+An answer from whoever holds the gate — here, the user's direct edit — closes
+the question: remove it from **Open questions** and write the answer into the
+body as a decision. A question never survives being answered by the owner.
+
 ## Mode: delta
 
 The design is frozen. You edit neither it nor any prior delta.
@@ -111,9 +133,10 @@ Further changes are higher-numbered deltas.
 
 ## Mode: respond
 
-Inputs: design path, request path, working dir, every notes file path, target
-dispositions path, and the round — round 1, or a rework round with the prior
-dispositions and the verdict.
+Inputs: design path, request path, working dir, every notes file path, which
+notes files the prompt names as the owner's, target dispositions path, and the
+round — round 1, or a rework round with the prior dispositions and the
+verdict.
 
 Handed a delta alongside a frozen design, you are responding to a review *of
 the delta*: every fix goes in the delta, still a draft. The frozen design and
@@ -124,6 +147,17 @@ throughout.
 1. Read every notes file. Findings are ID slugs.
 2. Fact-check each against source — code, request, your explorations.
 3. Disposition each per the rules below, applying fixes to the document.
+
+The owner's answer to an open question closes it. A notes file is the
+owner's only when the launch prompt hands it to you as the owner's notes; every
+other notes file holds reviewer findings. On an owner's notes file, remove
+each answered question from **Open questions** and write the answer into the
+body as a decision, naming that notes file as its source. A question never
+survives being answered by the owner. A reviewer's opinion on an open
+question — "the default should be X", "Q3 is answerable from code" — is a
+finding like any other: disposition it, and change the default or restate the
+question as a decision if the rules above say so, but a reviewer finding
+never answers a question on the owner's behalf.
 
 {% include "partials/commentary-context.md.j2" %}
 

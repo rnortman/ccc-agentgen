@@ -20,7 +20,14 @@ from agentgen.cli import main
 from agentgen.deploy import deploy
 from agentgen.emit import MARKER_NAME, read_build
 from agentgen.model import HARNESS_KEYS, Variant, load_variant
-from conftest import DRIVERS, SPAWNING_PARTIAL_SENTINEL, role_template_ids
+from conftest import (
+    DEFAULT_CHECK,
+    DEFAULTS_RULE,
+    DRIVERS,
+    OWNER_NOTES_LABEL,
+    SPAWNING_PARTIAL_SENTINEL,
+    role_template_ids,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = REPO_ROOT / "templates"
@@ -415,6 +422,67 @@ def test_eli5_is_rendered_only_where_the_user_holds_the_gate(builds):
             on_demand = _section(body, "### Rendering on request")
             for phrase in ("mode `spec`", "`design-eli5-<K>.md`", "`rendering failed:", "**Stop commit**"):
                 assert phrase in on_demand, f"{where}: {phrase}"
+
+
+def test_forester_approval_binds_open_questions_to_defaults(builds):
+    """A deciding forester's ruling reaches nobody, so its approval may only
+    accept the design's defaults; an advising forester's brief gains neither
+    that rule nor the userproxy channel.
+    """
+    variants = [build.variant for build in builds.values()]
+    assert any(_forester_holds_design(v, "decide") for v in variants)
+    assert any(_forester_holds_design(v, "advise") for v in variants)
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        autonomy = build.variant.vars.get("forester_autonomy")
+        for name, body in build.bodies("forester"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert (DEFAULTS_RULE in flat) == (autonomy == "decide"), where
+            if autonomy == "advise":
+                assert "userproxy" not in flat, where
+
+
+def test_designer_open_questions_state_a_default(builds):
+    """Every designer states defaults and closes questions only on notes the
+    launch prompt names as the owner's.
+    """
+    for build in builds.values():
+        if "designer" in build.by_id:
+            for name, body in build.bodies("designer"):
+                where = f"{build.stem}/{name}"
+                assert "**Default**" in body, where
+                assert "**No default**" in body, where
+                flat = " ".join(body.split())
+                assert OWNER_NOTES_LABEL in flat, where
+                assert "userproxy" not in flat, where
+                assert "notes-design-" not in flat, where
+        if "design-reviewer" in build.by_id:
+            for name, body in build.bodies("design-reviewer"):
+                assert DEFAULT_CHECK in " ".join(body.split()), f"{build.stem}/{name}"
+
+
+def test_orchestrator_names_owner_notes_at_designer_respond(builds):
+    """User notes are labelled the owner's in every orchestrator; the
+    forester's userproxy notes are, exactly where it decides the design gate.
+    """
+    userproxy_to_designer = f"userproxy notes as its notes path, named {OWNER_NOTES_LABEL}"
+    variants = [build.variant for build in builds.values()]
+    assert any(_forester_holds_design(v, "decide") for v in variants)
+    assert any(not _forester_holds_design(v, "decide") for v in variants)
+    for build in builds.values():
+        if "orchestrator" not in build.by_id:
+            continue
+        decides = _forester_holds_design(build.variant, "decide")
+        for name, body in build.bodies("orchestrator"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert f"the user-notes path named {OWNER_NOTES_LABEL}" in flat, where
+            assert (userproxy_to_designer in flat) == decides, where
+            proxy = " or userproxy notes path" if decides else ""
+            review_chain = f"user notes path{proxy} among them is handed {OWNER_NOTES_LABEL}"
+            assert review_chain in flat, where
 
 
 def _explainer_modes_named(orchestrator_body: str) -> set[str]:

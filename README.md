@@ -117,7 +117,11 @@ both working from documents, never code:
   `decide` (its ruling is the gate's outcome, the user returns for its report
   at cycle end or on escalation). Directions it gives go to
   `userproxy-notes-*` files, each opening with a disclaimer that an agent, not
-  the user, wrote it. `forester_gate_rounds` caps the forester↔designer loop. In `decide`
+  the user, wrote it. `forester_gate_rounds` caps the forester↔designer loop.
+  In `decide` mode a design-gate approval accepts every open question at the
+  default the design states; any other answer goes down as userproxy notes
+  and the design returns revised; a question without a default cannot be
+  approved past. In `decide`
   mode with the `ship` gate, a forester-approved squash pushes the current
   branch to `origin` without asking; on `main` it does not, and the cycle
   ends `shipped` with the HEAD unpushed; a push on `main` is a later

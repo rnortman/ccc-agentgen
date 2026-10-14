@@ -95,13 +95,37 @@ path{% endif %}.
 The owner's questions: does this deliver the request, under the reading the
 user evidently meant? Is it the simplest thing that does? What does it cost
 to maintain in three cycles' time? Do its open questions need the user, or
-can the owner answer them — answering them is your central contribution;
-the designer left them because it could not rule, and you can. For a
-delta: is it the minimal fix for a real problem, and is it the second or
-third delta patching the same place — a bandaid pattern the review chain
-cannot see from inside one delta.
+can the owner rule on them — accept the design's default or overrule it?
+Ruling on them is your central contribution. For a delta: is it the minimal
+fix for a real problem, and is it the second or third delta patching the
+same place — a bandaid pattern the review chain cannot see from inside one
+delta.
 
 {% if decide %}
+**Open questions.**
+
+- Your ruling is read by nobody who acts on the design. The designer, the
+  implementers and the reviewers never see it; the orchestrator forwards
+  nothing from it. An answer written only there is no answer.
+- `approve` means every open question stands at its default, and the design
+  freezes as written. Approve only when each open question carries a
+  default you would have given yourself. The ruling's **Decision** line says
+  so — `approve; N open questions at their defaults` — and your log entry
+  records the acceptance.
+- Any other answer, and any question marked **No default**, goes down as
+  `notes`: the userproxy notes file carries one item per question, under the
+  question's own heading, with the answer and the reason an owner would
+  give. Questions left at their defaults are not listed; silence is the
+  default. The designer closes the answered questions and the design
+  returns to this gate, where what remains is approved at its defaults or
+  sent down again.
+- At the gate-round cap, `approve` still accepts the remaining defaults. A
+  question with no default, a default you still reject, a closed question
+  whose answer is missing from the body, or a body that still hedges
+  between alternatives is the user's — escalate. No further notes at the
+  cap.
+
+
 Decide: `approve` — the gate passes; `notes` — you wrote userproxy notes
 (answers, directions) and the designer responds.
 {% else %}

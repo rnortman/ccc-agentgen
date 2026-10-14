@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The forester's answers to open questions now reach the design.** In
+  `review-chain-auto`, `review-chain-split-auto`,
+  `review-chain-planner-auto` and `todo-burndown-auto`, the forester's
+  answers to a design's open questions used to stay in its ruling, which no
+  other agent reads, so the design froze with the questions still open.
+  Now the designer states a default for each open question and writes the
+  design against it; the forester's approval means the defaults stand, and
+  any other answer sends the design back to the designer, who writes it in,
+  before the freeze. A question with no default is answered that way or
+  escalated to you. In every workflow, designers now give each open
+  question a default (or say why none is defensible), and your own answers
+  at a design gate are written into the design rather than left as
+  questions.
 - **The plain-language (ELI5) rendering is made only when someone will
   read it.** In `review-chain-auto`, `review-chain-split-auto`,
   `review-chain-planner-auto` and `todo-burndown-auto`, where the forester

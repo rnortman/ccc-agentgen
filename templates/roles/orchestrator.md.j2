@@ -251,7 +251,8 @@ One after the other: the forester first, the rendering second.
 {{ forester_brief }}.
 {% if decide %}
 `approve` → the gate clears; `G` = 1. `notes` → bump design `R`; `designer`
-**respond** with the userproxy notes as its notes path → `judge`; `G` += 1;
+**respond** with the userproxy notes as its notes path, named as the owner's notes →
+`judge`; `G` += 1;
 forester gate again. The escalation verdict, if any, is answered this way too. Judge `approved` is
 not forester approval. Should the user intervene in chat regardless, their
 words take the forms below and outrank the forester's.
@@ -273,7 +274,8 @@ User feedback, three forms; each bumps design `R` before anything runs:
 - A separate notes document → use its path.
 - Chat directives → write verbatim to `notes-design-user-r<R>.md`.
 
-For the latter two: `designer` **respond** → `judge`; return to the gate. A `design-reviewer`
+For the latter two: `designer` **respond**, + the user-notes path named
+as the owner's notes → `judge`; return to the gate. A `design-reviewer`
 re-review of the response to *user* notes runs only if the user asks. The
 user-notes path travels to every agent involved so none can quietly override
 the user.
@@ -473,6 +475,8 @@ gate; post-freeze escalations go to **Triage**.
 {% endif %}
 2. **Respond step** `<phase>-r<R>-a1` (design phase: `designer`, **respond**
    mode; code phase: see below). + notes path(s){% if commentator %}, + commentary path{% endif %}.
+   Design phase: any user notes path{% if decide %} or userproxy notes path{% endif %} among
+   them is handed as the owner's notes; a reviewer's notes path never is.
 3. `ccc run judge`, round 1 → `judge-verdict-<phase>-r<R>-a1.md`. + every
    notes path, + dispositions path{% if commentator %}, + every commentary path{% endif %}, + (design phase) the document / (code
    phase) round base, HEAD, reviewed HEAD, + any triage dispositions path.
