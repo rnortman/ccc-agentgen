@@ -11,7 +11,7 @@ import pytest
 
 from todotriage import TriageError, ops, todomd
 from todotriage.cli import main
-from todotriage.store import HEADER, Row, Status, Store, rows
+from todotriage.store import HEADER, BlockerState, Row, Status, Store, rows
 
 TODO = """\
 # TODOs
@@ -632,7 +632,8 @@ def test_ready_ranks_filters_and_hides_open_attempts(
     code, out, _ = run(capsys, "ready", *opts(repo, store))
     rows_ = [line.split("\t") for line in out.splitlines()]
     assert code == 0 and [r[0] for r in rows_] == ["beta", "delta", "alpha"]
-    assert rows_[0] == ["beta", "P2", "triaged", "-", "2026-01-02", "-", "src/core", "-"]
+    assert rows_[0] == ["beta", "P2", "triaged", "-", "2026-01-02", "-", "src/core", "-",
+                        "-"]
     _, out, _ = run(capsys, "ready", "--priority", "3", *opts(repo, store))
     assert [line.split("\t")[0] for line in out.splitlines()] == ["alpha"]
     _, out, _ = run(capsys, "ready", "--max-priority", "2", *opts(repo, store))
@@ -1024,7 +1025,8 @@ def test_json_output_of_list_and_ready(repo: Path, store: Store,
     code, out, _ = run(capsys, "ready", "--json", *opts(repo, store))
     assert code == 0 and json.loads(out) == [{
         "slug": "alpha", "priority": 2, "status": "triaged", "disposition": "do",
-        "unblocked": False, "blocked_on": [], "first_seen": "2026-01-02", "cluster": [], "site_dirs": ["src/core"], "attempts": []}]
+        "unblocked": False, "blocked_on": [], "first_seen": "2026-01-02", "cluster": [], "site_dirs": ["src/core"], "attempts": [],
+        "unlocks": []}]
     code, out, _ = run(capsys, "ready", "--json", "--priority", "1", *opts(repo, store))
     assert code == 3 and json.loads(out) == []
 
@@ -1035,7 +1037,7 @@ def test_ready_help_names_its_columns(capsys: pytest.CaptureFixture[str]) -> Non
     # Undo argparse's line wrapping, which may also break after a hyphen.
     text = re.sub(r"-\s+", "-", re.sub(r"\s+", " ", capsys.readouterr().out))
     assert ("slug priority status blocked-on first-seen cluster site-dirs"
-            " attempts(outcome@date,...)"
+            " attempts(outcome@date,...) unlocks(path>path,...)"
             in text)
 
 
@@ -2086,9 +2088,8 @@ def test_ready_and_attempt_take_an_unblocked_entry(
     assert run(capsys, "ready", *opts(repo, store))[0] == 3
     code, _, err = run(capsys, "attempt", "--selection", str(selection(store, ["gamma"])),
                        "--adr-root", str(root), *opts(repo, store))
-    assert code == 1 and ("`gamma` is not ready: triaged, ruled blocked, review approved; "
-                          "only standing, settled `do` rulings, or `blocked` rulings with a "
-                          "priority whose blockers are all resolved, can be attempted") in err
+    assert code == 1 and ("`gamma` is not ready: blocked on `alpha` (open), `beta` (open), "
+                          "neither resolved nor in this selection") in err
     write(repo / "TODO.md", without(TODO, "`alpha`"))
     assert run(capsys, "ready", *opts(repo, store))[0] == 3
     write(repo / "TODO.md", without(TODO, "`alpha`", "beta"))
@@ -2158,3 +2159,308 @@ def test_summary_lists_unblocked_entries(repo: Path, store: Store,
     text = Path(out.strip()).read_text(encoding="utf-8")
     assert ("- `gamma`: blocked on `alpha`, `beta`, resolved; ready at P2 (also stale: ruled "
             in text)
+
+
+CHAINS = TODO + "\n## `delta`\n\nThird link.\n\n## `epsilon`\n\nAnother root.\n"
+
+
+def blocked_after(repo: Path, slug: str, deps: list[str], priority: int | None = 2,
+                  review: str | None = "approved", **kwargs: Any) -> dict[str, Any]:
+    """`slug` ruled blocked on `deps`, every one of them an entry at ruling time."""
+    fields: dict[str, Any] = {"priority": priority, "blocked_on": deps,
+                              "blocked_on_entries": deps,
+                              "entry_hash": hash_of(repo, slug), **kwargs}
+    return ruled("blocked", review=review, **fields)
+
+
+def chain_setup(repo: Path, store: Store, rulings: dict[str, Any]) -> None:
+    """Write `CHAINS`; an int ruling is an approved `do` at that priority, a
+    (priority, deps) pair an approved `blocked` with that priority."""
+    write(repo / "TODO.md", CHAINS)
+    for slug, spec in rulings.items():
+        if isinstance(spec, int):
+            store.save(slug, approved(priority=spec, entry_hash=hash_of(repo, slug)))
+        else:
+            store.save(slug, blocked_after(repo, slug, spec[1], priority=spec[0]))
+
+
+def chains(repo: Path, store: Store, priority: int | None = None,
+           max_priority: int | None = None, slugs: list[str] | None = None,
+           exclude: list[str] | None = None) -> dict[str, Any]:
+    """`ops.followers` as nested `(slug, [...])` lists, keyed by ready slug."""
+    all_rows = rows(store, todomd.read(repo, "TODO.md"))
+    scope = ops.Scope(priority, max_priority, None if slugs is None else frozenset(slugs),
+                      frozenset(exclude or ()))
+    found = ops.followers(all_rows, ops.ready(all_rows, scope), scope)
+
+    def plain(unlocks: tuple[ops.Follower, ...]) -> list[Any]:
+        return [(f.row.slug, plain(f.unlocks)) for f in unlocks]
+
+    return {slug: plain(unlocks) for slug, unlocks in found.items()}
+
+
+def test_rows_carry_blocker_states(repo: Path, store: Store) -> None:
+    store.save("alpha", approved(entry_hash=hash_of(repo, "alpha")))
+    store.save("gamma", blocked_p2(repo))
+    write(repo / "TODO.md", without(TODO, "beta"))
+    by_slug = {r.slug: r for r in rows(store, todomd.read(repo, "TODO.md"))}
+    assert by_slug["gamma"].blockers == (("alpha", BlockerState.OPEN),
+                                         ("beta", BlockerState.CLEARED))
+    assert by_slug["alpha"].blockers == ()
+
+
+def test_followers_go_two_levels_deep(repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"]), "gamma": (1, ["beta"]),
+                              "delta": (3, ["gamma"])})
+    assert chains(repo, store) == {"alpha": [("beta", [("gamma", [])])]}
+    all_rows = rows(store, todomd.read(repo, "TODO.md"))
+    found = ops.followers(all_rows, ops.ready(all_rows, ops.Scope()), ops.Scope())
+    (beta,) = found["alpha"]
+    (gamma,) = beta.unlocks
+    assert beta.row.slug == "beta" and gamma.row.slug == "gamma" and gamma.unlocks == ()
+
+
+def test_a_follower_sits_at_the_shallowest_level_covering_its_blockers(
+        repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"]),
+                              "gamma": (2, ["alpha", "beta"])})
+    assert chains(repo, store) == {"alpha": [("beta", [("gamma", [])])]}
+
+
+def test_a_follower_of_two_ready_entries_is_under_both_ranked_by_priority(
+        repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "beta": (3, ["alpha"]),
+                              "gamma": (1, ["alpha", "epsilon"]), "delta": (3, ["alpha"])})
+    assert chains(repo, store) == {"alpha": [("gamma", []), ("beta", []), ("delta", [])],
+                                   "epsilon": [("gamma", [])]}
+
+
+def test_a_level_two_follower_blocked_on_another_ready_entry_is_not_offered(
+        repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "beta": (2, ["alpha"]),
+                              "gamma": (1, ["epsilon", "beta"])})
+    assert chains(repo, store) == {"alpha": [("beta", [])], "epsilon": []}
+
+
+def test_a_level_two_follower_of_two_roots_is_under_both(repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "beta": (2, ["alpha"]),
+                              "delta": (2, ["epsilon"]), "gamma": (1, ["beta", "delta"])})
+    assert chains(repo, store) == {"alpha": [("beta", [("gamma", [])])],
+                                   "epsilon": [("delta", [("gamma", [])])]}
+    store.save("gamma", blocked_after(repo, "gamma", ["alpha", "delta"], priority=1))
+    assert chains(repo, store) == {"alpha": [("beta", [])], "epsilon": [("delta", [])]}
+
+
+def test_a_follower_needs_every_blocker_cleared_or_offered(repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2, "gamma": (2, ["alpha", "beta"])})
+    assert chains(repo, store) == {"alpha": []}
+    write(repo / "TODO.md", without(CHAINS, "beta"))
+    assert chains(repo, store) == {"alpha": [("gamma", [])]}
+    store.save("beta", approved("delete", entry_hash=""))
+    assert chains(repo, store) == {"alpha": []}
+
+
+def test_followers_must_be_eligible_and_in_scope(repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"])})
+    assert chains(repo, store) == {"alpha": [("beta", [])]}
+    variants: dict[str, dict[str, Any]] = {
+        "no priority": blocked_after(repo, "beta", ["alpha"], priority=None),
+        "pending": blocked_after(repo, "beta", ["alpha"], review=None),
+        "modified": blocked_after(repo, "beta", ["alpha"], entry_hash="0" * 64),
+    }
+    with_attempt = blocked_after(repo, "beta", ["alpha"])
+    with_attempt["attempts"] = [{"adr_dir": "/x", "started": "2026-09-01T00:00:00",
+                                 "closed": None}]
+    variants["open attempt"] = with_attempt
+    for name, data in variants.items():
+        store.save("beta", data)
+        assert chains(repo, store) == {"alpha": []}, name
+    store.save("beta", blocked_after(repo, "beta", ["alpha"], priority=3))
+    assert chains(repo, store) == {"alpha": [("beta", [])]}
+    assert chains(repo, store, max_priority=2) == {"alpha": []}
+    assert chains(repo, store, exclude=["beta"]) == {"alpha": []}
+    assert chains(repo, store, slugs=["alpha"]) == {"alpha": []}
+
+
+def test_a_stale_follower_is_offered(repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": 2})
+    store.save("beta", blocked_after(repo, "beta", ["alpha"],
+                                     date=dt.date.today() - dt.timedelta(days=400)))
+    assert chains(repo, store) == {"alpha": [("beta", [])]}
+
+
+def test_a_filtered_out_ready_entry_hides_its_followers(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    chain_setup(repo, store, {"alpha": 3, "beta": (1, ["alpha"])})
+    assert chains(repo, store, priority=1) == {}
+    code, out, _ = run(capsys, "ready", "--max-priority", "1", *opts(repo, store))
+    assert code == 3 and out.strip() == "nothing ready"
+    assert run(capsys, "ready", "--slugs", "beta", *opts(repo, store))[0] == 3
+
+
+def test_a_blocker_cycle_is_not_offered(repo: Path, store: Store) -> None:
+    chain_setup(repo, store, {"alpha": (2, ["beta"]), "beta": (2, ["alpha"])})
+    assert chains(repo, store) == {}
+
+
+def test_ready_shows_what_each_entry_unlocks(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "beta": (2, ["alpha"]),
+                              "gamma": (1, ["beta"]), "delta": (3, ["alpha"])})
+    code, out, _ = run(capsys, "ready", *opts(repo, store))
+    columns = {line.split("\t")[0]: line.split("\t") for line in out.splitlines()}
+    assert code == 0 and list(columns) == ["alpha", "epsilon"]
+    assert columns["alpha"][-1] == "beta>gamma,delta"
+    assert columns["epsilon"][-1] == "-" and len(columns["epsilon"]) == 9
+    code, out, _ = run(capsys, "ready", "--json", *opts(repo, store))
+    alpha, epsilon = json.loads(out)
+    assert epsilon["unlocks"] == []
+    beta, delta = alpha["unlocks"]
+    assert list(beta) == ["slug", "priority", "status", "disposition", "unblocked",
+                          "blocked_on", "first_seen", "cluster", "site_dirs", "attempts",
+                          "unlocks"]
+    assert (beta["slug"], beta["priority"], beta["status"], beta["disposition"],
+            beta["unblocked"], beta["blocked_on"]) == ("beta", 2, "triaged", "blocked",
+                                                       False, ["alpha"])
+    assert beta["first_seen"] == "2026-01-02" and beta["site_dirs"] == ["src/core"]
+    (gamma,) = beta["unlocks"]
+    assert gamma["slug"] == "gamma" and gamma["unlocks"] == []
+    assert delta["slug"] == "delta" and delta["unlocks"] == []
+    code, out, _ = run(capsys, "ready", "--max-priority", "2", *opts(repo, store))
+    assert out.splitlines() and out.splitlines()[0].split("\t")[-1] == "beta>gamma"
+
+
+def test_ready_looks_up_a_shared_follower_once(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "gamma": (1, ["alpha", "epsilon"]),
+                              "delta": (2, ["gamma"])})
+    looked_up: list[str] = []
+    real = todomd.first_seen
+
+    def counting(repo_: Path, path: str, heading: str) -> str | None:
+        looked_up.append(heading)
+        return real(repo_, path, heading)
+
+    monkeypatch.setattr(todomd, "first_seen", counting)
+    code, out, _ = run(capsys, "ready", *opts(repo, store))
+    assert code == 0 and [line.split("\t")[-1] for line in out.splitlines()] == [
+        "gamma>delta", "gamma>delta"]
+    assert len(looked_up) == len(set(looked_up)) == 4
+
+
+def attempt_on(capsys: pytest.CaptureFixture[str], repo: Path, store: Store, root: Path,
+               slugs: list[str]) -> tuple[int, str, str]:
+    return run(capsys, "attempt", "--selection", str(selection(store, slugs)),
+               "--adr-root", str(root), *opts(repo, store))
+
+
+def test_attempt_takes_a_selection_closed_over_its_blockers(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "adr"
+    chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"]), "gamma": (1, ["beta"])})
+    code, _, err = attempt_on(capsys, repo, store, root, ["beta"])
+    assert code == 1 and ("`beta` is not ready: blocked on `alpha` (open), neither resolved "
+                          "nor in this selection") in err
+    code, _, err = attempt_on(capsys, repo, store, root, ["gamma", "alpha"])
+    assert code == 1 and "`gamma` is not ready" in err
+    code, out, err = attempt_on(capsys, repo, store, root, ["gamma", "beta", "alpha"])
+    assert code == 0, err
+    for slug in ("alpha", "beta", "gamma"):
+        assert store.load(slug)["attempts"][0]["slugs"] == ["gamma", "beta", "alpha"]
+
+
+def test_attempt_rejects_a_follower_whose_other_blocker_is_outside(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "adr"
+    chain_setup(repo, store, {"alpha": 2, "beta": 3, "gamma": (2, ["alpha", "beta"])})
+    code, _, err = attempt_on(capsys, repo, store, root, ["alpha", "gamma"])
+    assert code == 1 and ("`gamma` is not ready: blocked on `beta` (open), neither resolved "
+                          "nor in this selection") in err
+    assert attempt_on(capsys, repo, store, root, ["alpha", "beta", "gamma"])[0] == 0
+
+
+def test_attempt_names_a_deleted_blocker(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    chain_setup(repo, store, {"alpha": 2, "gamma": (2, ["alpha", "beta"])})
+    store.save("beta", approved("delete", entry_hash=hash_of(repo, "beta")))
+    code, _, err = attempt_on(capsys, repo, store, tmp_path / "adr", ["alpha", "gamma"])
+    assert code == 1 and ("`gamma` is not ready: blocked on `beta` (deleted), neither "
+                          "resolved nor in this selection") in err
+
+
+@pytest.mark.parametrize("variant", [{"priority": None}, {"review": None}],
+                         ids=["no priority", "pending"])
+def test_attempt_rejects_an_ineligible_follower_in_a_closed_selection(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        variant: dict[str, Any]) -> None:
+    chain_setup(repo, store, {"alpha": 2})
+    store.save("beta", blocked_after(repo, "beta", ["alpha"], **variant))
+    code, _, err = attempt_on(capsys, repo, store, tmp_path / "adr", ["alpha", "beta"])
+    assert code == 1 and "`beta` is not ready" in err
+    if variant == {"priority": None}:
+        assert ("`beta` is not ready: triaged, ruled blocked, review approved; only standing, "
+                "settled `do` rulings, or `blocked` rulings with a priority whose blockers are "
+                "all resolved or in this selection, can be attempted") in err
+    assert "attempts" not in (store.load("alpha") or {})
+
+
+def test_attempt_on_a_level_two_follower_blocked_on_another_ready_entry(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "adr"
+    chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "beta": (2, ["alpha"]),
+                              "gamma": (1, ["epsilon", "beta"])})
+    code, _, err = attempt_on(capsys, repo, store, root, ["alpha", "beta", "gamma"])
+    assert code == 1 and ("`gamma` is not ready: blocked on `epsilon` (open), neither "
+                          "resolved nor in this selection") in err
+    code, _, err = attempt_on(capsys, repo, store, root, ["alpha", "epsilon", "beta", "gamma"])
+    assert code == 0, err
+
+
+def test_attempt_on_a_level_two_follower_of_two_roots(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "adr"
+    chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "beta": (2, ["alpha"]),
+                              "delta": (2, ["epsilon"]), "gamma": (1, ["beta", "delta"])})
+    code, _, err = attempt_on(capsys, repo, store, root, ["alpha", "beta", "gamma"])
+    assert code == 1 and ("`gamma` is not ready: blocked on `delta` (open), neither "
+                          "resolved nor in this selection") in err
+    code, _, err = attempt_on(capsys, repo, store, root,
+                              ["alpha", "beta", "epsilon", "delta", "gamma"])
+    assert code == 0, err
+
+
+def test_attempt_takes_a_follower_whose_other_blocker_is_resolved(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    chain_setup(repo, store, {"alpha": 2, "gamma": (2, ["alpha", "beta"])})
+    write(repo / "TODO.md", without(CHAINS, "beta"))
+    code, _, err = attempt_on(capsys, repo, store, tmp_path / "adr", ["alpha", "gamma"])
+    assert code == 0, err
+
+
+def test_attempt_takes_a_blocker_cycle_whole(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "adr"
+    chain_setup(repo, store, {"alpha": (2, ["beta"]), "beta": (2, ["alpha"])})
+    code, _, err = attempt_on(capsys, repo, store, root, ["alpha"])
+    assert code == 1 and "`alpha` is not ready" in err
+    code, _, err = attempt_on(capsys, repo, store, root, ["alpha", "beta"])
+    assert code == 0, err
+
+
+def test_attempt_close_on_a_chain_unit(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "adr"
+    chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"])})
+    code, out, _ = attempt_on(capsys, repo, store, root, ["alpha", "beta"])
+    assert code == 0
+    adr = out.strip()
+    write(repo / "TODO.md", without(CHAINS, "`alpha`"))
+    code, out, _ = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
+    assert code == 0 and out.strip() == "incomplete: alpha, beta"
+    chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"])})
+    code, out, _ = attempt_on(capsys, repo, store, root, ["alpha", "beta"])
+    assert code == 0
+    write(repo / "TODO.md", without(CHAINS, "`alpha`", "beta"))
+    code, out2, _ = run(capsys, "attempt-close", "--adr", out.strip(), *opts(repo, store))
+    assert code == 0 and out2.strip() == "shipped: alpha, beta"

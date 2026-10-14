@@ -31,6 +31,16 @@
   instead of going stale and back through triage. Without a priority,
   nothing changes. A ruling with a priority must name only other `TODO.md`
   entries as its blockers, not free-text dependencies.
+- **Burndown can now do a blocked entry in the same cycle as the entry
+  it waits on.** In `todo-burndown`, the forester (the agent that picks
+  what to work on next) now sees, beneath each ready entry, the `blocked`
+  entries with a priority that would become ready once it is done — up to
+  two levels deep — in a new last column of `todo-triage ready` and an
+  `unlocks` field in its JSON. The forester is encouraged to take such a
+  chain, or other entries that share code, as one cycle, and `todo-triage
+  attempt` accepts any selection whose every blocker is either already
+  resolved or part of the selection. When it rejects one, it now names the
+  blockers that are missing.
 - If a blocker is deleted rather than done, the waiting entry still comes
   back for re-triage, but only once the delete has been approved. A delete
   still awaiting approval no longer triggers it. This applies to all

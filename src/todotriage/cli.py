@@ -544,30 +544,61 @@ def site_dirs(ctx: Context, store: Store) -> dict[str, list[str]]:
     return {slug: sorted(d) for slug, d in dirs.items()}
 
 
+def entry_json(row: Row, seen: dict[str, str | None], dirs: dict[str, list[str]],
+               unlocks: tuple[ops.Follower, ...]) -> dict[str, Any]:
+    """A ready entry or follower as `ready --json` prints it, its followers nested."""
+    return {"slug": row.slug, "priority": row.priority, "status": row.status,
+            "disposition": row.disposition, "unblocked": row.unblocked,
+            "blocked_on": row.blocked_on, "first_seen": seen.get(row.slug),
+            "cluster": row.cluster, "site_dirs": dirs.get(row.slug, []),
+            "attempts": list((row.data or {}).get("attempts") or []),
+            "unlocks": [entry_json(f.row, seen, dirs, f.unlocks) for f in unlocks]}
+
+
+def unlock_paths(unlocks: tuple[ops.Follower, ...]) -> list[str]:
+    """`beta>gamma`, `epsilon`: one path per leaf of the chain beneath an entry."""
+    paths = []
+    for follower in unlocks:
+        below = unlock_paths(follower.unlocks)
+        paths += [f"{follower.row.slug}>{p}" for p in below] or [follower.row.slug]
+    return paths
+
+
 def cmd_ready(ctx: Context, args: argparse.Namespace) -> Output:
     store = ctx.store()
     todo = ctx.todo(store)
-    chosen = ops.ready(rows(store, todo), args.priority, args.max_priority,
-                       slug_args(args.slugs), slug_args(args.exclude))
+    all_rows = rows(store, todo)
+    slugs = slug_args(args.slugs)
+    scope = ops.Scope(args.priority, args.max_priority,
+                      None if slugs is None else frozenset(slugs),
+                      frozenset(slug_args(args.exclude) or ()))
+    chosen = ops.ready(all_rows, scope)
     if not chosen:
         return Output(["nothing ready"], [], EXIT_NOTHING)
+    chains = ops.followers(all_rows, chosen, scope)
     todo_path = store.config.todo_path
-    seen = {r.slug: todomd.first_seen(ctx.repo, todo_path, r.entry.heading)
-            for r in chosen if r.entry}
-    chosen.sort(key=lambda r: (r.priority or PRIORITIES[-1] + 1, seen.get(r.slug) or "9999"))
+    # A follower under two ready entries appears in both chains; look it up once.
+    shown = {row.slug: row for row in chosen}
+    pending = [f for row in chosen for f in chains[row.slug]]
+    while pending:
+        follower = pending.pop()
+        shown[follower.row.slug] = follower.row
+        pending += follower.unlocks
+    seen = {slug: todomd.first_seen(ctx.repo, todo_path, r.entry.heading)
+            for slug, r in shown.items() if r.entry}
+    chosen.sort(key=lambda r: (ops.priority_rank(r), seen.get(r.slug) or "9999"))
     dirs = site_dirs(ctx, store)
     lines, data = [], []
     for row in chosen:
-        attempts = list((row.data or {}).get("attempts") or [])
-        history = ",".join(f"{a.get('outcome')}@{str(a.get('started'))[:10]}" for a in attempts)
+        entry = entry_json(row, seen, dirs, chains[row.slug])
+        history = ",".join(f"{a.get('outcome')}@{str(a.get('started'))[:10]}"
+                           for a in entry["attempts"])
         lines.append("\t".join([row.slug, f"P{row.priority}", row.status,
-                                dash(",".join(row.blocked_on)), dash(seen.get(row.slug)), dash(",".join(row.cluster)),
-                                dash(",".join(dirs.get(row.slug, []))), dash(history)]))
-        data.append({"slug": row.slug, "priority": row.priority, "status": row.status,
-                     "disposition": row.disposition, "unblocked": row.unblocked,
-                     "blocked_on": row.blocked_on,
-                     "first_seen": seen.get(row.slug), "cluster": row.cluster,
-                     "site_dirs": dirs.get(row.slug, []), "attempts": attempts})
+                                dash(",".join(row.blocked_on)), dash(seen.get(row.slug)),
+                                dash(",".join(row.cluster)),
+                                dash(",".join(dirs.get(row.slug, []))), dash(history),
+                                dash(",".join(unlock_paths(chains[row.slug])))]))
+        data.append(entry)
     return Output(lines, data)
 
 
@@ -850,13 +881,14 @@ def make_parser() -> argparse.ArgumentParser:
               "settled `do` entries, and `blocked` entries with a priority whose blockers have"
               " all left TODO.md, ranked by priority then age, one line per entry: slug"
               " priority status blocked-on first-seen cluster site-dirs"
-              " attempts(outcome@date,...); exit 3 when none")
+              " attempts(outcome@date,...) unlocks(path>path,...); exit 3 when none")
     rdy.add_argument("--priority", type=int, choices=PRIORITIES, help="exactly P")
     rdy.add_argument("--max-priority", type=int, choices=PRIORITIES, help="P or better")
     rdy.add_argument("--slugs", nargs="+", metavar="SLUG")
     rdy.add_argument("--exclude", nargs="*", default=[], metavar="SLUG")
 
-    att = add("attempt", cmd_attempt, "open a burndown attempt from a selection document")
+    att = add("attempt", cmd_attempt, "open a burndown attempt from a selection document: "
+              "ready entries and the entries they unlock")
     att.add_argument("--selection", required=True, type=Path)
     att.add_argument("--adr-root", required=True, type=Path)
 

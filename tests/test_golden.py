@@ -929,6 +929,19 @@ def test_blocked_priority_is_explained_to_forester_and_clerk(builds):
         assert "blocked on … [P<n>]" in flat, filename
 
 
+def test_forester_select_mode_offers_chains_and_combined_units(builds):
+    """The forester reads `unlocks`, knows the closure rule `attempt` enforces,
+    and is told to combine entries that share ground into one cycle.
+    """
+    for stem in (BURNDOWN_STEM, BURNDOWN_AUTO_STEM):
+        for filename, body in builds[stem].bodies("triage-forester"):
+            flat = " ".join(body.split())
+            assert "`attempts` and `unlocks`" in flat, filename
+            assert ("every `blocked_on` item of every follower must be resolved or in the"
+                    " selection") in flat, filename
+            assert "overlapping `site_dirs`" in flat, filename
+
+
 def test_burndown_orchestrator_defers_to_ready(builds):
     """Which entries burndown may take is `todo-triage ready`'s rule; the
     driver names the tool, never a disposition.

@@ -13,6 +13,7 @@ import yaml
 from . import TriageError
 from .store import (
     PRIORITIES,
+    BlockerState,
     Disposition,
     MateStanding,
     Outcome,
@@ -591,44 +592,135 @@ def override(store: Store, todo: TodoFile, slug: str, fields: dict[str, Any]) ->
 READY_STATUSES = (Status.TRIAGED, Status.STALE)
 
 
-def ready(all_rows: list[Row], priority: int | None, max_priority: int | None,
-          slugs: list[str] | None, exclude: list[str] | None) -> list[Row]:
+def eligible(row: Row) -> bool:
+    """In the file, its ruling standing and settled, with no open attempt."""
+    return (row.entry is not None and row.status in READY_STATUSES and row.settled
+            and not open_attempts(row.data))
+
+
+@dataclass(frozen=True)
+class Scope:
+    """The session's filters: exactly `priority`, `max_priority` or better, only `slugs`
+    when given, never `exclude`."""
+
+    priority: int | None = None
+    max_priority: int | None = None
+    slugs: frozenset[str] | None = None
+    exclude: frozenset[str] = frozenset()
+
+    def admits(self, row: Row) -> bool:
+        """Whether `row` passes the filters."""
+        if row.slug in self.exclude:
+            return False
+        if self.slugs is not None and row.slug not in self.slugs:
+            return False
+        if self.priority is not None and row.priority != self.priority:
+            return False
+        if self.max_priority is not None and (row.priority is None
+                                              or row.priority > self.max_priority):
+            return False
+        return True
+
+
+def priority_rank(row: Row) -> int:
+    """Sort key putting higher priorities first and a missing priority last."""
+    return row.priority if row.priority is not None else PRIORITIES[-1] + 1
+
+
+def blockers_within(row: Row, slugs: set[str]) -> bool:
+    """Whether every blocker of `row` has cleared or is one of `slugs`."""
+    return all(state == BlockerState.CLEARED or dep in slugs for dep, state in row.blockers)
+
+
+def ready(all_rows: list[Row], scope: Scope) -> list[Row]:
     """Settled `do` entries, and settled `blocked` entries with a priority whose blockers
-    have all left TODO.md, whose ruling stands, with no open attempt, filtered; unranked."""
-    wanted = set(slugs or ())
-    skip = set(exclude or ())
-    out = []
-    for row in all_rows:
-        if (row.entry is None or row.status not in READY_STATUSES
-                or row.effective_disposition != Disposition.DO or not row.settled):
-            continue
-        if open_attempts(row.data) or row.slug in skip:
-            continue
-        if slugs is not None and row.slug not in wanted:
-            continue
-        if priority is not None and row.priority != priority:
-            continue
-        if max_priority is not None and (row.priority is None or row.priority > max_priority):
-            continue
-        out.append(row)
-    return out
+    have all left TODO.md, whose ruling stands, with no open attempt, in scope; unranked."""
+    return [row for row in all_rows
+            if eligible(row) and row.effective_disposition == Disposition.DO
+            and scope.admits(row)]
+
+
+@dataclass(frozen=True)
+class Follower:
+    """An entry a ready entry unlocks, with the entries it unlocks in turn."""
+
+    row: Row
+    unlocks: tuple[Follower, ...]
+
+
+# How many levels of followers `followers` offers beneath a ready entry.
+CHAIN_DEPTH = 2
+
+
+def blocked_with_priority(row: Row) -> bool:
+    """Whether `row` is ruled `blocked` with a priority."""
+    return row.disposition == Disposition.BLOCKED and row.priority is not None
+
+
+def followers(all_rows: list[Row], ready_rows: list[Row],
+              scope: Scope) -> dict[str, tuple[Follower, ...]]:
+    """Per ready slug, the eligible, in-scope `blocked` entries with a priority that
+    become ready once it ships, `CHAIN_DEPTH` levels deep.
+
+    A candidate sits at the shallowest level where it blocks on a slug of the level
+    above (its parents) and every other blocker has cleared or lies on a path from a
+    ready entry to one of its parents; it is listed under each parent. Every open
+    blocker of an offered follower is thus on a path it is shown on. A candidate with a
+    deleted blocker, or an open one on none of its parents' paths, is not offered. Each
+    list is ordered by priority, then file order.
+    """
+    candidates = [row for row in all_rows
+                  if eligible(row) and blocked_with_priority(row) and not row.unblocked
+                  and scope.admits(row)]
+    # Per placed slug, the slugs on the paths from a ready entry down to it, inclusive.
+    paths = {row.slug: {row.slug} for row in ready_rows}
+    levels: list[list[Row]] = [list(ready_rows)]
+    for _ in range(CHAIN_DEPTH):
+        above = {row.slug for row in levels[-1]}
+        level: list[Row] = []
+        for row in candidates:
+            parents = [dep for dep, _ in row.blockers if dep in above]
+            if row.slug in paths or not parents:
+                continue
+            reach = set[str]().union(*(paths[dep] for dep in parents))
+            if blockers_within(row, reach):
+                level.append(row)
+                paths[row.slug] = reach | {row.slug}
+        levels.append(level)
+
+    def beneath(depth: int, slug: str) -> tuple[Follower, ...]:
+        if depth >= len(levels):
+            return ()
+        under = sorted((row for row in levels[depth]
+                        if any(dep == slug for dep, _ in row.blockers)), key=priority_rank)
+        return tuple(Follower(row, beneath(depth + 1, row.slug)) for row in under)
+
+    return {row.slug: beneath(1, row.slug) for row in ready_rows}
 
 
 def start_attempt(store: Store, todo: TodoFile, selection: Path, adr_root: Path) -> Path:
     document = read_document(selection)
     slugs = slug_list(document.meta.get("slugs"), f"{selection}: `slugs`")
     by_slug = {row.slug: row for row in rows(store, todo)}
+    selected = set(slugs)
     for slug in slugs:
         require_entry(todo, store, slug)
         if open_attempts(store.load(slug)):
             raise TriageError(f"`{slug}` already has an open attempt")
         row = by_slug[slug]
-        if (row.effective_disposition != Disposition.DO or row.status not in READY_STATUSES
-                or not row.settled):
+        if eligible(row) and blocked_with_priority(row):
+            outside = [f"`{dep}` ({state})" for dep, state in row.blockers
+                       if state != BlockerState.CLEARED and dep not in selected]
+            if outside:
+                raise TriageError(f"`{slug}` is not ready: blocked on {', '.join(outside)}, "
+                                  "neither resolved nor in this selection")
+        if not (eligible(row) and (row.effective_disposition == Disposition.DO
+                                   or blocked_with_priority(row))):
             raise TriageError(f"`{slug}` is not ready: {row.status}, ruled "
                               f"{row.disposition or 'nothing'}, review {row.review}; only "
                               "standing, settled `do` rulings, or `blocked` rulings with a "
-                              "priority whose blockers are all resolved, can be attempted")
+                              "priority whose blockers are all resolved or in this selection, "
+                              "can be attempted")
     now = dt.datetime.now()
     parent = adr_root / now.strftime("%Y") / now.strftime("%m")
     parent.mkdir(parents=True, exist_ok=True)

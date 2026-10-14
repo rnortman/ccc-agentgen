@@ -314,6 +314,9 @@ class Row:
     reason: str = ""
     # A `blocked` ruling with a priority whose blockers have all left the file.
     unblocked: bool = False
+    # A `triaged` or `stale` `blocked` ruling's `blocked_on` items with their states,
+    # in ruling order; empty for every other row.
+    blockers: tuple[tuple[str, BlockerState], ...] = ()
 
     @property
     def ruling(self) -> dict[str, Any] | None:
@@ -410,11 +413,13 @@ def rows(store: Store, todo: TodoFile, on: dt.date | None = None) -> list[Row]:
         data = loaded[slug]
         ruling = latest_ruling(data)
         unblocked = False
+        blockers: tuple[tuple[str, BlockerState], ...] = ()
         if (status in (Status.TRIAGED, Status.STALE) and ruling
                 and ruling.get("disposition") == Disposition.BLOCKED):
             blocked_on = list(ruling.get("blocked_on") or [])
             were_entries = set(ruling.get("blocked_on_entries") or ())
             states = [(dep, blocker_state(dep, were_entries)) for dep in blocked_on]
+            blockers = tuple(states)
             with_priority = ruling.get("priority") is not None
             # Without a priority any blocker leaving returns the entry; with one, only a
             # deleted blocker does, and every blocker cleared makes it ready instead.
@@ -430,5 +435,5 @@ def rows(store: Store, todo: TodoFile, on: dt.date | None = None) -> list[Row]:
                 if status == Status.TRIAGED:
                     reason = unblocked_reason(ruling)
         out.append(Row(slug=slug, status=status, entry=in_file.get(slug), data=data,
-                       reason=reason, unblocked=unblocked))
+                       reason=reason, unblocked=unblocked, blockers=blockers))
     return out

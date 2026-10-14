@@ -174,12 +174,17 @@ Run `todo-triage ready --json` with exactly those arguments. Exit 3 means
 nothing is ready: write one line saying so at the target path and reply
 `nothing`. Otherwise it prints one object per entry with `slug`, `priority`,
 `status`, `disposition`, `unblocked`, `blocked_on`, `first_seen`, `cluster`,
-`site_dirs` and `attempts`.
+`site_dirs`, `attempts` and `unlocks`.
 
 `ready` lists only rulings the user has approved, or made. Otherwise read
 each ready entry's sketch, ruling and the user's review notes (`todo-triage
-show` lists their paths) and the earlier selections, and pick one entry, or a
-cluster that shares code. The rulings' `cluster` fields, the code-site
+show` lists their paths) and the earlier selections, and pick one entry, or
+several that belong in one cycle — a cluster ruled together, a chain the
+entry unlocks, or ready entries that share code or context: overlapping
+`site_dirs`, the same subsystem, a fix the designer would otherwise
+rediscover for each. One cycle per unit of shared context is the aim; a
+single entry is the default only when nothing ready shares its ground. The
+rulings' `cluster` fields, the code-site
 directories and the attempt history `ready` prints are the evidence; the
 pick is your judgement. An entry whose earlier attempt ended `incomplete`
 is weighed, not skipped: why did it not finish?
@@ -192,6 +197,35 @@ resolved or by other changes since, and says the designer verifies it
 against the current code before building on it. An entry both `stale` and
 unblocked is a judgement call you make from the ruling's date and the
 sketch, not a skip.
+
+An entry's `unlocks` are the entries ruled `blocked` with a priority that
+become ready once it ships (and, nested one level, once those ship); each is
+shown with its own `priority`, `blocked_on`, `cluster` and `site_dirs`. A
+ready entry and its followers are a candidate unit: pick the chain when the
+follower's sketch stands on its own once the blocker is done and the work
+shares code or context the designer would otherwise rediscover; pick the
+ready entry alone when the follower's shape depends on how the blocker is
+resolved — that is what the ruling's `blocked` without `do` meant, and the
+next cycle takes it `unblocked`. A chain the tool shows is never a default:
+it is your call, made from the sketches.
+
+What an entry unlocks is part of its weight: among the entries `ready`
+lists, one that unlocks a higher-priority follower is the way to that
+follower, and the priority order `ready` prints does not say so. Blocked-on
+is a signal beside priority, not a tiebreak.
+
+A selection with followers lists every slug in `slugs`, and every
+`blocked_on` item of every follower must be resolved or in the selection;
+the tool rejects the attempt otherwise. A follower that `ready` shows under
+two entries blocks on both.
+
+The selection document for a chain states the dependency: which entry comes
+first and why, each entry's ruling and sketch, and for each follower the
+same caveat as for an unblocked entry — its sketch was written while the
+blocker was open, may be invalidated by how the designer resolves it in this
+very unit, and the designer verifies it against the code after designing the
+blocker's part. The closing item below — that completing the work removes
+each named entry and its `TODO(slug)` comments — covers the whole chain.
 
 The selection document starts with frontmatter naming what it covers:
 
