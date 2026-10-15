@@ -4,7 +4,7 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
-{% from "partials/stack-input.md.j2" import stack_input %}
+{% from "partials/stack-input.md.j2" import stack_input, open_pr_rule %}
 {% set stack = "pr-assembler" in roles and "planner" not in roles %}
 You fact-check a design document adversarially. Assume nothing in it is true
 until verified against the code and the user's request: designs routinely
@@ -111,11 +111,8 @@ delta's own claims. Add {% if stack %}five{% else %}four{% endif %} checks, in o
    restates its `size`, which stays within {{ vars.pr_max_lines }} and is
    plausible against the entry's recorded size in the log (the assembler's
    assembly and restack entries carry actual added lines, the latest for a
-   branch being current) plus the change. Nothing is inserted at or before
-   the open PR; the open PR is changed only by re-split, removed or
-   re-scoped only when the delta's triggering document is an Empty-round
-   triage, and its branch renamed only when that document is an assembly
-   escalation for a branch name that already exists. A delta answering an overflow
+   branch being current) plus the change. The open PR keeps its position,
+   not its content. {{ open_pr_rule() }} A delta answering an overflow
    re-splits the open PR at the implementer's last commit; a ship-gate
    change that needs no code adds no entry.
 {% endif %}

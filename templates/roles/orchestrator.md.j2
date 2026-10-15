@@ -119,8 +119,10 @@ Three places, kept apart throughout:
 | **freeze** | commit locking the spec set | re-recorded when an approved delta is committed |
 | **design `R`** | 1 | every design or delta re-review, including post-freeze; never resets |
 {% if stack %}
-| **implementation `R`** | 1 | each assembly; an assembly-escalation delta |
-| **round base** | original base | each assembly → the assembly's HEAD; a ship-gate change request or an assembly-escalation delta → current HEAD |
+| **implementation `R`** | 1 | each assembly |
+| **round base** | original base | each assembly → the assembly's HEAD; a ship-gate change request → current HEAD |
+| **review base** | original base | a round reopened → its **reviewed HEAD**; round base changes → the new round base |
+| **reopen** | — | set when a round returns to *open* (**Reopened round**): HEAD then, a fresh `K` (`K` += 1 at the reopen), and whether the round-close scanner had replied since the review last passed; cleared at each assembly |
 | **increment `I`** | 0 | each committed increment; reset at round start, never mid-round |
 | **stall mark** | 0 | set to `I` by any ruling on a stall triage; reset to 0 with `I` at round start |
 | **stack** | empty | ordered (branch, commit, size, `pr-r` path) per assembled PR, bottom first; after every **Assembly check** that passes, commits re-read with `git rev-parse refs/heads/<b>`, and each PR the reply's `size=` names gets that size and the launch's target `pr-r` path; never otherwise |
@@ -133,10 +135,10 @@ Three places, kept apart throughout:
 {% if split %}
 | **`P`, `S`, retries** | 1, 1, 0 | per unit: `P` on each replan, `S` on each respawn or replan, retries on either; all reset when a unit starts |
 {% endif %}
-| **round state** | open | *open* from the first increment launch → *in review* when you launch its review → *finished* when the review passes |
+| **round state** | open | *open* from the first increment launch → *in review* when you launch its review → *finished* {% if stack %}at the deep review's pass, or at a reopened round's close with HEAD = the **reopen** HEAD → *open* again per **Where a delta lands**{% else %}when the review passes{% endif %} |
 | **HEAD** | original base | {% if stack %}every assembly{% else %}every squash{% endif %}; otherwise only by **HEAD check** after a launch returns — never from a reply |
 | **reviewed HEAD** | — | the HEAD the last reviewer wave saw, per round |
-| **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %}{% if eli5 %} / on-request rendering{% endif %} ordinal; task-wide |
+| **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %}{% if eli5 %} / on-request rendering{% endif %}{% if stack %} / reopen{% endif %} ordinal; task-wide; no value is taken twice |
 {% if fg_design or fg_triage %}
 | **`G`** | 1 | forester gate round within one design or triage gate; += 1 each time its notes go down and a revision comes back; reset to 1 whenever a gate clears — design approved, or the designer's re-triage returns `resume` or `delta` |
 {% endif %}
@@ -343,9 +345,14 @@ increments exhaust the line budget first; normal. Insertions only; deletions
 never count or offset. Workflow artifacts and docs are excluded.
 {% endif %}
 
+{% if stack %}
+**A round is open until its PR is assembled.** A round in review takes no
+increment; a delta may return it to *open* (**Where a delta lands**).
+{% else %}
 **Open rounds take increments; in-review or finished rounds never do.**
 Nothing reopens a round — not a triage ruling, a delta, a user gate, or spare
 increment capacity. A round's review never runs twice.
+{% endif %}
 
 {% if split %}
 An increment is a unit `r<R>-i<I>` with `I` = current counter + 1, and two
@@ -399,6 +406,7 @@ document says what is in it. Commits made before a `replan`, `respawn` or
      → **Triage** with the log path as the triggering document.
 {% if stack %}
    - `done` or `pr-done` with HEAD = round base → **Empty round**.
+   - `done` or `pr-done` with **reopen** set → **Reopened round**.
    - `done` → **final round**: **Round review**; on pass → **Assembly**,
      then **Ship gate**.
    - `pr-done` → **Round review**; on pass → **Assembly**.
@@ -448,15 +456,15 @@ document; round state stays *open*.
 - `resume` after a `pr-done` reply → **Implementation** step 1; the same
   reply again is the same trigger, re-triaged with the prior dispositions on
   the surface.
-
-One case is not empty: round base ≠ PR base. A finished, unassembled round
-lies beneath this one, its review has run, and `done` or `pr-done` at the
-round base goes to **Assembly** directly.
 {% endif %}
 
 ### Round review
 
 Round state → *in review*. Every escalation here goes to **Triage**.
+{% if stack %}
+Every launch here carries the **review base** as its base, in place of the
+round base.
+{% endif %}
 
 {% if prepass %}
 1. **Pre-pass.** **Review chain**, phase `prepass` (reviewer
@@ -470,13 +478,16 @@ Round state → *in review*. Every escalation here goes to **Triage**.
    - Wave 1: `citizen-reviewer` → `notes-deep-citizen-r<R>.md`. Findings
      → {% if commentator %}**Commentary** → {% endif %}**Respond step** `deep-r<R>-w1-a1`{% if sweep %} → **Comment sweep**{% endif %}.
    - Wave 2: `tracer-reviewer` and `test-reviewer`, one after the other, both
-     over the same current HEAD (cumulative round diff, wave-1 fixes included —
+     over the same current HEAD (cumulative {% if stack %}diff since the review base{% else %}round diff{% endif %}, wave-1 fixes included —
      that is how those get reviewed). Record that HEAD as **reviewed HEAD**. Findings
      → {% if commentator %}**Commentary** → {% endif %}**Respond step** `deep-r<R>-w2-a1`{% if sweep %} → **Comment sweep**{% endif %}.
    - Judge once, after both waves: + every notes path, + dispositions paths
      for waves with findings{% if commentator %}, + every commentary path{% endif %}, + reviewed HEAD, + any triage dispositions path.
      Rework spans both waves: **Respond step** `deep-r<R>-a2`, same reviewed
      HEAD. Skip the judge only if all three reviewers replied `no-findings`.
+{% if stack %}
+     On the deep review's pass (the judge's, or that skip), round state → *finished*.
+{% endif %}
    - Waves run in order, never in parallel; a wave with findings never skips
      its respond step.
 {% if scanner %}
@@ -493,8 +504,10 @@ Round state → *in review*. Every escalation here goes to **Triage**.
    - `ESCALATE` → **Triage** with the report as triggering document; no
      {{ "assembly" if stack else "squash" }} and no next round until `resume`.
 {% endif %}
+{% if not stack %}
 
 Round state → *finished*.
+{% endif %}
 
 {% if stack %}
 ### Assembly — no gate
@@ -509,14 +522,13 @@ check**, which for this launch is **Assembly check**.
 On pass: **Frozen-set check**; re-read the stack from the refs, the reply's
 `branch=`, when not `-`, appended as the top entry, and record the sizes the
 reply's `size=` names; PR base = top stack
-commit; round base = HEAD; `I` = 0 and stall mark = 0; bump implementation
-`R`. The round was final → **Ship gate**; otherwise → **Implementation**
+commit; round base = review base = HEAD; **reopen** cleared; `I` = 0 and
+stall mark = 0; bump implementation `R`. The round was final → **Ship gate**; otherwise → **Implementation**
 step 1.
 
 `ESCALATE` → **Triage**. A `resume`, or a relaunch the user directs after
-the ruling, relaunches the assembler under **Relaunch naming**; a `delta` opens a fresh round at current HEAD without
-assembling — round base = HEAD, `I` = 0 and stall mark = 0, bump
-implementation `R` (**Where a delta lands**).
+the ruling, relaunches the assembler under **Relaunch naming**; a `delta`
+lands in the round (**Where a delta lands**).
 
 ### Assembly check
 
@@ -602,7 +614,7 @@ pushed: the stack is what ships.
    document, or chat directives verbatim to a fresh notes file). Every
    change request, whatever it asks for, goes to `designer` **delta** mode
    (**Spec deltas**); you do not classify it. The delta lands in a new
-   round: round base = current HEAD, `I` = 0, stall mark = 0, bump
+   round: round base = review base = current HEAD, `I` = 0, stall mark = 0, bump
    implementation `R`. The round closes on `done` — it is a final round —
    and its assembly restacks the fixups it made and, when the delta added an
    entry, makes it the new top PR; a change that needs no code closes with
@@ -683,7 +695,7 @@ gate; post-freeze escalations go to **Triage**.
    them is handed as the owner's notes; a reviewer's notes path never is.
 3. `ccc run judge`, round 1 → `judge-verdict-<phase>-r<R>-a1.md`. + every
    notes path, + dispositions path{% if commentator %}, + every commentary path{% endif %}, + (design phase) the document / (code
-   phase) round base, HEAD, reviewed HEAD, + any triage dispositions path.
+   phase) {% if stack %}review{% else %}round{% endif %} base, HEAD, reviewed HEAD, + any triage dispositions path.
 4. `rework` → one rework: **Respond step** `<phase>-r<R>-a2` (+ verdict path);
    judge round 2 told "round 2 — approved or escalate only" →
    `judge-verdict-<phase>-r<R>-a2.md`.
@@ -1053,24 +1065,37 @@ Decided by the round state when the stop happened, never by the delta.
   Its id is `<step>-d<N>` (**Artifacts and their names**), `<step>` the
   respond step at which the review stopped. The responder lands as much of
   the delta as the review needs (its call) and replies `delta-complete` or
-  `delta-remaining`. In a final round, `delta-remaining` **revokes `done`**:
-  finish the review, close the round as intermediate.{% if stack %} The round is still
-  assembled as its PR, and the next round continues the stack.{% endif +%}
+  `delta-remaining`. In a final round, `delta-remaining` **revokes `done`**{% if stack %}.
+  On `delta-remaining` the review runs to the judge's pass, the round-close
+  scan and **Assembly** do not follow, and the round returns to *open*;
+  `delta-complete` → the scan and **Assembly** as usual.
+- **After the review passed, before assembly** → the round returns to
+  *open*, whoever drew the delta: **Implementation** step 1 under
+  **Relaunch naming**, `K` the **reopen** `K`.
+
+**Reopened round**, either way: set **reopen** — `K` += 1, that `K` is the reopen's; review base = reviewed HEAD;
+stall mark = `I`; `I` and the round base are untouched. Every artifact the
+round's **Round review** and **Assembly** write is suffixed `-k<K>`, `K` the
+**reopen** `K` (`notes-deep-citizen-r<R>-k<K>.md`,
+`exception-assembly-r<R>-k<K>.md`). A `done` is revoked; the implementer
+re-walks the effective design, as it does for any delta. Its next `done` or
+`pr-done`:
+
+- HEAD ≠ the **reopen** HEAD → **Round review**, then the round-close scan
+  and **Assembly** as usual.
+- HEAD = the **reopen** HEAD → nothing is reviewed again; round state →
+  *finished*: the scanner had not replied → the round-close scan (and its
+  gate), then **Assembly**; otherwise **Assembly** directly.
+{% else %}:
+  finish the review, close the round as intermediate.
 {% if scanner %}
 - **At the round-close scan** — the scanner's `ESCALATE`{% if fg_scan and decide %}, or the scan
   gate's `notes`,{% endif %} led to a delta. The review has passed and
   nothing re-runs: treat the round as *finished*. In a final round the delta revokes
-  `done`: close the round as intermediate (**{% if stack %}Assembly{% else %}Intermediate squash{% endif %}**), and the
+  `done`: close the round as intermediate (**Intermediate squash**), and the
   fresh round implements the delta and reaches its own review, scan and ship
   gate.
 {% endif %}
-{% if stack %}
-- **Finished** → nothing re-runs. Assemble; open a fresh round whose
-  increments implement the delta — or, when the delta was drawn by an
-  assembly escalation, open the fresh round at current HEAD without
-  assembling, bumping implementation `R` as an assembly would: the finished
-  round's commits stay beneath it, and the next assembly closes both.
-{% else %}
 - **Finished** → nothing re-runs. Squash; open a fresh round whose increments
   implement the delta.
 {% endif %}
@@ -1092,8 +1117,13 @@ and history-rewriting rules only as **Destructive git** says.
   agent do either.
 - Continue past a post-freeze stop before triage rules, or override a triage
   ruling or judge escalation.
+{% if stack %}
+- Launch an increment into a round while its review runs, or review a round
+  twice from the same base.
+{% else %}
 - Launch an increment into a round whose review has started, or run any part
   of a round's review twice.
+{% endif %}
 - Overwrite or reuse an artifact filename.
 {% if stack %}
 - Squash, amend, rebase or rewrite any commit yourself; let the stack be

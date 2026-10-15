@@ -47,7 +47,7 @@ the foreground tool's ten minutes is never enough.
 {%- endif %} This matters most where the subagent
 itself launches subagents — a whole orchestrator cycle runs for hours. Then
 wait for it to finish and read its stdout directly — never `&`, `nohup`, a
-wrapper script or a timer of your own.
+wrapper script, a timer or a polling loop of your own.
 
 The prompt is the entire contract: the subagent sees only your prompt and its
 own agent definition. State the task, inputs by absolute path, what to

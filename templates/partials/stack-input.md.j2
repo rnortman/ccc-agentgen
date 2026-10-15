@@ -1,1 +1,2 @@
 {% macro stack_input(cap=false) %}{{ "The" if cap else "the" }} stack — branch and commit per assembled PR, bottom first; empty before the first assembly{% endmacro %}
+{% macro open_pr_rule() %}Nothing is inserted at or before the open PR. A delta may grow it, shrink it or re-split it into itself plus new entries after it, remove it only when the delta's triggering document is an **Empty round** triage, and restates its `size`; its branch is renamed only when an assembly escalation says the name exists.{% endmacro %}

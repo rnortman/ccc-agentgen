@@ -149,11 +149,14 @@ triage dispositions path.
 ## Commit message standard
 
 Line 1 is the PR title — the stack entry's, imperative, at most 72
-characters, no trailing period. A blank line, then a PR description in
-markdown: what the PR does and why, from the design and request in the
-project's words; what to look at first when reviewing; deviations and
-deferrals the round's log entries record; every `TODO(slug)` placed; and,
-for every PR but the first, a final line `Stacked on: <previous branch>`.
+characters, no trailing period. A blank line, then one or two paragraphs for
+a human reviewer on the code host: what the PR does and why, in the
+project's words; a behaviour change to existing code, if there is one; the
+one line a reviewer needs to run it, if any. Nothing else: no headings, no
+review guide, no deviations — the design was a proposal nobody on the code
+host has seen, and the code is the source of truth — no deferral or TODO
+catalogue, no test inventory. For every PR but the first, a final line
+`Stacked on: <previous branch>`.
 
 No attribution lines, no references to workflow documents, no round,
 increment or fixup vocabulary: a reader on the code host has none of it. No

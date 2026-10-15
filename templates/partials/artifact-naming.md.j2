@@ -38,7 +38,7 @@ Ordinals:
 - **plan generation `P`**, **{% if "coder" in roles %}supervisor{% else %}implementer{% endif %} generation `S`** — within one unit,
   each starting at 1.
 {% endif %}
-- **`N`, `K`** — task-wide counters: `N` deltas, `K` triage rulings{% if "workflow-scanner" in roles %}, scan
+- **`N`, `K`** — task-wide counters: `N` deltas, `K` triage rulings{% if "pr-assembler" in roles and not split %}, round reopens{% endif %}{% if "workflow-scanner" in roles %}, scan
   reports{% endif %}{% if "forester" in roles %}, forester gates{% endif %}{% if eli5 %}, on-request
   renderings{% endif %}{% if "comment-rewriter" in roles %} and sweep exceptions{% endif %}.
 {% if "forester" in roles %}
@@ -51,8 +51,9 @@ again as the same step with the same ids. Every target path it would write takes
 suffix `-k<K>` before the extension, `K` the ruling that resumed it{% if "pr-assembler" in roles and not split %} or
 preceded the user's direction{% endif %}:
 `exception-r1-i1-k2.md`, `dispositions-deep-r2-w2-a1-k12.md`{% if split %},
-`plan-r1-i1-p1-k2.md`, `handoff-r1-i1-s1-k2.md`{% endif %}. The log is
-append-only and keeps its name.
+`plan-r1-i1-p1-k2.md`, `handoff-r1-i1-s1-k2.md`{% endif %}.{% if "pr-assembler" in roles and not split %} A reopened round's review and assembly artifacts take the same suffix, `K` the fresh
+one the reopen took.{% endif %} The log is append-only and keeps
+its name.
 
 `<phase>` ∈ `design`,{% if "prepass-reviewer" in roles %} `prepass`,{% endif %} `deep`. A respond step's id `<step>` is
 `<phase>-r<R>-a<A>`, or `deep-r<R>-w<W>-a1` for a deep wave's first attempt.

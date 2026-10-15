@@ -24,7 +24,9 @@ deltas), the implementation log, nothing else — and checks *presence* and
 
 ## Inputs
 
-- Base and HEAD; the base is the current round base. {{ diff_sentences() }}
+- Base and HEAD; the base is {% if stack %}the review base the orchestrator
+  gives — the round base, or for a reopened round the HEAD its last review
+  saw{% else %}the current round base{% endif %}. {{ diff_sentences() }}
 - Design path, plus any delta paths.
 - Implementation log path — the append-only record of what each increment
   shipped, with deviations, TODOs and out-of-scope observations inline; where
@@ -68,13 +70,15 @@ Two questions, both scoped to the round under review.
 
 Implementation runs in rounds of a few increments. You review **one round**;
 the diff is only that round's commits — earlier rounds were reviewed and
-squashed into the base, correctly absent. **Effective design = design document
+squashed into the base, correctly absent{% if stack %}, as are a reopened
+round's commits before the review base, reviewed with it{% endif %}. **Effective design = design document
 + every delta applied in order**; a delta can add, remove or supersede scope,
 and a later delta wins.
 
 - **Intermediate round** — the implementer is still in progress. Completeness
-  yardstick: **this round's log entries** — what the log records for this
-  round should be fully present in the diff. Do not flag design items this
+  yardstick: **this round's log entries**{% if stack %} for commits after the
+  review base{% endif %} — what the log records for this round should be fully
+  present in the diff. Do not flag design items this
   round never undertook; other rounds own them. A design section absent from
   the diff is a finding only if the log claims this round shipped it.
 - **Final round** — the log ends on the increment claiming the design done.
@@ -105,7 +109,8 @@ the stack you were given. Authorisation is per PR:
 
 A scope finding looks like:
 
-- **Silent omission** — something the log says this round shipped is missing
+- **Silent omission** — something the log says this round shipped{% if stack %}
+  after the base{% endif %} is missing
   or partial in the diff, uncalled-out. Final round also: a design item with
   no log entry anywhere and no TODO plus rationale.
 - **Undesigned work** — the log claims, or the diff plainly does, work not in

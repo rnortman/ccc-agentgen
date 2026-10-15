@@ -4,7 +4,7 @@ tools: [Read, Write, Edit, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
-{% from "partials/stack-input.md.j2" import stack_input %}
+{% from "partials/stack-input.md.j2" import stack_input, open_pr_rule %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% set stack = "pr-assembler" in roles and "planner" not in roles %}
 Modes: **draft**, **revise**, **respond**, **delta**, **triage**. Outputs are
@@ -129,7 +129,13 @@ decided. Per PR, in order:
   that only with a stated reason, and never above {{ vars.pr_max_lines }}.
   Insertions only, deletions never offset, workflow artifacts and docs
   excluded.
-- the done criteria the PR leaves green.
+- the done criteria the PR leaves green — the exact commands. Write a done
+  line only after running its command once on the base tree, yourself or
+  through an explorer; where it names a target the PR creates, run it on the
+  package's existing targets. A command that fails there for a reason the PR
+  will not fix is stated with the command that passes, or as a fact the user
+  must fix before the freeze; a command you could not run says so and why.
+  The implementer is never the first to run a done line.
 
 Every design item appears in exactly one PR. Every PR is independently
 reviewable and leaves the tree buildable; a PR that only makes sense once a
@@ -161,7 +167,9 @@ triage your own ruling), request path, working dir, {% if stack %}{{ stack_input
   decision it supersedes, and why, grounded in the change inputs and the
   code. Do not restate unchanged design.
 - Frozen design + prior deltas + this one, read in order, must be one
-  unambiguous, conflict-free spec. Say explicitly what this delta overrides.
+  unambiguous, conflict-free spec. Say explicitly what this delta overrides —
+  every restatement of what it changes, found by searching the frozen set,
+  not from memory.
 
 Further changes are higher-numbered deltas.
 {% if stack %}
@@ -187,14 +195,12 @@ stack you were given — into an assembled prefix and a free tail:
   reviewer who has started on a PR must find it where it was. Work that fits
   no assembled PR's purpose goes in the open PR or a later one; removing a
   feature an assembled PR shipped is a re-scope whose fixup deletes it.
-- **The open PR keeps its position.** Nothing is inserted at or before it:
-  the open round's commits are its work, and the implementer and the
-  assembler find the current PR by position. A delta changes the open PR
-  only by **re-split** — its revised scope, and new entries after it for
-  what moved out — or, when the triggering document is an **Empty round**
-  triage, by removing or re-scoping it, or, when it is an assembly
-  escalation for a branch name that already exists, by renaming its branch.
-  The open entry's branch does not exist yet, so no reviewer holds it.
+- **The open PR keeps its position, not its content.** {{ open_pr_rule() }}
+  The open round's commits are its work, and the implementer and the
+  assembler find the current PR by position; the open entry's branch does
+  not exist yet, so no reviewer holds it. The open entry's round is open
+  until the entry is assembled, so new work placed in it is built and
+  reviewed in that round, never as a fixup.
 - **Entries after the open PR are free**: added, removed, re-scoped or
   reordered as the change needs.
 
@@ -222,7 +228,9 @@ throughout.
 2. Fact-check each against source — code, request, your explorations.
 3. Disposition each per the rules below, applying fixes to the document.
 
-The owner's answer to an open question closes it. A notes file is the
+The owner's answer to an open question closes it, and an owner's note that
+overrules a decision binds the same way: write it into the body as the
+decision, naming the notes file. A notes file is the
 owner's only when the launch prompt hands it to you as the owner's notes; every
 other notes file holds reviewer findings. On an owner's notes file, remove
 each answered question from **Open questions** and write the answer into the
@@ -307,9 +315,9 @@ Four stops belong to the stack, and each takes only the rulings listed:
     says — never that it drop, edit or re-target a fixup, bypass a hook, or
     patch code; a ruling it cannot carry out within its rules is the same
     escalation again.
-  - A delta only when the branch name already exists: it renames the open
-    entry's branch. It lands in a fresh round on top of the finished,
-    unassembled one, and the open PR stays the same entry.
+  - A delta for anything the assembler escalated that the spec, not the
+    assembler, must answer — a branch name that exists, a scope the reviewed
+    tree does not hold. It lands in the open round.
   - `ESCALATE` anything else: a conflict that cannot be resolved without
     changing the reviewed tree, a rewritten PR that fails the project's
     check with no honest resolution, a hook that rejects the squash and

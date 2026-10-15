@@ -13,6 +13,17 @@
   right the first time. Nothing is pushed: you post the branches when the
   cycle ends. The workflow's documents must live in a separate repository
   from your code; it refuses to start otherwise.
+- **Stack workflows recover from a late design change without stopping, and
+  write PR descriptions for people.** In `review-chain-stack` and
+  `review-chain-stack-auto`, a design change made after a PR's review but
+  before it is committed now goes back into that PR: it is built, the new
+  commits are reviewed, and then the PR is assembled. Before, the workflow
+  tried to assemble a PR that was missing part of its spec, refused, and
+  stopped for you. Each PR's commit message is now a title and one or two
+  paragraphs saying what it does and why, with no review guide, deviation
+  list or TODO catalogue. The designer also runs each PR's done commands
+  before writing them, so a broken build shows up at the design gate
+  instead of partway through implementation.
 - **The forester's answers to open questions now reach the design.** In
   `review-chain-auto`, `review-chain-split-auto`,
   `review-chain-planner-auto` and `todo-burndown-auto`, the forester's

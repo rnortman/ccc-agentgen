@@ -72,8 +72,12 @@ STAGE_VOCABULARY = {
     "coder": ("coder",),
     "coder-supervisor": ("supervisor",),
     "comment-rewriter": ("sweep",),
-    "pr-assembler": ("pr-assembler", "assembl", "stack", "pr-done", "pr-r<", "fixup", "restack"),
+    "pr-assembler": ("pr-assembler", "assembl", "stack", "pr-done", "pr-r<", "fixup", "restack", "review base"),
 }
+
+# The stack's open-PR rule, one wording shared by the designer and the
+# design-reviewer's delta check.
+OPEN_PR_RULE = "remove it only when the delta's triggering document is an **Empty round** triage"
 
 # Every model string the shipped variants may name. ccc validates efforts but
 # treats a model as an arbitrary string, so a typo would surface only at run
@@ -342,6 +346,7 @@ def test_spawning_roles_carry_kill_guidance(builds):
     for name, body in spawning:
         for phrase in KILL_GUIDANCE_PHRASES:
             assert phrase in body, f"{name}: {phrase}"
+        assert "a polling loop of your own" in " ".join(body.split()), name
 
 
 def test_non_spawning_roles_know_nothing_of_kill(builds):
@@ -455,6 +460,25 @@ def test_forester_approval_binds_open_questions_to_defaults(builds):
             assert (DEFAULTS_RULE in flat) == (autonomy == "decide"), where
             if autonomy == "advise":
                 assert "userproxy" not in flat, where
+
+
+def test_owner_overrules_frozen_search_and_false_rationale_rules(builds):
+    """An owner's overrule binds like an answer; a delta's overrides come from
+    searching the frozen set; a false rationale under a standing decision is
+    logged, not escalated.
+    """
+    phrases = {
+        "designer": ("an owner's note that overrules a decision binds the same way", "found by searching the frozen set"),
+        "implementer": ("A frozen document's rationale that proves false",),
+    }
+    for build in builds.values():
+        for role, wanted in phrases.items():
+            if role not in build.by_id:
+                continue
+            for name, body in build.bodies(role):
+                flat = " ".join(body.split())
+                for phrase in wanted:
+                    assert phrase in flat, f"{build.stem}/{name}: {phrase}"
 
 
 def test_designer_open_questions_state_a_default(builds):
@@ -1302,6 +1326,87 @@ def test_stack_orchestrator_keeps_the_stack(builds):
             naming = _section(body, "## Artifacts and their names")
             for entry in ("`pr-r<R>.md`", "`exception-assembly-r<R>.md`"):
                 assert entry in naming, f"{where}: {entry}"
+            assert "A reopened round's review and assembly artifacts take the same suffix" in naming, where
+            implementation = _section(body, "### Implementation")
+            assert "`done` or `pr-done` with **reopen** set → **Reopened round**" in implementation, where
+            landing = _section(body, "#### Where a delta lands")
+            for phrase in (
+                "**After the review passed, before assembly**",
+                "**Reopened round**, either way: set **reopen**",
+                "stall mark = `I`",
+                "`exception-assembly-r<R>-k<K>.md`",
+                "HEAD = the **reopen** HEAD → nothing is reviewed again",
+            ):
+                assert phrase in landing, f"{where}: {phrase}"
+            assert "`K` += 1, that `K` is the reopen's" in landing, where
+            for removed in ("through a triage", "`K` that triage's"):
+                assert removed not in landing, f"{where}: {removed}"
+            for phrase in ("the scanner had not replied →", "nothing is reviewed again; round state → *finished*"):
+                assert phrase in landing, f"{where}: {phrase}"
+            assert "reopened by `delta-remaining`" not in landing, where
+            for phrase in ("`K` the fresh one the reopen took", "round reopens"):
+                assert phrase in naming, f"{where}: {phrase}"
+            state = _section(body, "## State you track")
+            for phrase in (
+                "`K` += 1 at the reopen",
+                "/ reopen",
+                "no value is taken twice",
+                "the round-close scanner had replied",
+                "at the deep review's pass",
+                "a reopened round's close",
+            ):
+                assert phrase in state, f"{where}: {phrase}"
+            round_review = _section(body, "### Round review")
+            for phrase in ("Every launch here carries the **review base**", "On the deep review's pass"):
+                assert phrase in round_review, f"{where}: {phrase}"
+            assembly = _section(body, "### Assembly — no gate")
+            assert "round base = review base = HEAD; **reopen** cleared" in assembly, where
+            assert "round base = review base = current HEAD" in _section(body, "### Ship gate"), where
+            for phrase in (
+                "review base",
+                "reopened",
+                "review a round twice from the same base",
+                "review base, HEAD, reviewed HEAD",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            for removed in (
+                "fresh round at current HEAD without assembling",
+                "Nothing reopens a round",
+                "At the round-close scan",
+                "One case is not empty",
+                "still assembled as its PR",
+            ):
+                assert removed not in flat, f"{where}: {removed}"
+
+
+def test_non_stack_orchestrator_keeps_round_landing_rules(builds):
+    """Outside the stack a round is a checkpoint: it never reopens and its
+    review never runs twice.
+    """
+    for build in builds.values():
+        if "pr-assembler" in build.variant.roles or "orchestrator" not in build.by_id:
+            continue
+        for name, body in build.bodies("orchestrator"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            for phrase in (
+                "Nothing reopens a round",
+                "A round's review never runs twice",
+                "round base, HEAD, reviewed HEAD",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            for absent in ("/ reopen", "round reopens", "deep review's pass", "scanner had replied"):
+                assert absent not in flat, f"{where}: {absent}"
+
+
+def test_every_orchestrator_takes_no_ordinal_twice(builds):
+    """`N` and `K` stay unique in every orchestrator, stack or not."""
+    for build in builds.values():
+        if "orchestrator" not in build.by_id:
+            continue
+        for name, body in build.bodies("orchestrator"):
+            state = _section(body, "## State you track")
+            assert "no value is taken twice" in state, f"{build.stem}/{name}"
 
 
 def test_stack_assembler_keeps_history_safe(builds):
@@ -1359,6 +1464,10 @@ def test_stack_assembler_keeps_history_safe(builds):
             assert "correcting any restacked PR's line" in squash, where
             message = flat.split("## Commit message standard")[1].split("## Changelog standard")[0]
             assert "No line begins with `;`" in message, where
+            for phrase in ("one or two paragraphs", "no review guide", "Stacked on:"):
+                assert phrase in message, f"{where}: {phrase}"
+            for removed in ("what to look at first", "every `TODO(slug)` placed", "deviations and deferrals"):
+                assert removed not in message, f"{where}: {removed}"
             assert "how the next implementer finds" not in flat, where
             assert "`reword`" not in flat and "`edit` in the same rebase" not in flat, where
             assert "names nothing beyond the path you reply as `changelog=`" in flat, where
@@ -1509,6 +1618,11 @@ def test_stack_designer_and_reviewer_carry_the_stack_section(builds):
             assert ("- **Stack** —" in flat) == stack, where
             assert ("keep their place, not their content" in flat) == stack, where
             assert ("### Triage of a stack stop" in body) == stack, where
+            assert ("keeps its position, not its content" in flat) == stack, where
+            assert (OPEN_PR_RULE in flat) == stack, where
+            assert "only by **re-split**" not in flat, where
+            assert ("The implementer is never the first to run a done line" in flat) == stack, where
+            assert ("running its command once on the base tree" in flat) == stack, where
             if stack:
                 assert f"at most {target};" in flat, where
                 assert f"never above {limit}" in flat, where
@@ -1526,6 +1640,9 @@ def test_stack_designer_and_reviewer_carry_the_stack_section(builds):
                 assert "**Does the composite stack hold?**" in body, where
                 delta_check = " ".join(body.split("**Does the composite stack hold?**")[1].split())
                 assert "whose branch is not in the stack you were given" in delta_check, where
+                assert "The open PR keeps its position, not its content" in delta_check, where
+                assert OPEN_PR_RULE in delta_check, where
+                assert "removed or re-scoped only when" not in delta_check, where
             assert "assembly entry in the log" not in " ".join(body.split()), where
         if "prepass-reviewer" not in build.by_id:
             continue
@@ -1534,3 +1651,6 @@ def test_stack_designer_and_reviewer_carry_the_stack_section(builds):
             assert ("assigns to a **later** PR" in flat) == stack, f"{stem}/{name}"
             assert ("whose branch is not in the stack you were given" in flat) == stack, f"{stem}/{name}"
             assert "assembly entry in the log" not in flat, f"{stem}/{name}"
+            assert ("review base" in flat) == stack, f"{stem}/{name}"
+            assert ("this round shipped after the base" in flat) == stack, f"{stem}/{name}"
+            assert "log-against-design" in flat, f"{stem}/{name}"
