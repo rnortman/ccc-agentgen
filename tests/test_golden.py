@@ -653,11 +653,34 @@ def test_push_is_never_a_gate(builds):
             assert "never push on your own" in flat, where
             assert "whether or not HEAD is pushed" in " ".join(reply_section(body).split()), where
             assert "never as a request or an offer" in flat, where
-            for fact in ("`<branch> at <HEAD>, pushed to origin`", "`<branch> at <HEAD>, unpushed`"):
-                assert fact in flat, f"{where}: {fact}"
+            if stem in STACK_STEMS:
+                assert "`work branch <branch> at <HEAD>; stack: <b1>@<c1> … <bn>@<cn>`" in flat, where
+                assert "pushed to origin" not in flat, where
+                assert "`<branch> at <HEAD>, unpushed`" not in flat, where
+            else:
+                for fact in (
+                    "`<branch> at <HEAD>, pushed to origin`",
+                    "`<branch> at <HEAD>, unpushed`",
+                ):
+                    assert fact in flat, f"{where}: {fact}"
             post_cycle = _section(body, "### Post-cycle turns")
             assert "the same `shipped` status line" in post_cycle, where
             assert "No turn after the shipped end reopens the cycle" in post_cycle, where
+
+
+def test_non_stack_orchestrator_keeps_the_checked_out_branch(builds):
+    """Without the assembler the checked-out branch is the deliverable."""
+    for stem in REVIEW_CHAIN_STEMS:
+        if stem in STACK_STEMS:
+            continue
+        for name, body in builds[stem].bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert "which branch to work on" in flat, where
+            assert "`git symbolic-ref --short HEAD` at setup" in flat, where
+            assert "that branch is now **branch**" in flat, where
+            assert "a detached HEAD at setup" in flat, where
+            assert "a branch HEAD was found on stays where it is" not in flat, where
 
 
 def _autopush(variant: Variant) -> bool:
@@ -1285,6 +1308,7 @@ def test_stack_orchestrator_keeps_the_stack(builds):
                 "git for-each-ref --format='%(refname:short)' refs/heads",
                 "absent from the recorded names",
                 "`size=`",
+                "`<request slug>-stack-work`",
             ):
                 assert phrase in flat, f"{where}: {phrase}"
             if "Nothing is surfaced; the forester's `approve`" not in flat:

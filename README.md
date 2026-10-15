@@ -127,7 +127,9 @@ pushes the branches. The stack chains require the workflow's artifacts —
 log, design, PR records — to live in a repository other than the code's,
 because the assembler rewrites the code repository's history; the
 orchestrator refuses to start when the working dir is inside the code
-repository.
+repository. The stack orchestrator creates a dedicated work branch,
+`<request slug>-stack-work`, at setup and never moves the branch it was
+launched on; the stack branches are the product.
 
 ## Forester family
 

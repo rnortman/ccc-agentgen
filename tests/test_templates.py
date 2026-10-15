@@ -140,6 +140,36 @@ def test_stack_shape_renders_the_assembly(stack):
     assert "pr-done" in _body(stack, "implementer")
 
 
+def test_stack_orchestrator_works_on_its_own_branch(stack):
+    stacked = _body(stack, "orchestrator")
+    flat = " ".join(stacked.split())
+    for phrase in (
+        "the work branch `<request slug>-stack-work`, created at setup",
+        "The **request slug** is the working dir's basename",
+        "A detached HEAD is no stop",
+        "a rebase in progress at setup",
+        "`git checkout --no-track -b <name>`",
+        "quote git's error and the name",
+        "`git checkout <bn> && git branch -d <branch>`",
+        "work branch <branch> at <HEAD>",
+        "a branch HEAD was found on stays where it is",
+        "Name that branch as moved",
+        "a work branch that could not be created at setup",
+    ):
+        assert phrase in flat, phrase
+    for phrase in (
+        "ask the user which branch",
+        "pushed to origin",
+        "`git symbolic-ref --short HEAD` at setup",
+        "that branch is now **branch**",
+        "a detached HEAD at setup",
+    ):
+        assert phrase not in flat, phrase
+    setup = flat[flat.index("### Setup") : flat.index("### Design")]
+    assert setup.index("sidecar repository") < setup.index("**Work branch**")
+    assert setup.index("--git-path rebase-merge") < setup.index("**Work branch**")
+
+
 def test_every_role_template_renders(full):
     assert [role.id for role in full] == role_ids()
     for role in full:

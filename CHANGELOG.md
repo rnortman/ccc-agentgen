@@ -13,6 +13,13 @@
   right the first time. Nothing is pushed: you post the branches when the
   cycle ends. The workflow's documents must live in a separate repository
   from your code; it refuses to start otherwise.
+- **Stack workflows no longer build on the branch you launched them from.**
+  `review-chain-stack` and `review-chain-stack-auto` used to move whatever
+  branch was checked out — `main` included — to the top of the stack. They
+  now create their own `<request>-stack-work` branch at the start and leave
+  yours where it was. If a branch of that name is left over from an earlier
+  run, the workflow stops before starting; delete it and relaunch. The work
+  branch is left in place at the end; delete it once the stack is pushed.
 - **Stack workflows recover from a late design change without stopping, and
   write PR descriptions for people.** In `review-chain-stack` and
   `review-chain-stack-auto`, a design change made after a PR's review but
