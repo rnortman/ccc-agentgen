@@ -86,7 +86,7 @@ Template bodies receive `harness` for the current render and `harnesses` for
 the effective ordered policy. Overlays are written
 only when a later allowed harness's body differs from the preferred/base body.
 
-Twelve variants ship: nine review chains and three TODO workflows (see
+Fourteen variants ship: eleven review chains and three TODO workflows (see
 **TODO triage and burndown**). `review-chain` is the full chain with one `implementer`
 role. `review-chain-lite` drops the ELI5 rendering, the review pre-pass, the
 round-close scan, the explorer and the forester family, and runs cheaper
@@ -130,6 +130,35 @@ orchestrator refuses to start when the working dir is inside the code
 repository. The stack orchestrator creates a dedicated work branch,
 `<request slug>-stack-work`, at setup and never moves the branch it was
 launched on; the stack branches are the product.
+
+`review-chain-stack-followup` and `review-chain-stack-followup-auto` run a
+second cycle over a stack whose PRs are open and reviewed on the code host.
+They are the stack variants plus a `pr-liaison` role, the only role that
+talks to the code host: it reads every PR's review threads into
+`pr-comments-<K>.md`, posts the answers the design writes, and publishes
+the rewritten stack. Name the working dir of the cycle that last shipped
+the stack (the directory of its `user-request.md`), a stack cycle or an
+earlier follow-up, when you launch; the liaison finds the stack from its
+records and refuses a stack whose local branches, remote branches
+and PR heads disagree, or whose PRs are not all open. The design answers
+every thread in a **Responses** section and lands its code changes as
+fixups into the PRs they belong to, or as new PRs on top. The liaison is
+pinned to Claude (`harness: claude`): it calls the forgejo MCP server's
+tools by their Claude Code names (`mcp__forgejo__forgejo_list_prs`,
+`_get_pr`, `_get_review_comments`, `_get_pr_comments`, `_post_review`,
+`_open_pr`), which a role reaches only when its `tools:` list names them,
+and the Codex configuration carries no forgejo server. In the plain
+variant the responses are posted at every design gate the review chain
+cleared; your word to proceed freezes the design as it stands, and
+comments posted after the last fetch wait for the next cycle. A gate
+reached through a review escalation posts nothing, and your word to
+proceed there posts the responses and then freezes. The plain variant never pushes on its
+own: after the cycle, `force-push the stack` force-pushes every stack
+branch with a lease, in one atomic push, and opens the new PRs, and "open the PRs" opens them
+without pushing, giving the lease command to run by hand for the branches
+not yet pushed. In `-auto` the responses are posted once the forester
+approves the design, and the forester's ship approval force-pushes the
+stack with a lease and opens the new PRs.
 
 ## Forester family
 

@@ -39,7 +39,8 @@ Ordinals:
   each starting at 1.
 {% endif %}
 - **`N`, `K`** — task-wide counters: `N` deltas, `K` triage rulings{% if "pr-assembler" in roles and not split %}, round reopens{% endif %}{% if "workflow-scanner" in roles %}, scan
-  reports{% endif %}{% if "forester" in roles %}, forester gates{% endif %}{% if eli5 %}, on-request
+  reports{% endif %}{% if "forester" in roles %}, forester gates{% endif %}{% if "pr-liaison" in roles %}, liaison
+  launches{% endif %}{% if eli5 %}, on-request
   renderings{% endif %}{% if "comment-rewriter" in roles %} and sweep exceptions{% endif %}.
 {% if "forester" in roles %}
 - **gate round `G`** — within one forester design or triage gate, from 1.
@@ -104,6 +105,9 @@ names.
 {% if "pr-assembler" in roles and not split %}
   - pr-assembler: `exception-assembly-r<R>.md`.
 {% endif %}
+{% if "pr-liaison" in roles %}
+  - pr-liaison: `exception-liaison-<K>.md`.
+{% endif %}
 {% if split %}
 - Plan: `plan-r<R>-i<I>-p<P>.md`. {% if "coder" in roles %}Supervisor{% else %}Implementer{% endif %} handoff: `handoff-r<R>-i<I>-s<S>.md`
   in an increment, `handoff-<step>-s<S>.md` in a respond step.
@@ -112,6 +116,11 @@ names.
 {% if "pr-assembler" in roles and not split %}
 - Assembled PR: `pr-r<R>.md` — the PR's branch, the restacked branches, the
   added lines of each, and the PR's commit message.
+{% endif %}
+{% if "pr-liaison" in roles %}
+- Code host: `pr-comments-<K>.md` (the stack's PR comments, a snapshot per
+  fetch), `pr-posted-<K>.md` (what a post launch posted),
+  `pr-publish-<K>.md` (what a publish launch pushed and opened).
 {% endif %}
 {% if "workflow-scanner" in roles %}
 - Workflow scan: `workflow-scan-<K>.md`.

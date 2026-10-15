@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from agentgen.check import MAX_BODY_BYTES, WARN_BODY_BYTES, check_all, check_role, spawn_references
+from agentgen.check import (
+    MAX_BODY_BYTES,
+    WARN_BODY_BYTES,
+    check_all,
+    check_role,
+    escaped_bytes,
+    spawn_references,
+)
 from agentgen.model import HARNESSES
 from agentgen.render import RenderedRole
 
@@ -71,6 +80,61 @@ def test_large_body_warns_but_passes():
     result = check_role(role(body="x" * (WARN_BODY_BYTES + 10)), ["explorer"])
     assert result.ok
     assert any("argv ceiling" in w for w in result.warnings)
+
+
+TOML_ESCAPES = {'"': '\\"', "\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t", "\b": "\\b", "\f": "\\f"}
+
+
+def toml_basic_string(text):
+    """ccc's `toml_basic_string`, transcribed from `ccc-harness/src/harness/codex.rs`."""
+    out = []
+    for ch in text:
+        if ch in TOML_ESCAPES:
+            out.append(TOML_ESCAPES[ch])
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+@pytest.mark.parametrize("text", ["ab", 'a"\\\n\r\t\b\fé', "\x01\x1f\x7f", "", "x\n" * 50])
+def test_escaped_bytes_is_the_toml_string_and_bounds_the_json_one(text):
+    assert escaped_bytes(text) == len(toml_basic_string(text).encode())
+    assert escaped_bytes(text) >= len(json.dumps(text, ensure_ascii=False).encode())
+
+
+def test_body_warns_on_its_escaped_size():
+    body = "abcd\n" * 16_000
+    assert len(body.encode()) < WARN_BODY_BYTES < escaped_bytes(body) < MAX_BODY_BYTES
+    result = check_role(role(body=body), ["explorer"])
+    assert result.ok
+    assert any(str(escaped_bytes(body)) in w and "argv ceiling" in w for w in result.warnings)
+
+
+@pytest.mark.parametrize("extra", [0, 1])
+def test_body_warning_starts_one_byte_past_the_threshold(extra):
+    body = "x" * (WARN_BODY_BYTES - 2 + extra)
+    assert escaped_bytes(body) == WARN_BODY_BYTES + extra
+    result = check_role(role(body=body), ["explorer"])
+    assert result.ok
+    assert bool(result.warnings) == bool(extra)
+
+
+@pytest.mark.parametrize("extra", [0, 1])
+def test_body_error_starts_one_byte_past_the_ceiling(extra):
+    body = "x" * (MAX_BODY_BYTES - 2 + extra)
+    assert escaped_bytes(body) == MAX_BODY_BYTES + extra
+    result = check_role(role(body=body), ["explorer"])
+    assert result.ok != bool(extra)
+
+
+def test_body_under_the_ceiling_raw_but_over_it_escaped_fails():
+    body = '"' * (MAX_BODY_BYTES // 2 + 1)
+    assert len(body.encode()) < MAX_BODY_BYTES < escaped_bytes(body)
+    result = check_role(role(body=body), ["explorer"])
+    assert not result.ok
+    assert any(str(escaped_bytes(body)) in e and "ceiling" in e for e in result.errors)
 
 
 def test_dangling_spawn_reference_fails():

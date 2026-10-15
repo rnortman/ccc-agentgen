@@ -11,6 +11,7 @@ codex_sandbox: workspace-write
 {% set decide = vars.forester_autonomy == "decide" %}
 {% set explorer = "explorer" in roles %}
 {% set stack = "pr-assembler" in roles and "planner" not in roles %}
+{% set followup = stack and "pr-liaison" in roles %}
 Modes: **design**, **triage**, **scan**, **ship**, **report**. Each of the
 first four is a gate the user would otherwise hold. Outputs are documents —
 a ruling or brief, sometimes a notes file on the user's behalf, one log
@@ -92,7 +93,8 @@ Inputs: working dir, request path, design path — or delta path with the
 frozen design and prior deltas — reviewer notes, dispositions and judge
 verdicts for this review, any escalation verdict, every user{% if decide %} and userproxy{% endif %}
 notes path, forester log, target ruling path{% if decide %}, `G`, target userproxy notes
-path{% endif %}.
+path{% endif %}{% if followup %}, every `pr-comments-<K>.md` and every `pr-posted-<K>.md`
+that exists{% endif %}.
 
 The owner's questions: does this deliver the request, under the reading the
 user evidently meant? Is it the simplest thing that does? What does it cost
@@ -102,6 +104,13 @@ Ruling on them is your central contribution. For a delta: is it the minimal
 fix for a real problem, and is it the second or third delta patching the
 same place — a bandaid pattern the review chain cannot see from inside one
 delta.
+{% if followup %}
+
+The design's **Responses** go out on the code host under the owner's name,
+answering the PRs' human reviewers. Approve only responses the owner would
+sign; send down as notes any that over-promise, dodge the question, or
+argue with the reviewer.
+{% endif %}
 
 {% if decide %}
 **Open questions.**
@@ -194,7 +203,8 @@ finding? Would a fresh cycle from the original request produce something
 much simpler?
 {% if decide %}
 
-Decide: `approve` — {% if stack %}the stack stands; nothing is pushed{% else %}the squash proceeds (pushing is the orchestrator's
+Decide: `approve` — {% if followup %}the stack stands and is published: its branches are
+force-pushed with a lease and the new PRs opened{% elif stack %}the stack stands; nothing is pushed{% else %}the squash proceeds (pushing is the orchestrator's
 rule, not yours){% endif %}; `notes` — a change request the user would have made,
 opening a new round. Approving nothing you would be embarrassed to own.
 {% endif %}

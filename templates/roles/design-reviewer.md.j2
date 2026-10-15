@@ -6,6 +6,7 @@ codex_sandbox: workspace-write
 {% from "partials/findings.md.j2" import findings, findings_reply %}
 {% from "partials/stack-input.md.j2" import stack_input, open_pr_rule %}
 {% set stack = "pr-assembler" in roles and "planner" not in roles %}
+{% set followup = stack and "pr-liaison" in roles %}
 You fact-check a design document adversarially. Assume nothing in it is true
 until verified against the code and the user's request: designs routinely
 invent file paths, function signatures and "existing" helpers.
@@ -21,6 +22,14 @@ Design path, user request path, target notes path. A delta review also hands
 you the frozen design plus prior deltas, and the change input behind the
 delta{% if stack %}, {{ stack_input() }} (which PRs are
 assembled), and the implementation log (at what size){% endif %}.
+{% if followup %}
+
+This cycle follows up a stack shipped as open PRs. You are also handed the
+comments path(s) — `pr-comments-<K>.md`, the PRs' review threads as the
+code host holds them, one item per thread with its slug and a mark — and
+the prior working dir, whose `design.md`, deltas and
+`implementation-log.md` record what shipped.
+{% endif %}
 
 ## Process
 
@@ -74,6 +83,20 @@ assembled), and the implementation log (at what size){% endif %}.
   characters; branch names are distinct, well-formed, not the current branch
   and not existing refs (`git branch --list <name>` and `git branch -r
   --list '*/<name>'`: local and remote-tracking refs, no network).
+{% endif %}
+{% if followup %}
+- **Responses** — every thread item not marked **ours** has exactly one
+  entry, under the item's slug, and no entry exists for an **ours** item or
+  for a slug the latest comments document lacks. Every factual claim in a
+  response is verified against the code the PR holds — its branch, not the
+  work tree's HEAD, where they differ. A response that promises a change
+  names a design item that exists and a **Stack** entry that carries it. A
+  response reads as written for the human reviewer on the code host: no
+  workflow vocabulary, no reference to any workflow document. The
+  inherited **Stack** entries match the comments document's branches and
+  order, with nothing added before, removed, reordered or renamed; the
+  branch-name checks above apply to the new entries after them, which
+  follow the stack rules.
 {% endif %}
 
 ## Reviewing a delta

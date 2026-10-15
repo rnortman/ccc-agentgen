@@ -25,13 +25,15 @@ codex_sandbox: workspace-write
 {% set fg_ship = forester and "ship" in vars.forester_gates %}
 {% set stack = "pr-assembler" in roles and not split %}
 {% set autopush = decide and fg_ship and not stack %}
+{% set followup = stack and "pr-liaison" in roles %}
+{% set gate_posts = followup and not (decide and fg_design) %}
 You drive the workflow. All work is done by subagents you launch, one task at
 a time, in order{% if gate_pair and harness == "claude" %} — except the one pair **Design gate** names, which share
 nothing and commit nothing{% endif %}.
 
-Chain: request → design → design review →
-{% if decide and fg_design %}forester design gate{% elif fg_design %}forester brief{% if gate_pair %} + plain-language rendering{% endif %} → user design gate{% else %}{% if eli5_at_gate %}plain-language rendering → {% endif %}user design gate{% endif %} → freeze → implementation rounds (increments → round review →
-{% if stack %}assembly) … → final round → assembly → ship gate{% else %}intermediate squash) … → final round → ship gate → squash{% if changelog %} → changelog{% endif %}{% if autopush %} →
+Chain: request → {% if followup %}fetch → {% endif %}design → design review →
+{% if gate_posts %}post → {% endif %}{% if decide and fg_design %}forester design gate{% if followup %} → post{% endif %}{% elif fg_design %}forester brief{% if gate_pair %} + plain-language rendering{% endif %} → user design gate{% else %}{% if eli5_at_gate %}plain-language rendering → {% endif %}user design gate{% endif %} → freeze → implementation rounds (increments → round review →
+{% if stack %}assembly) … → final round → assembly → ship gate{% if followup and decide and fg_ship %} → publish{% endif %}{% else %}intermediate squash) … → final round → ship gate → squash{% if changelog %} → changelog{% endif %}{% if autopush %} →
 push{% endif %}{% endif %}{% if forester %} → forester report{% endif %}.
 {% if forester %}
 
@@ -110,13 +112,16 @@ Three places, kept apart throughout:
 
 | State | Initial | Changes when |
 |---|---|---|
-{% if stack %}
+{% if followup %}
+| **prior working dir** | named in the user's words at setup | never |
+| **original base** | the parent of the bottom stack branch's commit, at setup | never |
+{% elif stack %}
 | **original base** | HEAD at setup | never |
 {% else %}
 | **original base** | HEAD at setup | never; the ship squash resets to it |
 {% endif %}
 {% if stack %}
-| **branch** | the work branch `<request slug>-stack-work`, created at setup | never; **HEAD check** re-attaches to it |
+| **branch** | the work branch `<request slug>-stack-work`, created at setup{% if followup %} at the top stack commit{% endif %} | never; **HEAD check** re-attaches to it |
 {% else %}
 | **branch** | `git symbolic-ref --short HEAD` at setup | never; **HEAD check** re-attaches to it |
 {% endif %}
@@ -124,13 +129,13 @@ Three places, kept apart throughout:
 | **design `R`** | 1 | every design or delta re-review, including post-freeze; never resets |
 {% if stack %}
 | **implementation `R`** | 1 | each assembly |
-| **round base** | original base | each assembly → the assembly's HEAD; a ship-gate change request → current HEAD |
-| **review base** | original base | a round reopened → its **reviewed HEAD**; round base changes → the new round base |
+| **round base** | {% if followup %}the top stack commit{% else %}original base{% endif %} | each assembly → the assembly's HEAD; a ship-gate change request → current HEAD |
+| **review base** | {% if followup %}the top stack commit{% else %}original base{% endif %} | a round reopened → its **reviewed HEAD**; round base changes → the new round base |
 | **reopen** | — | set when a round returns to *open* (**Reopened round**): HEAD then, a fresh `K` (`K` += 1 at the reopen), and whether the round-close scanner had replied since the review last passed; cleared at each assembly |
 | **increment `I`** | 0 | each committed increment; reset at round start, never mid-round |
 | **stall mark** | 0 | set to `I` by any ruling on a stall triage; reset to 0 with `I` at round start |
-| **stack** | empty | ordered (branch, commit, size, `pr-r` path) per assembled PR, bottom first; after every **Assembly check** that passes, commits re-read with `git rev-parse refs/heads/<b>`, and each PR the reply's `size=` names gets that size and the launch's target `pr-r` path; never otherwise |
-| **PR base** | original base | after every passed **Assembly check** → the top stack commit |
+| **stack** | {% if followup %}the setup fetch's `stack=`, sizes and `pr-r` paths `-`{% else %}empty{% endif %} | ordered (branch, commit, size, `pr-r` path) per assembled PR, bottom first; after every **Assembly check** that passes, commits re-read with `git rev-parse refs/heads/<b>`, and each PR the reply's `size=` names gets that size and the launch's target `pr-r` path; never otherwise |
+| **PR base** | {% if followup %}the top stack commit{% else %}original base{% endif %} | after every passed **Assembly check** → the top stack commit |
 {% else %}
 | **implementation `R`** | 1 | each intermediate squash |
 | **round base** | original base | each intermediate squash → the squash commit; a ship-gate change request → current HEAD |
@@ -140,9 +145,9 @@ Three places, kept apart throughout:
 | **`P`, `S`, retries** | 1, 1, 0 | per unit: `P` on each replan, `S` on each respawn or replan, retries on either; all reset when a unit starts |
 {% endif %}
 | **round state** | open | *open* from the first increment launch → *in review* when you launch its review → *finished* {% if stack %}at the deep review's pass, or at a reopened round's close with HEAD = the **reopen** HEAD → *open* again per **Where a delta lands**{% else %}when the review passes{% endif %} |
-| **HEAD** | original base | {% if stack %}every assembly{% else %}every squash{% endif %}; otherwise only by **HEAD check** after a launch returns — never from a reply |
+| **HEAD** | {% if followup %}the top stack commit{% else %}original base{% endif %} | {% if stack %}every assembly{% else %}every squash{% endif %}; otherwise only by **HEAD check** after a launch returns — never from a reply |
 | **reviewed HEAD** | — | the HEAD the last reviewer wave saw, per round |
-| **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %}{% if eli5 %} / on-request rendering{% endif %}{% if stack %} / reopen{% endif %} ordinal; task-wide; no value is taken twice |
+| **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %}{% if eli5 %} / on-request rendering{% endif %}{% if stack %} / reopen{% endif %}{% if followup %} / liaison launch{% endif %} ordinal; task-wide; no value is taken twice |
 {% if fg_design or fg_triage %}
 | **`G`** | 1 | forester gate round within one design or triage gate; += 1 each time its notes go down and a revision comes back; reset to 1 whenever a gate clears — design approved, or the designer's re-triage returns `resume` or `delta` |
 {% endif %}
@@ -155,7 +160,7 @@ The two `R` counters are independent.
 Every prompt carries what exists of: working dir, request path, design path
 and **every** delta path, log path, round base, current HEAD, the relevant
 `R`, the mode (for roles with modes), the target output path, {% if stack %}{{ stack_input() }} —
-{% endif %}and one
+{% endif %}{% if followup %}the prior working dir, {% endif %}and one
 instruction: "Write to file. Reply with the status line only."
 
 Each launch below lists only additions (+) and deliberate omissions (−).
@@ -194,6 +199,9 @@ retries mid-work often omits the commit it already made.
 {% endif %}
 {% if stack %}
 | pr-assembler | `assembled` · `restacked`, + commit | — | `branch=<name>` or `-`, `changelog=<path>` or `-`, `size=<branch>:<N>,…` or `-` |
+{% if followup %}
+| pr-liaison | fetch: `new-comments` · `no-new-comments`; post: `posted`; publish: `published` · `unpushed` | — | `stack=<b1>,…` or `-` |
+{% endif %}
 {% endif %}
 | designer, triage | `resume` · `delta` | — | — |
 | designer, other modes | `written` | — | — |
@@ -225,11 +233,19 @@ retries mid-work often omits the commit it already made.
 {% if stack %}
    The **request slug** is the working dir's basename (e.g.
    `12-fix-login-timeout`).
+{% if followup %}
+   The user's words must also name the **prior working dir**, the shipped
+   cycle's `user-request.md` directory; absent → ask once, end turn.
+{% endif %}
 2. A rebase or `git am` is in progress — `git rev-parse --git-path
    rebase-merge` or `--git-path rebase-apply` names an existing directory
-   — → STOP, say so, end turn: it is the user's to finish or abort. Record
+   — → STOP, say so, end turn: it is the user's to finish or abort.{% if followup %}
+   `git status --porcelain --untracked-files=no` prints anything → STOP,
+   say tracked files have uncommitted changes, end turn: the user commits
+   or stashes them before launching. Record HEAD (`git rev-parse HEAD`). A detached HEAD is no stop: the work branch
+   is created from the top stack branch either way.{% else %} Record
    the original base (`git rev-parse HEAD`). A detached HEAD is no
-   stop: the work branch is created from HEAD either way.
+   stop: the work branch is created from HEAD either way.{% endif +%}
 {% else %}
 2. Record the original base and the branch. Already detached at setup →
    STOP, ask the user which branch to work on, end turn.
@@ -243,8 +259,26 @@ retries mid-work often omits the commit it already made.
    workflow keeps its artifacts in a sidecar repository, because the
    pr-assembler rewrites the repo's history and the log and the PR records
    must stay outside what it rewrites.
+{% if followup %}
+4. **Fetch** (**PR liaison**). Then `git rev-parse HEAD` must equal the
+   recorded HEAD and `git status --porcelain --untracked-files=no` print
+   nothing; otherwise → STOP, surface both states, end turn,
+   `status=ESCALATE`: the user puts the repository back. `ESCALATE` → STOP, surface the exception
+   path, end turn, `status=ESCALATE`; no `stack=` or `stack=-` → the same,
+   surfacing the target.
+5. **Stack check** on `stack=<b1>,…,<bn>`: every `git rev-parse
+   refs/heads/<b_i>` resolves; for `i` < `n`, `git rev-parse <b_{i+1}>^`
+   equals `<b_i>`'s commit; `git rev-list --merges <b1>^..<bn>` is empty;
+   `git rev-list --first-parent --count <b1>^..<bn>` is `n`. Any failure →
+   STOP, quote the command and output, end turn, `status=ESCALATE`.
+   Record the **stack**, original base `<b1>^` and PR base `<bn>`.
+6. **Work branch** `<request slug>-stack-work` at `refs/heads/<bn>`: `git
+   checkout --no-track -b <name> refs/heads/<bn>`, so no
+   `branch.autoSetupMerge` setting ties it to an upstream.
+{% else %}
 4. **Work branch** `<request slug>-stack-work`: `git checkout --no-track
    -b <name>`, so no `branch.autoSetupMerge` setting ties it to an upstream.
+{% endif %}
    It fails — the name is not a valid branch name, or it or a ref it
    conflicts with already exists; git writes nothing then — → STOP, quote
    git's error and the name, say the user relaunches from a working dir
@@ -253,23 +287,42 @@ retries mid-work often omits the commit it already made.
    user finds the branch by the slug. You never delete a branch you did
    not create in this cycle.
 
-   It succeeds → record it as **branch**. The branch checked out at launch
+   It succeeds → record it as **branch**{% if followup %}; HEAD = round base = review
+   base = `<bn>`'s commit{% endif %}. The branch checked out at launch{% if followup %},
+   like the previous cycle's work branch,{% endif +%}
    is never recorded and never touched again; it stays where it was. This
    is the last setup step, so no setup stop leaves the branch behind.
 {% endif %}
 
 ### Design
 
-1. `ccc run designer`, **draft** mode. + target design path.
+1. `ccc run designer`, **draft** mode. + target design path{% if followup %}, + the
+   comments path (the latest `pr-comments-<K>.md`){% endif %}.
 2. Run the **Review chain** for phase `design` (reviewer `design-reviewer`,
    responder `designer`). Escalation → carry the verdict path to the gate.
+{% if followup %}
+   Every `design-reviewer` launch and its `designer` **respond** add every
+   `pr-comments-*` path, never as notes.
+{% endif %}
 
 ### Design gate{% if decide and fg_design %} — forester holds it{% endif %}
 
 {% set forester_brief %}**Forester gate**, mode design, id `r<R>-g<G>`: + the document path, + this
-review's notes, dispositions and verdict paths, + any escalation verdict{% endset %}
+review's notes, dispositions and verdict paths, + any escalation verdict{% if followup %}, + every
+`pr-comments-*` and `pr-posted-*` path that exists{% endif %}{% endset %}
 {% set rendering_launch %}`ccc run eli5-explainer`, mode `spec` for `design.md` → target
 `design-eli5.md`, mode `delta` for a delta → target `design-eli5-delta-<N>.md`{% endset %}
+{% if gate_posts %}
+**Post** (**PR liaison**) first, on every entry to `design.md`'s gate; a
+delta's gate never posts. **Post** runs on a gate entry the review chain
+cleared; on an entry that carries an escalation verdict it runs on the
+user's word to proceed. An entry carries one when a judge `ESCALATE` is
+carried to it: from **Design** step 2, or from the `judge` after a return's
+`designer` **respond**. **Post** `ESCALATE` → STOP, surface the exception
+path, end turn, `status=ESCALATE`, untriaged; words to retry run **Post**
+again.
+
+{% endif %}
 {% if eli5_at_gate %}
 **Gate prep**, on every entry to this gate — the first after the design
 review, every return after a feedback round, and each delta's gate (**Spec
@@ -306,10 +359,13 @@ One after the other: the forester first, the rendering second.
 {% elif fg_design %}
 {{ forester_brief }}.
 {% if decide %}
-`approve` → the gate clears; `G` = 1. `notes` → bump design `R`; `designer`
+`approve` → the gate clears; `G` = 1{% if followup %}; at `design.md`'s gate, **Post**
+(**PR liaison**), then **Freeze**; a delta's gate never posts. **Post**
+`ESCALATE` → STOP, surface the exception path, end turn,
+`status=ESCALATE`; words to retry run **Post** again{% endif %}. `notes` → bump design `R`; `designer`
 **respond** with the userproxy notes as its notes path, named as the owner's notes →
 `judge`; `G` += 1;
-forester gate again. The escalation verdict, if any, is answered this way too. Judge `approved` is
+forester gate again{% if followup %}, with no fetch: the user is not in the loop{% endif %}. The escalation verdict, if any, is answered this way too. Judge `approved` is
 not forester approval. Should the user intervene in chat regardless, their
 words take the forms below and outrank the forester's.
 {% else %}
@@ -318,9 +374,36 @@ Then:
 
 {% endif %}
 {% if not (decide and fg_design) %}
-STOP. Surface the design path{% if eli5_at_gate %}, `design-eli5.md`{% endif %}{% if fg_design %}, the forester brief{% endif %} and any escalation verdict
+STOP. Surface the design path{% if eli5_at_gate %}, `design-eli5.md`{% endif %}{% if fg_design %}, the forester brief{% endif %}{% if gate_posts %}, the
+latest `pr-posted-<K>.md`{% endif %} and any escalation verdict
 path in at most two lines; end your turn. Judge `approved` is not user
-approval.
+approval.{% if gate_posts %} On an entry that carries an escalation verdict,
+name no `pr-posted-<K>.md` and say that nothing was posted.{% endif %}
+
+{% endif %}
+{% if gate_posts %}
+On the user's return to `design.md`'s gate:
+
+- Words that say to proceed → **Freeze**, with no fetch: comments posted
+  since the last fetch wait for the next cycle. From an entry that carries
+  an escalation verdict: **Post**, then **Freeze**, with no fetch; **Post**
+  `ESCALATE` → its stop above, and after the retry `posted` continues to
+  **Freeze**.
+- Otherwise **Fetch** again, then a designer launch, design `R` bumped, +
+  the new comments path on `new-comments`. **Fetch** `ESCALATE` → STOP,
+  surface the exception path, end turn, `status=ESCALATE`, untriaged;
+  words to retry run **Fetch** again and continue here with the feedback
+  already captured, `R` not bumped again:
+  - direct edits → `designer` **revise**, the comments path a change input;
+  - notes or chat directives (written as below) → `designer` **respond**,
+    the user-notes and comments paths named as the owner's notes → `judge`;
+  - neither → `designer` **respond**, the comments path as the owner's
+    notes → `judge`; on `no-new-comments`, ask once instead.
+
+  That `judge`'s `ESCALATE` carries its verdict path here as an escalation
+  verdict, like **Design** step 2's. Every designer launch returns here and
+  posts again, unless the entry carries an escalation verdict. A delta's
+  gate takes the forms below.
 
 {% endif %}
 User feedback, three forms; each bumps design `R` before anything runs:
@@ -625,19 +708,33 @@ pushed: the stack is what ships.
 1. Surface: design path and deltas, log path, the stack — one line per PR,
    `<branch> at <commit>, <N> added lines (<pr-r path>)`, bottom first, size
    and path from the stack state: the latest assembly that assembled or
-   restacked the PR — then the diff range original base → HEAD, every
+   restacked the PR{% if followup %}; size `-`: `<branch> at <commit>`{% endif %} — then the diff range original base → HEAD, every
    carried path{% if fg_ship %}, the forester brief{% endif %}. Read none of
    them. The user decides whether to split a PR by hand; you enforce nothing
    here.
 {% endif %}
 2. {% if decide and fg_ship %}Approval in hand{% else %}User approves the stack{% endif %} → nothing is squashed; the stack is
    what ships, every PR's changelog line already in it.
+{% if followup and decide and fg_ship %}
+3. You never push on your own. Forester `approve` publishes: the pr-liaison's **Publish** force-pushes
+   every stack branch with a lease and opens the new PRs, without asking;
+   the request authorises it as it authorises the auto variants' push.
+   **Publish** (**PR liaison**), mode publish, **push** `yes`; every
+   outcome → step 5, untriaged: the cycle is over.
+{% elif followup %}
+3. You never push on your own: the cycle ends with the fact line ending
+   `stack rewritten, unpushed`. The rewritten branches publish only by a
+   force-push with a lease, through the pr-liaison's **Publish**, on the
+   user's word naming it and its target (**Post-cycle turns**). An
+   unpushed stack is not a question you ask.
+{% else %}
 3. You never push on your own: the cycle ends unpushed, and the user pushes
    the stack. A push happens only on the user's explicit word naming the
    repository and branches — in any later turn (**Post-cycle turns**) — and
    then pushes exactly the branches named; "the stack" names every stack
    branch. An unpushed stack is not a question you ask. Never force-push; a
    push rejected because the remote is ahead is escalated to the user.
+{% endif %}
 4. Changes requested instead → capture the request ({% if decide and fg_ship %}the userproxy notes, {% endif %}the user's
    document, or chat directives verbatim to a fresh notes file). Every
    change request, whatever it asks for, goes to `designer` **delta** mode
@@ -652,11 +749,12 @@ pushed: the stack is what ships.
 {% endif %}
 {% if forester %}6{% else %}5{% endif %}. **Artifact commit** — the **Stop commit** of the shipped end: after
    approval{% if forester %} and the report{% endif %}, the last
-   action before the cycle's closing stop. A post-cycle push commits
-   nothing{% if eli5 %}, a post-cycle rendering (**Rendering on request**) does{% endif %}.
+   action before the cycle's closing stop. {% if followup %}A post-cycle **Publish** commits
+   its document{% else %}A post-cycle push commits
+   nothing{% endif %}{% if eli5 %}, a post-cycle rendering (**Rendering on request**) does{% endif %}.
 {% if forester %}7{% else %}6{% endif %}. STOP: surface {% if forester %}the report path and {% endif %}the work branch, HEAD and
    the stack as a fact — `work branch <branch> at <HEAD>; stack: <b1>@<c1> …
-   <bn>@<cn>`, bottom first; never as a request or an offer. The work
+   <bn>@<cn>`, bottom first{% if followup %}, ending as step 3 or **Publish** says{% endif %}; never as a request or an offer. The work
    branch stays: HEAD is attached to it, at `<bn>`'s commit, so after
    pushing the stack `git checkout <bn> && git branch -d <branch>` removes
    it. End turn. The cycle is over.
@@ -758,6 +856,26 @@ every increment in the round, all generations. − request path.
 **HEAD check** on every status. `ESCALATE` → **Triage**.
 {% endif %}
 
+{% if followup %}
+### PR liaison
+
+`ccc run pr-liaison`, each launch with a fresh `K`, + exception
+`exception-liaison-<K>.md`; never repeated under one target, so **Relaunch
+naming** does not apply. **HEAD check** follows each launch before the
+shipped end (**Setup** checks its own fetch); a moved HEAD is a **Repo anomaly**. Never triaged.
+
+- **Fetch** — mode fetch: + every earlier `pr-comments-*` and
+  `pr-posted-*` path, + target `pr-comments-<K>.md`. − design path.
+- **Post** — mode post: + design path, + every `pr-comments-*` path, +
+  every earlier `pr-posted-*` path, + target `pr-posted-<K>.md`.
+- **Publish** — mode publish: + every `pr-comments-*` path, + **push**
+  `yes` or `no`, + target `pr-publish-<K>.md`. `published` → surface the
+  publish path. `unpushed` → the same, the fact line ending `stack
+  rewritten, unpushed; commands in <publish path>`. `ESCALATE` → surface
+  the exception path, the fact line ending `stack rewritten; publish
+  escalated, what reached the remote in <exception path>`.
+
+{% endif %}
 ### Launch failure
 
 An unrecovered launch (**Cut-off launch**) → **HEAD check** (a cut-off
@@ -932,10 +1050,21 @@ implementers' commits.
 
 ### Post-cycle turns
 
-After the shipped end, your session may receive further turns. A push
+After the shipped end, your session may receive further turns. {% if followup %}Then:
+
+- `force-push the stack` ("the stack" is every stack branch), or
+  `force-push <branches> to origin` naming every stack branch → **Publish**
+  (**PR liaison**), **push** `yes`; naming only some → ask once.
+- Words asking to open the PRs or publish the stack, naming no
+  force-push → **Publish**, **push** `no`.
+- A plain push instruction → **User directives**; never infer a
+  force-push.
+
+A **Publish** turn ends with a **Stop commit** and the same `shipped` status
+line.{% else %}A push
 instruction naming the repository and branch → push, then end the turn with
-the same `shipped` status line, `commit=` current HEAD.{% if eli5 %} A request for a
-rendering → **Rendering on request**; unlike a push, it ends with a **Stop
+the same `shipped` status line, `commit=` current HEAD.{% endif %}{% if eli5 %} A request for a
+rendering → **Rendering on request**; {% if followup %}it too{% else %}unlike a push, it{% endif %} ends with a **Stop
 commit**.{% endif %} Any other words → **User directives**. No turn after the shipped end reopens the cycle; a
 change the user wants is a new request.
 {% if eli5 %}
@@ -1165,8 +1294,15 @@ and history-rewriting rules only as **Destructive git** says.
 {% endif %}
 - Overwrite or reuse an artifact filename.
 {% if stack %}
+{% if followup %}
+- Squash, amend, rebase or rewrite any commit yourself; let the stack be
+  flattened; push yourself. Only the pr-liaison's **Publish** pushes, with a
+  lease, and only on the words **Ship gate** step 3 or **Post-cycle turns**
+  names{% if decide and fg_ship %} or the forester's ship `approve`{% endif %}.
+{% else %}
 - Squash, amend, rebase or rewrite any commit yourself; let the stack be
   flattened; push. Force-push ever.
+{% endif %}
 {% else %}
 - {% if autopush %}Squash to original base without the forester's `approve` or the user's
   explicit word; push without that `approve` on a branch other than `main`, or
@@ -1184,6 +1320,6 @@ and history-rewriting rules only as **Destructive git** says.
 {% set ok_text %}`shipped` when the cycle ran to its end: ship squash done{% if changelog %}, changelog amended{% endif %}{% if forester %}, the forester report written{% endif %}, whether or not HEAD is pushed; `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting squash approval, a change request under way{% endset %}
 {% endif %}
 {% set out_text %}for `shipped`, {% if forester %}the forester report{% else %}`-`{% endif %}; for `gate`, the primary document you surfaced{% endset %}
-{% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if stack %}a rebase in progress at setup, a work branch that could not be created at setup{% else %}a detached HEAD at setup{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
+{% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if followup %}a pr-liaison escalation or failed stack check before the ship gate, {% endif %}{% if stack %}a rebase in progress at setup, a work branch that could not be created at setup{% else %}a detached HEAD at setup{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
 {{ reply(ok=ok_text, out=out_text, escalate=escalate_text, commit="current HEAD",
          prose="**Stop commit** first, when the artifact repo is separate. Above the status line goes only what the stop already surfaces — the paths, in at most two lines — plus the one `artifact commit rejected: …` line when the stop commit was rejected; nothing else. A human operator reads those lines; a parent driver relays them and routes on the status line.") }}

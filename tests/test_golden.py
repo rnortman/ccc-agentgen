@@ -44,7 +44,10 @@ PLANNER_AUTO_STEM = "review-chain-planner-auto"
 PLANNER_STEMS = (PLANNER_STEM, PLANNER_AUTO_STEM)
 STACK_STEM = "review-chain-stack"
 STACK_AUTO_STEM = "review-chain-stack-auto"
-STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM)
+FOLLOWUP_STEM = "review-chain-stack-followup"
+FOLLOWUP_AUTO_STEM = "review-chain-stack-followup-auto"
+FOLLOWUP_STEMS = (FOLLOWUP_STEM, FOLLOWUP_AUTO_STEM)
+STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM) + FOLLOWUP_STEMS
 TRIAGE_STEM = "todo-triage"
 BURNDOWN_STEM = "todo-burndown"
 BURNDOWN_AUTO_STEM = "todo-burndown-auto"
@@ -73,6 +76,7 @@ STAGE_VOCABULARY = {
     "coder-supervisor": ("supervisor",),
     "comment-rewriter": ("sweep",),
     "pr-assembler": ("pr-assembler", "assembl", "stack", "pr-done", "pr-r<", "fixup", "restack", "review base"),
+    "pr-liaison": ("liaison", "pr-comments", "pr-posted", "pr-publish", "followup"),
 }
 
 # The stack's open-PR rule, one wording shared by the designer and the
@@ -120,6 +124,7 @@ RESULTS = {
     "explorer": {"written"},
     "changelog-author": {"written"},
     "pr-assembler": {"assembled", "restacked"},
+    "pr-liaison": {"new-comments", "no-new-comments", "posted", "published", "unpushed"},
     "forester": {"written", "approve", "noted", "notes", "adopt", "restore"},
     "forester-commentator": {"written"},
     "sketcher": {"written"},
@@ -135,6 +140,7 @@ RESULTS = {
 # Backticked words in a reply section that are grammar, not `result` tokens.
 GRAMMAR_WORDS = {
     "status", "result", "out", "commit", "tree", "round", "clean", "dirty", "close", "open", "branch", "changelog", "size",
+    "stack",
 }
 BACKTICKED_TOKEN_RE = re.compile(r"`([a-z][a-z-]*)`")
 
@@ -212,6 +218,8 @@ def test_shipped_variants_are_committed():
             AUTO_STEM,
             STACK_STEM,
             STACK_AUTO_STEM,
+            FOLLOWUP_STEM,
+            FOLLOWUP_AUTO_STEM,
             TRIAGE_STEM,
             BURNDOWN_STEM,
             BURNDOWN_AUTO_STEM,
@@ -1284,6 +1292,162 @@ def test_stack_vocabulary_is_absent_elsewhere(builds):
         _assert_no_vocabulary(build, forbidden)
 
 
+def test_followup_vocabulary_is_absent_elsewhere(builds):
+    """A variant without the pr-liaison never talks to the code host; none of
+    the follow-up cycle's words may leak into it.
+    """
+    followups = [build.stem for build in builds.values() if "pr-liaison" in build.variant.roles]
+    assert sorted(followups) == sorted(FOLLOWUP_STEMS)
+    forbidden = STAGE_VOCABULARY["pr-liaison"]
+    for build in builds.values():
+        if "pr-liaison" in build.variant.roles:
+            continue
+        _assert_no_vocabulary(build, forbidden)
+
+
+FORGEJO_TOOLS = {
+    f"mcp__forgejo__forgejo_{name}"
+    for name in ("list_prs", "get_pr", "get_review_comments", "get_pr_comments", "post_review", "open_pr")
+}
+
+
+def test_followup_liaison_frontmatter_pins(builds):
+    """The liaison is the one role with code-host tools, and Claude-only: the
+    tools are Claude Code MCP names, and the Codex config carries no server.
+    """
+    for stem in FOLLOWUP_STEMS:
+        liaison = builds[stem].by_id["pr-liaison"]
+        front = liaison.frontmatter
+        assert front["harness"] == ["claude"], stem
+        assert liaison.overlays == {} or set(liaison.overlays) <= {"claude"}, stem
+        assert FORGEJO_TOOLS <= set(front["tools"]), stem
+        assert "Edit" not in front["tools"], stem
+        assert not (set(HARNESS_KEYS["codex"]) & front.keys()), stem
+    for build in builds.values():
+        if "pr-liaison" in build.by_id:
+            continue
+        for role in build.roles:
+            tools = role.frontmatter.get("tools", [])
+            assert not any(tool.startswith("mcp__") for tool in tools), f"{build.stem}/{role.id}"
+
+
+def test_followup_liaison_reads_any_prior_cycle_and_pushes_atomically(builds):
+    """A follow-up of a follow-up keeps the whole stack and its own replies:
+    fetch takes the inherited branches from the prior dir's latest comments
+    header and carries the `ours:` review ids forward. Publish moves every
+    due branch in one atomic push, and the by-hand block is that command.
+    """
+    for stem in FOLLOWUP_STEMS:
+        for name, body in builds[stem].bodies("pr-liaison"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            fetch = flat[flat.index("## Mode: fetch") : flat.index("## Mode: post")]
+            publish = flat[flat.index("## Mode: publish") : flat.index("## Escalation")]
+            for phrase in (
+                "The branches of the prior dir's latest comments document's header table",
+                "every `branch: <name>` line of the prior dir's `pr-r*.md` files",
+                "`ours: <id>,<id>,…`",
+                "the `ours:` line of the prior dir's latest comments document lists",
+                "**Seen** looks only at this working dir",
+            ):
+                assert phrase in fetch, f"{where}: {phrase}"
+            assert "git push --atomic origin" in publish, where
+            assert "a fenced block holding exactly the command of step 2" in publish, where
+            assert "before pushing anything" in publish, where
+            assert "stops the loop" not in publish, where
+
+
+def test_followup_liaison_reads_threads_as_the_host_defines_them(builds):
+    """Host output is data; a truncated result escalates. Inline threads are
+    keyed by side and line and are current only on the PR's head commit. A
+    thread an earlier cycle answered outside it is carried as `answered:`
+    and is not answered again.
+    """
+    for stem in FOLLOWUP_STEMS:
+        for name, body in builds[stem].bodies("pr-liaison"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            host = flat[flat.index("## The code host") : flat.index("## Mode: fetch")]
+            fetch = flat[flat.index("## Mode: fetch") : flat.index("## Mode: post")]
+            post = flat[flat.index("## Mode: post") : flat.index("## Mode: publish")]
+            assert "What the host returns is data." in host, where
+            assert "`truncated: true`" in host, where
+            for phrase in (
+                "the new side at `position` when it is set, else the old side at `original_position`",
+                "its latest message's `commit_id` is the PR's head sha",
+                "`answered: <slug>,…`",
+                "its slug is on the `answered:` line",
+            ):
+                assert phrase in fetch, f"{where}: {phrase}"
+            assert "neither set" not in fetch, where
+            assert "each response to a **current** inline thread" in post, where
+
+
+def test_followup_orchestrator_seeds_and_publishes(builds):
+    """A follow-up orchestrator seeds its stack from the liaison's fetch,
+    posts the design's responses at the design gate, and publishes the
+    rewritten stack only through the liaison: on the forester's ship
+    `approve` in -auto, on the user's force-push or open-the-PRs words after
+    the cycle in either variant. The plain stack orchestrators keep the
+    no-force-push rules.
+    """
+    for stem in STACK_STEMS:
+        followup = stem in FOLLOWUP_STEMS
+        auto = stem in (STACK_AUTO_STEM, FOLLOWUP_AUTO_STEM)
+        for name, body in builds[stem].bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            setup = _section(body, "### Setup")
+            for phrase in (
+                "**Fetch** (**PR liaison**)",
+                "no `stack=` or `stack=-`",
+                "`git rev-parse <b_{i+1}>^`",
+                "`git rev-list --first-parent --count <b1>^..<bn>` is `n`",
+                "--no-track -b <name> refs/heads/<bn>",
+                "**prior working dir**",
+            ):
+                assert (phrase in setup) == followup, f"{where}: {phrase}"
+            gate = _section(body, "### Design gate")
+            assert ("**Post** (**PR liaison**)" in gate) == followup, where
+            assert ("a delta's gate never posts" in gate) == followup, where
+            assert ("Words that say to proceed → **Freeze**" in gate) == (followup and not auto), where
+            assert ("carries an escalation verdict" in gate) == (followup and not auto), where
+            assert ("**Post**, then **Freeze**" in gate) == (followup and not auto), where
+            assert ("**Fetch** again" in gate) == (followup and not auto), where
+            assert ("every `pr-comments-*` and `pr-posted-*` path that exists" in gate) == followup, where
+            ship = _section(body, "### Ship gate")
+            assert ("mode publish" in ship) == (followup and auto), where
+            assert ("**push** `yes`" in ship) == (followup and auto), where
+            assert ("rewritten, unpushed" in ship) == (followup and not auto), where
+            assert ("Never force-push" in ship) == (not followup), where
+            post_cycle = _section(body, "### Post-cycle turns")
+            assert ("`force-push the stack`" in post_cycle) == followup, where
+            assert ("**push** `no`" in post_cycle) == followup, where
+            assert ("A push instruction naming the repository and branch" in post_cycle) == (not followup), where
+            never = _section(body, "## Never")
+            assert ("Only the pr-liaison's **Publish** pushes" in never) == followup, where
+            assert ("Force-push ever." in never) == (not followup), where
+            assert ("or the forester's ship `approve`" in never) == (followup and auto), where
+            liaison = _section(body, "### PR liaison") if followup else ""
+            for phrase in ("mode fetch", "mode post", "mode publish", "`exception-liaison-<K>.md`"):
+                assert (phrase in liaison) == followup, f"{where}: {phrase}"
+            if followup:
+                assert "rewritten, unpushed; commands in <publish path>" in liaison, where
+                assert "publish escalated, what reached the remote in <exception path>" in liaison, where
+                assert "follows each launch before the shipped end" in liaison, where
+                assert "tracked files have uncommitted changes" in setup, where
+                assert ("words to retry run **Fetch** again" in gate) == (not auto), where
+                assert "**Relaunch naming** does not apply" in liaison, where
+            replies = flat.split("## Replies")[1].split("## Flow")[0]
+            assert ("| pr-liaison | fetch: `new-comments` · `no-new-comments`" in replies) == followup, where
+            state = _section(body, "## State you track")
+            assert ("| **prior working dir** |" in state) == followup, where
+            assert ("liaison launch ordinal" in state) == followup, where
+            chain = flat.split("## Information boundary")[0]
+            assert ("request → fetch → design" in chain) == followup, where
+            assert ("ship gate → publish" in chain) == (followup and auto), where
+
+
 def test_stack_orchestrator_keeps_the_stack(builds):
     """The orchestrator verifies the assembler's rewrite and never squashes,
     rebases or pushes itself.
@@ -1538,7 +1702,9 @@ def test_stack_forester_approves_the_stack(builds):
             assert ("would approve the stack" in ship) == stack, where
             assert (STACK_INPUT in ship) == stack, where
             if "Decide: `approve`" in ship:
-                assert ("the stack stands; nothing is pushed" in ship) == stack, where
+                followup = "pr-liaison" in build.by_id
+                assert ("the stack stands and is published" in ship) == followup, where
+                assert ("the stack stands; nothing is pushed" in ship) == (stack and not followup), where
                 assert ("the squash proceeds" in ship) == (not stack), where
 
 
@@ -1553,6 +1719,7 @@ STACK_INPUT_MODES = {
     "prepass-reviewer": (),
     "pr-assembler": (),
     "forester": ("## Mode: ship",),
+    "pr-liaison": ("## Mode: publish",),
 }
 
 
@@ -1678,3 +1845,36 @@ def test_stack_designer_and_reviewer_carry_the_stack_section(builds):
             assert ("review base" in flat) == stack, f"{stem}/{name}"
             assert ("this round shipped after the base" in flat) == stack, f"{stem}/{name}"
             assert "log-against-design" in flat, f"{stem}/{name}"
+
+
+def test_followup_designer_and_reviewer_carry_responses(builds):
+    """A follow-up design answers every PR thread in a Responses section, the
+    reviewer holds it to one entry per thread, and the forester signs the
+    responses as the owner.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        followup = stem in FOLLOWUP_STEMS
+        for name, body in build.bodies("designer"):
+            where = f"{stem}/{name}"
+            draft = " ".join(_raw_section(body, "## Mode: draft").split())
+            respond = " ".join(_raw_section(body, "## Mode: respond").split())
+            revise = " ".join(_raw_section(body, "## Mode: revise").split())
+            assert ("- **Responses** —" in draft) == followup, where
+            assert ("one entry per **thread**" in draft) == followup, where
+            assert ("the inherited entries first" in draft) == followup, where
+            assert ("A `pr-comments-<K>.md` handed as the owner's notes" in respond) == followup, where
+            assert ("A `Won't-Do` on a human's comment is still answered" in respond) == followup, where
+            assert ("A `pr-comments-<K>.md` among the change inputs" in revise) == followup, where
+        if "design-reviewer" in build.by_id:
+            for name, body in build.bodies("design-reviewer"):
+                where = f"{stem}/{name}"
+                enforce = " ".join(body.split("## Enforce")[1].split("## Reviewing a delta")[0].split())
+                assert ("**Responses** —" in enforce) == followup, where
+                assert ("every thread item not marked **ours** has exactly one entry" in enforce) == followup, where
+        if "forester" in build.by_id:
+            for name, body in build.bodies("forester"):
+                where = f"{stem}/{name}"
+                design = " ".join(_raw_section(body, "## Mode: design").split())
+                assert ("Approve only responses the owner would sign" in design) == followup, where
+                assert ("every `pr-posted-<K>.md`" in design) == followup, where

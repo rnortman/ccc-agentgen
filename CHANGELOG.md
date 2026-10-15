@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **New `review-chain-stack-followup` and `review-chain-stack-followup-auto`
+  workflows answer review comments on a stack of open PRs.** Point one at
+  the working dir of the cycle that last shipped the PRs, a stack cycle or
+  an earlier follow-up. It reads every PR's review threads from Forgejo, designs an answer to each together with
+  the code changes they call for, and posts the answers on the PRs. The
+  changes land in the PRs they belong to, or in new PRs on top. Nothing is
+  pushed unless you say `force-push the stack`, which force-pushes every
+  branch with a lease and opens the new PRs; "open the PRs" opens them
+  without pushing. The `-auto` variant posts the answers and publishes the
+  stack on the forester's approval. Comments posted after you tell the
+  workflow to proceed wait for the next cycle. Requires the forgejo MCP
+  server in the Claude account the workflow runs under.
 - **New `review-chain-stack` and `review-chain-stack-auto` workflows ship a
   stack of reviewable PRs instead of one squashed commit.** The design
   splits the work into PRs of about 1,000 added lines (2,000 at most; both

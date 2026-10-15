@@ -17,8 +17,12 @@ CODEX_SANDBOXES = ("read-only", "workspace-write")
 # string.
 STRING_KEYS = ("description", "model", "effort", "codex_model", "codex_effort", "codex_sandbox")
 
+# ccc refuses an argv string over 100 KiB: Claude gets the body JSON-escaped
+# in `--agents`, beside the description and tools; Codex gets it TOML-escaped
+# as `developer_instructions`. A body over the ceiling once escaped is an
+# error; the warning leaves 10 KiB for the description and tools.
 MAX_BODY_BYTES = 100 * 1024
-WARN_BODY_BYTES = 64 * 1024
+WARN_BODY_BYTES = 90 * 1024
 
 # `ccc run <role>` / `ccc launch <role>` with a bare lowercase identifier.
 # A placeholder (`<type>`), a shell variable (`$AGENT`) or a Jinja remnant does
@@ -36,6 +40,18 @@ class CheckResult:
     @property
     def ok(self) -> bool:
         return not self.errors
+
+
+def escaped_bytes(body: str) -> int:
+    """Bytes of the body as ccc passes it on the command line, measured as its
+    TOML basic string. JSON escapes the same characters to the same lengths,
+    except DEL, which TOML alone escapes, so this bounds the JSON string too."""
+    extra = sum(
+        1 if ch in '"\\\n\r\t\b\f' else 5
+        for ch in body
+        if ch in '"\\' or ord(ch) < 0x20 or ord(ch) == 0x7F
+    )
+    return len(body.encode("utf-8")) + 2 + extra
 
 
 def spawn_references(body: str) -> set[str]:
@@ -136,17 +152,18 @@ def check_role(role: RenderedRole, role_ids: Iterable[str]) -> CheckResult:
             body = body[1:]
         if overlay:
             body = body.strip()
-        size = len(body.encode("utf-8"))
         if not body.strip():
             result.errors.append(f"{body_where}: body is empty")
-        if size > MAX_BODY_BYTES:
+        escaped = escaped_bytes(body)
+        if escaped > MAX_BODY_BYTES:
             result.errors.append(
-                f"{body_where}: body is {size} bytes, over ccc's {MAX_BODY_BYTES}-byte ceiling"
+                f"{body_where}: body is {escaped} bytes JSON/TOML-escaped, over ccc's "
+                f"{MAX_BODY_BYTES}-byte ceiling"
             )
-        elif size > WARN_BODY_BYTES:
+        elif escaped > WARN_BODY_BYTES:
             result.warnings.append(
-                f"{body_where}: body is {size} bytes; over {WARN_BODY_BYTES} it can still overflow "
-                "the argv ceiling once JSON/TOML-escaped"
+                f"{body_where}: body is {escaped} bytes JSON/TOML-escaped; over {WARN_BODY_BYTES} "
+                "it can overflow the argv ceiling with its frontmatter"
             )
         if overlay and next((line.strip() for line in body.splitlines() if line.strip()), None) == "---":
             result.errors.append(f"{body_where}: overlay body must not start with a frontmatter fence")

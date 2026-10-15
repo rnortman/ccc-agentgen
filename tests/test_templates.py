@@ -121,9 +121,10 @@ def advise():
 @pytest.fixture(scope="module")
 def stack():
     """The lite shape as a PR stack: the assembler instead of the changelog-author,
-    so the self-scoping loop renders its stack branches.
+    so the self-scoping loop renders its stack branches. No pr-liaison: that
+    role turns the stack into a follow-up cycle, which the golden builds cover.
     """
-    ids = [rid for rid in role_ids() if rid not in LITE_DROPPED and rid != "changelog-author"]
+    ids = [rid for rid in role_ids() if rid not in LITE_DROPPED and rid not in ("changelog-author", "pr-liaison")]
     return render(ids, designer_spawns_explorers=False)
 
 
@@ -187,9 +188,13 @@ def test_every_role_template_declares_workspace_write(rendered):
 
     The golden build asserts the resolved value, which the shipped `[defaults]`
     supply; this one is the template tier, where `read-only` would deny a
-    third-party variant's roles the artifact write they all make.
+    third-party variant's roles the artifact write they all make. A
+    Claude-only role carries no Codex keys at all.
     """
     for role in rendered:
+        if "codex" not in role.harnesses:
+            assert "codex_sandbox" not in role.frontmatter, role.id
+            continue
         assert role.frontmatter.get("codex_sandbox") == "workspace-write", role.id
 
 

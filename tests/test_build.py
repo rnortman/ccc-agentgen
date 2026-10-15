@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from agentgen import AgentGenError
+from agentgen.check import WARN_BODY_BYTES
 from agentgen.cli import build, main
 from agentgen.emit import MARKER_NAME, check_out_dir, prepare_out_dir, read_build, read_definition, write_all
 from agentgen.render import RenderedRole
@@ -132,7 +133,7 @@ def test_root_must_hold_variants_for_a_bare_name(demo):
 
 
 def test_an_oversize_body_warns_on_stderr_and_still_builds(demo, capsys):
-    demo.role("explorer", "description: Explores a codebase.", "x" * (64 * 1024 + 10))
+    demo.role("explorer", "description: Explores a codebase.", "x" * (WARN_BODY_BYTES + 10))
     code = main(["build", "demo", "--root", str(demo.path), "--out", str(demo.path / "out")])
     err = capsys.readouterr().err
     assert code == 0
