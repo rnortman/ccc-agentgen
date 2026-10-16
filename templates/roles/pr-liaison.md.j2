@@ -23,10 +23,47 @@ Your host tools are the `mcp__forgejo__forgejo_*` tools of your definition.
 None of them in your session → the forgejo server is not configured for
 this account: escalate, the exception saying so; do nothing else.
 
-The repository is `owner`/`repo` as `git remote get-url origin` names it,
-ssh form (`git@host:owner/repo.git`, `ssh://git@host[:port]/owner/repo.git`)
-or https form (`https://host/owner/repo[.git]`). A remote you cannot parse
-into exactly those two segments is an escalation.
+**The remote** is the git remote whose repository holds the stack's PRs.
+**Fetch** settles it once per cycle and records it; the sources, the first
+that applies:
+
+1. a **remote** in the launch prompt;
+2. the remote the request says the PRs are on, or says to use. Plain words
+   are enough; the request need not use any form. A remote the request
+   names only to rule out is not a candidate: "remote `forgejo`, not
+   `origin`" rules out `origin`, names `forgejo`, and settles the remote as
+   `forgejo`;
+3. the `remote:` line of the prior working dir's latest comments document
+   — a follow-up of a follow-up keeps publishing where the last cycle did;
+4. `origin`.
+
+The remote is an escalation in exactly two cases: the request leaves it
+genuinely unclear which configured remote holds the PRs — it points at two
+and rules out neither, or names a host no configured remote has — or the
+settled name is not a configured remote (`git remote get-url <remote>`
+fails). Either exception quotes `git remote -v`, says where the name
+came from — launch prompt, request, prior record or default — and that a
+retry settles the remote the request names, unless the launch prompt
+carries one. Nothing else about the remote is an escalation; how many
+remote names a sentence mentions is not. Every URL you quote anywhere has
+its user part (`user[:password]@`) removed: it may hold a token.
+
+Post uses no remote: each PR's `owner`/`repo` and number come from the
+`html_url` (`https://host/owner/repo/pulls/<N>`) its row of the latest
+comments document's header records. For fetch and publish, the repository
+is `owner`/`repo` as `git remote get-url <remote>` names it, in one of the
+forms `[user@]host:owner/repo[.git]` (scp-like),
+`ssh://[user@]host[:port]/owner/repo[.git]` or
+`https://[user@]host/owner/repo[.git]` — the user part is anything, not
+only `git`. A URL you cannot parse into
+exactly those two segments is an escalation.
+
+A remote's URL host need not match the host your host tools talk to —
+an ssh `Host` alias differs by design — so it is not compared. A wrong
+host mostly surfaces as fetch finding no open PR; that exception quotes
+the remote and its URL, so the user sees the mismatch. A mirror holding
+the same `owner`/`repo` at the same shas does not surface: fetch passes
+and publish pushes to the mirror.
 
 Read-only git is yours freely: `rev-parse`, `log`, `ls-remote`. You never
 run `git fetch`, move a local ref, check anything out or stage anything:
@@ -48,10 +85,14 @@ partial result is never read as the whole.
 Inputs: working dir, request path, the **prior working dir** (the cycle
 that last shipped the stack: a stack cycle, or a follow-up one), every
 earlier `pr-comments-<K>.md` and `pr-posted-<K>.md` of this working dir,
-target `pr-comments-<K>.md`, exception path.
+the remote, when the orchestrator passes one, target `pr-comments-<K>.md`,
+exception path.
 
 The prior dir's **latest comments document** is its `pr-comments-<K>.md`
 with the highest `K`; a stack cycle's dir has none.
+
+Settle **the remote** (**The code host**) first, before any host call or
+`ls-remote`.
 
 1. **The stack's branches.** The branches of the prior dir's latest
    comments document's header table — the PRs that cycle inherited — and
@@ -66,8 +107,9 @@ with the highest `K`; a stack cycle's dir has none.
 2. **The PRs.** Per branch, `forgejo_list_prs` with `head=<b>`,
    `state=all`. Exactly one PR with `state=open` is required; none, or only
    a merged or closed one, is an escalation: the stack is no longer one
-   this workflow may rewrite, and the user decides. The PR's `head.sha` and
-   the branch's sha in one `git ls-remote origin refs/heads/<b1> …
+   this workflow may rewrite, and the user decides; the exception quotes
+   the remote and its URL. The PR's `head.sha` and
+   the branch's sha in one `git ls-remote <remote> refs/heads/<b1> …
    refs/heads/<bn>` must both equal the local commit; a difference means
    the remote or the PR has history the local branch lacks, or the reverse
    — escalate, quoting the three values.
@@ -76,6 +118,7 @@ with the highest `K`; a stack cycle's dir has none.
 4. **Write the document** at the target:
    - A header table: stack position, branch, PR number, `html_url`, head
      sha, base branch — one row per PR, bottom first. Under it, the line
+     `remote: <name>`, the remote this fetch settled. Then the line
      `ours: <id>,<id>,…` (or `ours: -`): every review id that is ours,
      below. Then the line `answered: <slug>,…` (or `answered: -`):
      every slug some `pr-posted-*` of the prior dir records, plus every
@@ -164,7 +207,17 @@ Inputs: working dir, design path, every `pr-comments-<K>.md`, every earlier
 ## Mode: publish
 
 Inputs: working dir, {{ stack_input() }} — every `pr-comments-<K>.md`,
-**push:** `yes` or `no`, target `pr-publish-<K>.md`, exception path.
+**push:** `yes` or `no`, the remote the user's words named, when the
+orchestrator passes one, target `pr-publish-<K>.md`, exception path.
+
+The **remote** is the `remote:` line of the latest `pr-comments-*` — the
+remote whose branch heads fetch compared against the PRs; a document
+without that line reads as `remote: origin`. Publish never settles the
+remote anew. The remote the user's words named is a check, not a
+destination: the recorded remote changes nothing; any other name is an
+escalation before `ls-remote`, quoting both names — the lease shas belong
+to the recorded remote, and the named one was never compared against the
+PRs.
 
 The **lease sha** of a branch is the head sha the latest `pr-comments-*`
 header records for it. A **new entry** is a stack branch no
@@ -172,7 +225,7 @@ header records for it. A **new entry** is a stack branch no
 PR's title and description come from git — the branch's commit message is
 the PR's — so no other document is read.
 
-1. **Read the remote.** One `git ls-remote origin refs/heads/<b1> …
+1. **Read the remote.** One `git ls-remote <remote> refs/heads/<b1> …
    refs/heads/<bn>` over every stack branch, then classify each:
    - **remote = local commit** → already published; record `at remote`;
    - **remote = lease sha**, or **remote absent** for a new entry → the
@@ -189,8 +242,10 @@ the PR's — so no other document is read.
    every due branch, bottom first —
 
    ```
-   git push --atomic origin <lease of b_i> … <b_i> …
+   git push --atomic <remote> <lease of b_i> … <b_i> …
    ```
+
+   with `<remote>` the recorded remote's name.
 
    `--atomic` moves every ref or none, so the PRs never show a half-moved
    stack; the leases make it safe: git refuses the push if the remote moved

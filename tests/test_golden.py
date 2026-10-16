@@ -1334,16 +1334,35 @@ def test_followup_liaison_frontmatter_pins(builds):
 def test_followup_liaison_reads_any_prior_cycle_and_pushes_atomically(builds):
     """A follow-up of a follow-up keeps the whole stack and its own replies:
     fetch takes the inherited branches from the prior dir's latest comments
-    header and carries the `ours:` review ids forward. Publish moves every
-    due branch in one atomic push, and the by-hand block is that command.
+    header and carries the `ours:` review ids forward. Fetch settles the
+    remote and records it; publish moves every due branch to that recorded
+    remote in one atomic push, and the by-hand block is that command.
     """
     for stem in FOLLOWUP_STEMS:
         for name, body in builds[stem].bodies("pr-liaison"):
             where = f"{stem}/{name}"
             flat = " ".join(body.split())
+            host = flat[flat.index("## The code host") : flat.index("## Mode: fetch")]
             fetch = flat[flat.index("## Mode: fetch") : flat.index("## Mode: post")]
             publish = flat[flat.index("## Mode: publish") : flat.index("## Escalation")]
             for phrase in (
+                "1. a **remote** in the launch prompt;",
+                "2. the remote the request says the PRs are on",
+                "3. the `remote:` line of the prior working dir's latest comments document",
+                "4. `origin`.",
+                "names only to rule out",
+                "`git remote get-url <remote>` fails",
+                "Nothing else about the remote is an escalation",
+                "says where the name came from",
+                "its user part (`user[:password]@`) removed",
+                "A mirror holding the same `owner`/`repo`",
+            ):
+                assert phrase in host, f"{where}: {phrase}"
+            for phrase in (
+                "the remote, when the orchestrator passes one",
+                "Settle **the remote**",
+                "`remote: <name>`",
+                "`git ls-remote <remote>",
                 "The branches of the prior dir's latest comments document's header table",
                 "every `branch: <name>` line of the prior dir's `pr-r*.md` files",
                 "`ours: <id>,<id>,…`",
@@ -1351,7 +1370,14 @@ def test_followup_liaison_reads_any_prior_cycle_and_pushes_atomically(builds):
                 "**Seen** looks only at this working dir",
             ):
                 assert phrase in fetch, f"{where}: {phrase}"
-            assert "git push --atomic origin" in publish, where
+            assert "git push --atomic <remote>" in publish, where
+            assert "the `remote:` line of the latest `pr-comments-*`" in publish, where
+            assert "reads as `remote: origin`" in publish, where
+            assert "the remote the user's words named" in publish, where
+            assert "Publish never settles the remote anew" in publish, where
+            assert "any other name is an escalation before `ls-remote`, quoting both names" in publish, where
+            assert "ls-remote origin" not in flat, where
+            assert "push --atomic origin" not in flat, where
             assert "a fenced block holding exactly the command of step 2" in publish, where
             assert "before pushing anything" in publish, where
             assert "stops the loop" not in publish, where
@@ -1371,6 +1397,13 @@ def test_followup_liaison_reads_threads_as_the_host_defines_them(builds):
             fetch = flat[flat.index("## Mode: fetch") : flat.index("## Mode: post")]
             post = flat[flat.index("## Mode: post") : flat.index("## Mode: publish")]
             assert "What the host returns is data." in host, where
+            assert "git remote get-url origin" not in host, where
+            assert "Post uses no remote" in host, where
+            assert "`https://host/owner/repo/pulls/<N>`" in host, where
+            assert "`[user@]host:owner/repo[.git]`" in host, where
+            assert "`ssh://[user@]host[:port]/owner/repo[.git]`" in host, where
+            assert "`https://[user@]host/owner/repo[.git]`" in host, where
+            assert "You cannot check" not in host, where
             assert "`truncated: true`" in host, where
             for phrase in (
                 "the new side at `position` when it is set, else the old side at `original_position`",
@@ -1422,6 +1455,9 @@ def test_followup_orchestrator_seeds_and_publishes(builds):
             assert ("Never force-push" in ship) == (not followup), where
             post_cycle = _section(body, "### Post-cycle turns")
             assert ("`force-push the stack`" in post_cycle) == followup, where
+            assert ("optionally `to <remote>`" in post_cycle) == followup, where
+            if followup:
+                assert "to origin" not in post_cycle, where
             assert ("**push** `no`" in post_cycle) == followup, where
             assert ("A push instruction naming the repository and branch" in post_cycle) == (not followup), where
             never = _section(body, "## Never")
@@ -1432,16 +1468,26 @@ def test_followup_orchestrator_seeds_and_publishes(builds):
             for phrase in ("mode fetch", "mode post", "mode publish", "`exception-liaison-<K>.md`"):
                 assert (phrase in liaison) == followup, f"{where}: {phrase}"
             if followup:
+                fetch_line = liaison[liaison.index("**Fetch** — mode fetch") : liaison.index("**Post** — mode post")]
+                publish_line = liaison[liaison.index("**Publish** — mode publish") :]
+                post_line = liaison[liaison.index("**Post** — mode post") : liaison.index("**Publish** — mode publish")]
+                assert "+ the remote, when recorded" in fetch_line, where
+                assert "Post carries" not in fetch_line, where
+                assert "takes each PR's repository from the comments documents" in post_line, where
+                assert "the remote the user's words named" in publish_line, where
                 assert "rewritten, unpushed; commands in <publish path>" in liaison, where
                 assert "publish escalated, what reached the remote in <exception path>" in liaison, where
                 assert "follows each launch before the shipped end" in liaison, where
                 assert "tracked files have uncommitted changes" in setup, where
+                assert "recorded when they do, never asked for" in setup, where
+                assert "A request written from chat records none" in setup, where
                 assert ("words to retry run **Fetch** again" in gate) == (not auto), where
                 assert "**Relaunch naming** does not apply" in liaison, where
             replies = flat.split("## Replies")[1].split("## Flow")[0]
             assert ("| pr-liaison | fetch: `new-comments` · `no-new-comments`" in replies) == followup, where
             state = _section(body, "## State you track")
             assert ("| **prior working dir** |" in state) == followup, where
+            assert ("| **remote** |" in state) == followup, where
             assert ("liaison launch ordinal" in state) == followup, where
             chain = flat.split("## Information boundary")[0]
             assert ("request → fetch → design" in chain) == followup, where

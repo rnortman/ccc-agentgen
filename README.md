@@ -140,7 +140,10 @@ the rewritten stack. Name the working dir of the cycle that last shipped
 the stack (the directory of its `user-request.md`), a stack cycle or an
 earlier follow-up, when you launch; the liaison finds the stack from its
 records and refuses a stack whose local branches, remote branches
-and PR heads disagree, or whose PRs are not all open. The design answers
+and PR heads disagree, or whose PRs are not all open. The stack's PRs are
+looked for on the remote the request names (or your launch words name),
+else the remote the previous follow-up published to, else `origin`; every
+push of the cycle goes to that one remote. The design answers
 every thread in a **Responses** section and lands its code changes as
 fixups into the PRs they belong to, or as new PRs on top. The liaison is
 pinned to Claude (`harness: claude`): it calls the forgejo MCP server's

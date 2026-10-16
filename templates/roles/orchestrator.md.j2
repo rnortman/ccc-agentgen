@@ -114,6 +114,7 @@ Three places, kept apart throughout:
 |---|---|---|
 {% if followup %}
 | **prior working dir** | named in the user's words at setup | never |
+| **remote** | the remote the user's launch words named beside an existing request, else none | never |
 | **original base** | the parent of the bottom stack branch's commit, at setup | never |
 {% elif stack %}
 | **original base** | HEAD at setup | never |
@@ -236,6 +237,10 @@ retries mid-work often omits the commit it already made.
 {% if followup %}
    The user's words must also name the **prior working dir**, the shipped
    cycle's `user-request.md` directory; absent → ask once, end turn.
+   Words pointing at an existing `user-request.md` may also name the
+   **remote**, the git remote holding the stack's PRs: recorded when they
+   do, never asked for. A request written from chat records none — the
+   liaison settles the remote from the request itself.
 {% endif %}
 2. A rebase or `git am` is in progress — `git rev-parse --git-path
    rebase-merge` or `--git-path rebase-apply` names an existing directory
@@ -865,11 +870,17 @@ naming** does not apply. **HEAD check** follows each launch before the
 shipped end (**Setup** checks its own fetch); a moved HEAD is a **Repo anomaly**. Never triaged.
 
 - **Fetch** — mode fetch: + every earlier `pr-comments-*` and
-  `pr-posted-*` path, + target `pr-comments-<K>.md`. − design path.
+  `pr-posted-*` path, + the remote, when recorded, + target
+  `pr-comments-<K>.md`. − design path.
 - **Post** — mode post: + design path, + every `pr-comments-*` path, +
-  every earlier `pr-posted-*` path, + target `pr-posted-<K>.md`.
+  every earlier `pr-posted-*` path, + target `pr-posted-<K>.md`. No
+  remote: the liaison takes each PR's repository from the comments
+  documents.
 - **Publish** — mode publish: + every `pr-comments-*` path, + **push**
-  `yes` or `no`, + target `pr-publish-<K>.md`. `published` → surface the
+  `yes` or `no`, + the remote the user's words named, when the turn named
+  one, + target `pr-publish-<K>.md`. Only a force-push turn (**Post-cycle
+  turns**) supplies that remote; you check it against nothing — the liaison holds
+  the recorded remote and stops a push to another. `published` → surface the
   publish path. `unpushed` → the same, the fact line ending `stack
   rewritten, unpushed; commands in <publish path>`. `ESCALATE` → surface
   the exception path, the fact line ending `stack rewritten; publish
@@ -1053,8 +1064,9 @@ implementers' commits.
 After the shipped end, your session may receive further turns. {% if followup %}Then:
 
 - `force-push the stack` ("the stack" is every stack branch), or
-  `force-push <branches> to origin` naming every stack branch → **Publish**
-  (**PR liaison**), **push** `yes`; naming only some → ask once.
+  `force-push <branches>` naming every stack branch — either form
+  optionally `to <remote>` → **Publish** (**PR liaison**), **push** `yes`, + the
+  remote when typed; naming only some → ask once.
 - Words asking to open the PRs or publish the stack, naming no
   force-push → **Publish**, **push** `no`.
 - A plain push instruction → **User directives**; never infer a

@@ -12,8 +12,11 @@
   branch with a lease and opens the new PRs; "open the PRs" opens them
   without pushing. The `-auto` variant posts the answers and publishes the
   stack on the forester's approval. Comments posted after you tell the
-  workflow to proceed wait for the next cycle. Requires the forgejo MCP
-  server in the Claude account the workflow runs under.
+  workflow to proceed wait for the next cycle. The PRs need not live on
+  `origin`: name the remote in the request (or when launching) and the
+  workflow reads and publishes there; a follow-up of a follow-up keeps the
+  previous cycle's remote. Requires the forgejo MCP server in the Claude
+  account the workflow runs under.
 - **New `review-chain-stack` and `review-chain-stack-auto` workflows ship a
   stack of reviewable PRs instead of one squashed commit.** The design
   splits the work into PRs of about 1,000 added lines (2,000 at most; both
