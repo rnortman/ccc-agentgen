@@ -115,14 +115,16 @@ Three places, kept apart throughout:
 {% if followup %}
 | **prior working dir** | named in the user's words at setup | never |
 | **remote** | the remote the user's launch words named beside an existing request, else none | never |
-| **original base** | the parent of the bottom stack branch's commit, at setup | never |
+| **base** | the branch the launch words named, and its commit; none → a plain follow-up | never |
+| **inherited** | the setup fetch's branches with their commits at setup | never |
+| **original base** | per **Setup** step 5 | never |
 {% elif stack %}
 | **original base** | HEAD at setup | never |
 {% else %}
 | **original base** | HEAD at setup | never; the ship squash resets to it |
 {% endif %}
 {% if stack %}
-| **branch** | the work branch `<request slug>-stack-work`, created at setup{% if followup %} at the top stack commit{% endif %} | never; **HEAD check** re-attaches to it |
+| **branch** | the work branch `<request slug>-stack-work`, created at setup{% if followup %} per **Setup** step 6{% endif %} | never; **HEAD check** re-attaches to it |
 {% else %}
 | **branch** | `git symbolic-ref --short HEAD` at setup | never; **HEAD check** re-attaches to it |
 {% endif %}
@@ -130,13 +132,13 @@ Three places, kept apart throughout:
 | **design `R`** | 1 | every design or delta re-review, including post-freeze; never resets |
 {% if stack %}
 | **implementation `R`** | 1 | each assembly |
-| **round base** | {% if followup %}the top stack commit{% else %}original base{% endif %} | each assembly → the assembly's HEAD; a ship-gate change request → current HEAD |
-| **review base** | {% if followup %}the top stack commit{% else %}original base{% endif %} | a round reopened → its **reviewed HEAD**; round base changes → the new round base |
+| **round base** | {% if followup %}per **Setup** step 6{% else %}original base{% endif %} | each assembly → the assembly's HEAD; a ship-gate change request → current HEAD |
+| **review base** | {% if followup %}per **Setup** step 6{% else %}original base{% endif %} | a round reopened → its **reviewed HEAD**; round base changes → the new round base |
 | **reopen** | — | set when a round returns to *open* (**Reopened round**): HEAD then, a fresh `K` (`K` += 1 at the reopen), and whether the round-close scanner had replied since the review last passed; cleared at each assembly |
 | **increment `I`** | 0 | each committed increment; reset at round start, never mid-round |
 | **stall mark** | 0 | set to `I` by any ruling on a stall triage; reset to 0 with `I` at round start |
-| **stack** | {% if followup %}the setup fetch's `stack=`, sizes and `pr-r` paths `-`{% else %}empty{% endif %} | ordered (branch, commit, size, `pr-r` path) per assembled PR, bottom first; after every **Assembly check** that passes, commits re-read with `git rev-parse refs/heads/<b>`, and each PR the reply's `size=` names gets that size and the launch's target `pr-r` path; never otherwise |
-| **PR base** | {% if followup %}the top stack commit{% else %}original base{% endif %} | after every passed **Assembly check** → the top stack commit |
+| **stack** | {% if followup %}per **Setup** step 5{% else %}empty{% endif %} | ordered (branch, commit, size, `pr-r` path) per assembled PR, bottom first; after every **Assembly check** that passes, commits re-read with `git rev-parse refs/heads/<b>`, and each PR the reply's `size=` names gets that size and the launch's target `pr-r` path; never otherwise |
+| **PR base** | {% if followup %}per **Setup** step 5{% else %}original base{% endif %} | after every passed **Assembly check** → the top stack commit |
 {% else %}
 | **implementation `R`** | 1 | each intermediate squash |
 | **round base** | original base | each intermediate squash → the squash commit; a ship-gate change request → current HEAD |
@@ -146,7 +148,7 @@ Three places, kept apart throughout:
 | **`P`, `S`, retries** | 1, 1, 0 | per unit: `P` on each replan, `S` on each respawn or replan, retries on either; all reset when a unit starts |
 {% endif %}
 | **round state** | open | *open* from the first increment launch → *in review* when you launch its review → *finished* {% if stack %}at the deep review's pass, or at a reopened round's close with HEAD = the **reopen** HEAD → *open* again per **Where a delta lands**{% else %}when the review passes{% endif %} |
-| **HEAD** | {% if followup %}the top stack commit{% else %}original base{% endif %} | {% if stack %}every assembly{% else %}every squash{% endif %}; otherwise only by **HEAD check** after a launch returns — never from a reply |
+| **HEAD** | {% if followup %}per **Setup** step 6{% else %}original base{% endif %} | {% if stack %}every assembly{% else %}every squash{% endif %}; otherwise only by **HEAD check** after a launch returns — never from a reply |
 | **reviewed HEAD** | — | the HEAD the last reviewer wave saw, per round |
 | **`N`, `K`** | 1 | next delta / triage{% if scanner %} / scan{% endif %}{% if sweep %} / sweep-exception{% endif %}{% if forester %} / forester-gate{% endif %}{% if eli5 %} / on-request rendering{% endif %}{% if stack %} / reopen{% endif %}{% if followup %} / liaison launch{% endif %} ordinal; task-wide; no value is taken twice |
 {% if fg_design or fg_triage %}
@@ -161,7 +163,7 @@ The two `R` counters are independent.
 Every prompt carries what exists of: working dir, request path, design path
 and **every** delta path, log path, round base, current HEAD, the relevant
 `R`, the mode (for roles with modes), the target output path, {% if stack %}{{ stack_input() }} —
-{% endif %}{% if followup %}the prior working dir, {% endif %}and one
+{% endif %}{% if followup %}the prior working dir, the base when recorded, {% endif %}and one
 instruction: "Write to file. Reply with the status line only."
 
 Each launch below lists only additions (+) and deliberate omissions (−).
@@ -241,6 +243,12 @@ retries mid-work often omits the commit it already made.
    **remote**, the git remote holding the stack's PRs: recorded when they
    do, never asked for. A request written from chat records none — the
    liaison settles the remote from the request itself.
+   The same words may also name the **base**, a local branch to re-create
+   the whole stack on, in any plain words ("onto `<branch>`", "re-create
+   the stack on `<branch>`", "rebase onto …"): recorded as the name and
+   `git rev-parse refs/heads/<name>`; a name that does not resolve locally →
+   STOP, say so, end turn. Read from the user's words in either shape of
+   request, never asked for; absent → a plain follow-up.
 {% endif %}
 2. A rebase or `git am` is in progress — `git rev-parse --git-path
    rebase-merge` or `--git-path rebase-apply` names an existing directory
@@ -248,7 +256,7 @@ retries mid-work often omits the commit it already made.
    `git status --porcelain --untracked-files=no` prints anything → STOP,
    say tracked files have uncommitted changes, end turn: the user commits
    or stashes them before launching. Record HEAD (`git rev-parse HEAD`). A detached HEAD is no stop: the work branch
-   is created from the top stack branch either way.{% else %} Record
+   is created from the top stack branch, or the base, either way.{% else %} Record
    the original base (`git rev-parse HEAD`). A detached HEAD is no
    stop: the work branch is created from HEAD either way.{% endif +%}
 {% else %}
@@ -276,10 +284,14 @@ retries mid-work often omits the commit it already made.
    equals `<b_i>`'s commit; `git rev-list --merges <b1>^..<bn>` is empty;
    `git rev-list --first-parent --count <b1>^..<bn>` is `n`. Any failure →
    STOP, quote the command and output, end turn, `status=ESCALATE`.
-   Record the **stack**, original base `<b1>^` and PR base `<bn>`.
-6. **Work branch** `<request slug>-stack-work` at `refs/heads/<bn>`: `git
-   checkout --no-track -b <name> refs/heads/<bn>`, so no
-   `branch.autoSetupMerge` setting ties it to an upstream.
+   Record **inherited** = `(b_i, c_i)` bottom first, the names and the
+   commits the check resolved. No base → the **stack** = inherited, sizes
+   and `pr-r` paths `-`, original base `<b1>^` and PR base `<bn>`. A base →
+   the **stack** is empty, and original base = PR base = the base's commit.
+6. **Work branch** `<request slug>-stack-work` at `<start>` — `refs/heads/<bn>`
+   without a base, `refs/heads/<base>` with one: `git checkout --no-track -b
+   <name> <start>`, so no `branch.autoSetupMerge` setting ties it to an
+   upstream.
 {% else %}
 4. **Work branch** `<request slug>-stack-work`: `git checkout --no-track
    -b <name>`, so no `branch.autoSetupMerge` setting ties it to an upstream.
@@ -293,7 +305,7 @@ retries mid-work often omits the commit it already made.
    not create in this cycle.
 
    It succeeds → record it as **branch**{% if followup %}; HEAD = round base = review
-   base = `<bn>`'s commit{% endif %}. The branch checked out at launch{% if followup %},
+   base = `<start>`'s commit{% endif %}. The branch checked out at launch{% if followup %},
    like the previous cycle's work branch,{% endif +%}
    is never recorded and never touched again; it stays where it was. This
    is the last setup step, so no setup stop leaves the branch behind.
@@ -631,7 +643,7 @@ Round state → *finished*.
 Record HEAD as the **pre-assembly HEAD** and the local branch names (`git
 for-each-ref --format='%(refname:short)' refs/heads`); every stack branch's
 commit is in the stack state. `ccc run pr-assembler`: + round `R`, + original base, + PR
-base, + pre-assembly HEAD, + target `pr-r<R>.md`, + exception
+base, + pre-assembly HEAD,{% if followup %} + **inherited**,{% endif %} + target `pr-r<R>.md`, + exception
 `exception-assembly-r<R>.md`, + any triage dispositions path. Then **HEAD
 check**, which for this launch is **Assembly check**.
 
@@ -668,7 +680,8 @@ which a rebase cut off or left unfinished leaves detached:
    already in the stack.
 
 All four hold → the assembly stands. Check 0 holds, HEAD unmoved, every stack
-branch at its recorded commit, no local branch beyond the recorded names and
+branch at its recorded commit,{% if followup %} every inherited branch not in
+the stack at its setup commit,{% endif %} no local branch beyond the recorded names and
 no tracked change (`git status --porcelain --untracked-files=no` prints
 nothing) → nothing was assembled: an `ESCALATE` goes to
 **Triage** as usual, and an `assembled` or `restacked` goes to **Triage**
@@ -677,7 +690,8 @@ does. Anything else → **Repo anomaly** with only `restore` on the table,
 which here is: `git rebase --abort` when check 0 found a rebase in progress;
 `git checkout -f -B <branch> <pre-assembly HEAD>`, which also discards what
 the launch staged or wrote to tracked files; `git branch -f <b_i> <recorded
-c_i>` for every recorded stack branch; `git branch -D` of every local branch
+c_i>` for every recorded stack branch;{% if followup %} `git branch -f <b> <setup commit>`
+for every inherited branch not in the stack;{% endif %} `git branch -D` of every local branch
 absent from the recorded names, each named when you state the repair. Every
 pre-restack commit is reachable from the recorded refs, so nothing is lost. `adopt` is never
 offered: a stack the check rejects is not one the record can describe.
@@ -722,7 +736,8 @@ pushed: the stack is what ships.
    what ships, every PR's changelog line already in it.
 {% if followup and decide and fg_ship %}
 3. You never push on your own. Forester `approve` publishes: the pr-liaison's **Publish** force-pushes
-   every stack branch with a lease and opens the new PRs, without asking;
+   every stack branch with a lease, re-targets and closes PRs as the stack
+   says, and opens the new PRs, without asking;
    the request authorises it as it authorises the auto variants' push.
    **Publish** (**PR liaison**), mode publish, **push** `yes`; every
    outcome → step 5, untriaged: the cycle is over.
@@ -876,7 +891,7 @@ shipped end (**Setup** checks its own fetch); a moved HEAD is a **Repo anomaly**
   every earlier `pr-posted-*` path, + target `pr-posted-<K>.md`. No
   remote: the liaison takes each PR's repository from the comments
   documents.
-- **Publish** — mode publish: + every `pr-comments-*` path, + **push**
+- **Publish** — mode publish: + every `pr-comments-*` path, + **inherited**, + **push**
   `yes` or `no`, + the remote the user's words named, when the turn named
   one, + target `pr-publish-<K>.md`. Only a force-push turn (**Post-cycle
   turns**) supplies that remote; you check it against nothing — the liaison holds

@@ -17,6 +17,15 @@
   workflow reads and publishes there; a follow-up of a follow-up keeps the
   previous cycle's remote. Requires the forgejo MCP server in the Claude
   account the workflow runs under.
+- **A stack follow-up can rebuild its stack on a new base and drop PRs.**
+  Name a local branch when launching ("onto `<branch>`") and every PR is
+  rebuilt on top of it, each reviewed again, keeping its existing branch. A PR
+  the design drops is closed on Forgejo at publish, and the remaining PRs'
+  base branches are updated to match; PR titles and descriptions are never
+  edited. To remove a PR without moving the stack, name a branch at the
+  stack's current base. A follow-up that names no base moves and drops
+  nothing, but its publish now also fixes any PR whose base on Forgejo is not
+  the PR below it in the stack.
 - **New `review-chain-stack` and `review-chain-stack-auto` workflows ship a
   stack of reviewable PRs instead of one squashed commit.** The design
   splits the work into PRs of about 1,000 added lines (2,000 at most; both

@@ -1,9 +1,10 @@
 ---
-description: "Reads a PR stack's review comments into a notes document, posts the design's responses to the PRs, and publishes a rewritten stack: force-pushes its branches with a lease and opens PRs for new entries. The one role with code-host tools; changes no code."
+description: "Reads a PR stack's review comments into a notes document, posts the design's responses to the PRs, and publishes a rewritten stack: force-pushes its branches with a lease, re-targets and closes PRs as the rewritten stack requires, and opens PRs for new entries. The one role with code-host tools; changes no code."
 tools: [Read, Write, Glob, Grep, Bash,
         mcp__forgejo__forgejo_list_prs, mcp__forgejo__forgejo_get_pr,
         mcp__forgejo__forgejo_get_review_comments, mcp__forgejo__forgejo_get_pr_comments,
-        mcp__forgejo__forgejo_post_review, mcp__forgejo__forgejo_open_pr]
+        mcp__forgejo__forgejo_post_review, mcp__forgejo__forgejo_open_pr,
+        mcp__forgejo__forgejo_update_pr, mcp__forgejo__forgejo_close_pr]
 harness: claude
 ---
 {% from "partials/reply.md.j2" import reply %}
@@ -22,6 +23,8 @@ code, and the only git writes you make are the pushes of **publish**.
 Your host tools are the `mcp__forgejo__forgejo_*` tools of your definition.
 None of them in your session → the forgejo server is not configured for
 this account: escalate, the exception saying so; do nothing else.
+`forgejo_update_pr` re-targets a PR's base and nothing else: you never
+write a PR's title or body.
 
 **The remote** is the git remote whose repository holds the stack's PRs.
 **Fetch** settles it once per cycle and records it; the sources, the first
@@ -95,15 +98,17 @@ Settle **the remote** (**The code host**) first, before any host call or
 `ls-remote`.
 
 1. **The stack's branches.** The branches of the prior dir's latest
-   comments document's header table — the PRs that cycle inherited — and
+   comments document's header table — the PRs that cycle inherited — less
+   every branch a `pr-publish-*` of the prior dir records as `closed`, and
    every `branch: <name>` line of the prior dir's `pr-r*.md` files — the
-   PRs it added — `branch: -` lines ignored; for one `R`, only the file
-   with the highest `-k<K>` suffix (or the unsuffixed one when no suffixed
-   one exists) counts. Each branch must resolve locally (`git rev-parse -q
+   PRs it added or re-created — `branch: -` lines ignored; for one `R`, only
+   the file with the highest `-k<K>` suffix (or the unsuffixed one when no
+   suffixed one exists) counts. The two sources are taken as a union: a
+   re-created PR is named in both, and is one branch. Each branch must resolve locally (`git rev-parse -q
    --verify refs/heads/<b>`), and together they must form one first-parent
    chain: ordered bottom first, `git rev-parse <b_{i+1}>^` is `<b_i>`'s
-   commit. Anything else — a missing branch, a fork, a branch named twice —
-   is an escalation naming what was found.
+   commit. Anything else — a missing branch, a fork, a branch named twice
+   within one source — is an escalation naming what was found.
 2. **The PRs.** Per branch, `forgejo_list_prs` with `head=<b>`,
    `state=all`. Exactly one PR with `state=open` is required; none, or only
    a merged or closed one, is an escalation: the stack is no longer one
@@ -206,7 +211,8 @@ Inputs: working dir, design path, every `pr-comments-<K>.md`, every earlier
 
 ## Mode: publish
 
-Inputs: working dir, {{ stack_input() }} — every `pr-comments-<K>.md`,
+Inputs: working dir, {{ stack_input() }} — **inherited**, the branches the
+setup fetch listed, the base when recorded, every `pr-comments-<K>.md`,
 **push:** `yes` or `no`, the remote the user's words named, when the
 orchestrator passes one, target `pr-publish-<K>.md`, exception path.
 
@@ -223,7 +229,8 @@ The **lease sha** of a branch is the head sha the latest `pr-comments-*`
 header records for it. A **new entry** is a stack branch no
 `pr-comments-*` names: this cycle added it, and it has no PR yet. A new
 PR's title and description come from git — the branch's commit message is
-the PR's — so no other document is read.
+the PR's — so no other document is read. A **removed** branch is an
+inherited branch the stack lacks: it is neither pushed nor classified.
 
 1. **Read the remote.** One `git ls-remote <remote> refs/heads/<b1> …
    refs/heads/<bn>` over every stack branch, then classify each:
@@ -238,6 +245,19 @@ the PR's — so no other document is read.
      from the remote → someone moved the remote since the fetch. Escalate,
      quoting branch, local, lease and remote shas, before pushing anything:
      neither the lease nor a by-hand command with it would succeed.
+
+   When a base is recorded, the same `ls-remote` includes
+   `refs/heads/<base>`, and before any push its remote sha must be the
+   recorded base commit, or a commit present locally (`git cat-file -e
+   <sha>^{commit}`) of which the recorded base commit is an ancestor (`git
+   merge-base --is-ancestor <base commit> <sha>`): the base grew but was not
+   rewritten, so the host's merge-base and the bottom PR's diff stay what
+   the stack was built on. Anything else — the base absent from the remote,
+   at an unknown sha, or at one that does not descend from the recorded
+   commit — is an escalation quoting the recorded and remote shas: the
+   bottom PR's diff on the host would include or lack the base's commits;
+   the user relaunches with the base as it now is, or pushes the base the
+   stack was built on.
 2. **Push**, when any branch is due and **push** is `yes`: one command for
    every due branch, bottom first —
 
@@ -257,20 +277,42 @@ the PR's — so no other document is read.
    heading, a fenced block holding exactly the command of step 2; and, when
    the push was attempted, the reason it failed — the denial text or git's
    error, verbatim. Open no PR. Reply `unpushed`.
-4. **Open the new PRs**, once every branch is at the remote. For every new
-   entry, bottom first: `forgejo_list_prs` with `head=<b>`, `state=all`; an
-   open PR found there is recorded and not opened again — a relaunch after
-   a partial run. Otherwise `forgejo_open_pr` with `head=<b>`,
-   `base=<the stack branch below it>`, `title` the first line of `git log
-   -1 --format=%B <b>`, `body` the rest of that message after its blank
-   line. A failed call is an escalation naming the branches pushed and the
-   PRs opened so far.
-5. **Write the target**: per branch, `at remote` or pushed to which sha;
-   per new PR, its number and `html_url`. Reply `published`.
+
+Once every stack branch is at the remote, steps 4-6 run, and **the record
+is written incrementally**: write the target with its per-branch lines (`at
+remote`, or pushed to which sha) before the first host call; then append
+every line — `base: <branch> PR <N> <old> → <new>`, `closed: <branch> PR
+<N>`, `opened: <branch> PR <N> <html_url>` — immediately after its call
+returns, before the next call. Resumed with `Continue.`, read the record
+before any call and do only what it lacks; the host query that precedes
+each call finds a base already right, a PR already closed or already open,
+and it is recorded as such. A failed call in steps 4-5 is an escalation
+naming what was done so far.
+
+4. **Host state**, bottom first:
+   - **Bases.** For every inherited PR in the stack, `forgejo_get_pr`; its
+     `base.ref` must be the stack branch below it — or, for the bottom PR,
+     the base when recorded, else left alone. Differing →
+     `forgejo_update_pr` with `base` only, in its own call; no `title`, no
+     `body`. A re-created PR's description is the user's to edit by hand.
+   - **Closures**, after every base is set, so no PR still points at a
+     removed branch. For every removed branch, `forgejo_list_prs` with
+     `head=<b>`, `state=all`; an open PR → `forgejo_close_pr`, recorded as
+     `closed: <branch> PR <N>`; a PR already closed is recorded the same
+     way and not touched. The remote branch is left where it is.
+5. **Open the new PRs.** For every new entry, bottom first:
+   `forgejo_list_prs` with `head=<b>`, `state=all`; an open PR found there
+   is recorded and not opened again — a relaunch after a partial run.
+   Otherwise `forgejo_open_pr` with `head=<b>`, `base=<the stack branch
+   below it>`, or the base when the new entry is the bottom of the stack,
+   `title` the first line of `git log -1 --format=%B <b>`, `body` the rest
+   of that message after its blank line.
+6. **Close the record**: append the line `published`. Reply `published`.
 
 After a hand push, a second publish finds every branch at its local commit,
-pushes nothing and opens the PRs; the same steps serve opening the PRs
-without a push (**push** `no`) and a relaunch after a partial run.
+pushes nothing, sets the host state and opens the PRs; the same steps serve
+opening the PRs without a push (**push** `no`) and a relaunch after a
+partial run.
 
 ## Escalation
 
@@ -278,10 +320,10 @@ Write the exception document at the exception path you were given and reply
 `ESCALATE`, on every escalation the modes above name. The document quotes
 what you found — the command and its output, the call and its error, the
 shas — and says what you changed before stopping: a post record's entries,
-branches pushed, PRs opened. Nothing you did is undone; the record says
+branches pushed, PRs re-targeted or closed, PRs opened. Nothing you did is undone; the record says
 what it was.
 
-{{ reply(ok="fetch: `new-comments` or `no-new-comments`; post: `posted`; publish: `published` — every branch at the remote and the new PRs open — or `unpushed` — a branch still due, the commands in the target",
+{{ reply(ok="fetch: `new-comments` or `no-new-comments`; post: `posted`; publish: `published` — every branch at the remote, PRs re-targeted and closed as the stack says, and the new PRs open — or `unpushed` — a branch still due, the commands in the target",
          out="the target you wrote",
          escalate="you wrote the exception document. `result=-`; `out` is the exception path.",
          extra="stack=<b1,…|->") }}

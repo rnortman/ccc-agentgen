@@ -4,7 +4,7 @@ tools: [Read, Write, Edit, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
-{% from "partials/stack-input.md.j2" import stack_input, open_pr_rule %}
+{% from "partials/stack-input.md.j2" import stack_input, open_pr_rule, recreated_assembled_rule, recreated_tail_rule %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% set stack = "pr-assembler" in roles and "planner" not in roles %}
 {% set followup = stack and "pr-liaison" in roles %}
@@ -91,7 +91,8 @@ default is still an approval request.
 ## Mode: draft
 
 Inputs: request path, working dir, {% if followup %}the comments path (the
-latest `pr-comments-<K>.md`), the prior working dir, {% endif %}target design path.
+latest `pr-comments-<K>.md`), the prior working dir, the base when the
+launch recorded one, {% endif %}target design path.
 {% if followup %}
 
 This cycle follows up a stack that already shipped as open PRs, and the
@@ -129,7 +130,7 @@ Explore first, then write:
   later revision changes what it promises. A thread marked **new** gets a
   fresh entry under its new slug, written against the whole thread: one
   response per thread, never one per message.
-- **Stack** — the inherited entries first, in the order the comments
+- **Stack** — without a base, the inherited entries first, in the order the comments
   document lists them, each as `branch`, `title` (`git log -1 --format=%s
   <branch>`) and `re-scope:` — the changes this cycle makes to it, with the
   `size` restated as the PR's added lines once landed — or `unchanged`.
@@ -139,6 +140,30 @@ Explore first, then write:
   inherited PR goes in new entries after them, each as **The Stack
   section** below specifies. A design that changes no code says so under
   **Stack** and adds no entry.
+
+  With a base — a **re-created stack** — the whole stack is
+  re-created on the base, as a stack cycle builds one: every entry is open
+  until its round assembles it, and the Stack is written as **The Stack
+  section** specifies — `branch`, `title`, `scope`, `size`, done lines —
+  for inherited and new entries alike. An inherited entry keeps its branch
+  and names what it delivers at the new base: the shipped PR's content as
+  re-created, plus and minus this cycle's changes, each named. Its `size`
+  is its added lines on the new base, under the same limits. New entries
+  may sit anywhere. An inherited entry the design drops is listed under the
+  Stack as `removed: <branch>` with the reason and the thread that asked;
+  it is not re-created, its host PR is closed at publish, and its responses
+  say so. Inherited branches are never renamed. The bottom entry's done
+  lines are run on the base's tree.
+
+  The base is a launch parameter: a design that concludes the stack must
+  move, in a cycle launched without one, says so under **Context** and is
+  written as a plain follow-up; the user relaunches with a base.
+
+  **Inherited-entry rule.** An inherited entry's branch exists by
+  definition. The `branch` key's existing-ref rule, the reviewer's
+  existing-ref check and the rename-on-collision allowance are new-entry
+  rules; an inherited entry keeps its name and is checked only for
+  appearing exactly once.
 {% elif stack %}
 - **Stack** — the work as an ordered list of PRs, each shipped as one commit
   on its own branch (**The Stack section** below).
@@ -161,7 +186,9 @@ decided. Per PR, in order:
 - `branch` — kebab-case, following the project's branch convention if its
   instructions file states one, otherwise a bare slug such as
   `add-retry-config`; never the current branch name, never an existing ref
-  (`git branch --list <name>`, `git branch -r --list '*/<name>'`).
+  (`git branch --list <name>`, `git branch -r --list '*/<name>'`){% if followup %}
+  — for a new entry; an inherited entry of a re-created stack keeps its
+  existing branch (**Inherited-entry rule**){% endif %}.
 - `title` — one imperative line, at most 72 characters, distinct from every
   other PR's title: a fix to an assembled PR finds its target by title.
 - `scope` — the design items it delivers, by reference to the sections above.
@@ -240,15 +267,18 @@ stack you were given — into an assembled prefix and a free tail:
   their branches: the branches are the user's handles on the stack, and a
   reviewer who has started on a PR must find it where it was. Work that fits
   no assembled PR's purpose goes in the open PR or a later one; removing a
-  feature an assembled PR shipped is a re-scope whose fixup deletes it.
-- **The open PR keeps its position, not its content.** {{ open_pr_rule() }}
+  feature an assembled PR shipped is a re-scope whose fixup deletes it.{% if followup %}
+  {{ recreated_assembled_rule() }}{% endif %}
+- **The open PR keeps its position, not its content.** {{ open_pr_rule(followup) }}
   The open round's commits are its work, and the implementer and the
   assembler find the current PR by position; the open entry's branch does
-  not exist yet, so no reviewer holds it. The open entry's round is open
+  not exist yet{% if followup %} — or, an inherited entry of a re-created
+  stack, exists only at its shipped commit until the assembler moves it
+  —{% endif %}, so no reviewer holds {% if followup %}the round's content{% else %}it{% endif %}. The open entry's round is open
   until the entry is assembled, so new work placed in it is built and
   reviewed in that round, never as a fixup.
 - **Entries after the open PR are free**: added, removed, re-scoped or
-  reordered as the change needs.
+  reordered as the change needs.{% if followup %} {{ recreated_tail_rule() }}{% endif %}
 
 A delta for a change request at the ship gate finds every entry assembled:
 it re-scopes the entries the change touches (the round's work is their

@@ -76,12 +76,19 @@ STAGE_VOCABULARY = {
     "coder-supervisor": ("supervisor",),
     "comment-rewriter": ("sweep",),
     "pr-assembler": ("pr-assembler", "assembl", "stack", "pr-done", "pr-r<", "fixup", "restack", "review base"),
-    "pr-liaison": ("liaison", "pr-comments", "pr-posted", "pr-publish", "followup"),
+    "pr-liaison": ("liaison", "pr-comments", "pr-posted", "pr-publish", "followup", "re-created", "inherited"),
 }
 
 # The stack's open-PR rule, one wording shared by the designer and the
 # design-reviewer's delta check.
 OPEN_PR_RULE = "remove it only when the delta's triggering document is an **Empty round** triage"
+# The re-created-stack delta rules: one wording shared by the designer and the
+# design-reviewer's delta check.
+RECREATED_DELTA_RULES = (
+    "A re-scope never empties an assembled entry",
+    "inherited entry not yet re-created is in the free tail: it may be removed or re-scoped, never renamed",
+    "An inherited entry a delta removes, from the free tail or as the open entry after an **Empty round**, is listed as `removed:`",
+)
 
 # Every model string the shipped variants may name. ccc validates efforts but
 # treats a model as an arbitrary string, so a typo would surface only at run
@@ -1307,7 +1314,16 @@ def test_followup_vocabulary_is_absent_elsewhere(builds):
 
 FORGEJO_TOOLS = {
     f"mcp__forgejo__forgejo_{name}"
-    for name in ("list_prs", "get_pr", "get_review_comments", "get_pr_comments", "post_review", "open_pr")
+    for name in (
+        "list_prs",
+        "get_pr",
+        "get_review_comments",
+        "get_pr_comments",
+        "post_review",
+        "open_pr",
+        "update_pr",
+        "close_pr",
+    )
 }
 
 
@@ -1368,8 +1384,17 @@ def test_followup_liaison_reads_any_prior_cycle_and_pushes_atomically(builds):
                 "`ours: <id>,<id>,…`",
                 "the `ours:` line of the prior dir's latest comments document lists",
                 "**Seen** looks only at this working dir",
+                "records as `closed`",
+                "named twice within one source",
             ):
                 assert phrase in fetch, f"{where}: {phrase}"
+            for phrase in (
+                "`forgejo_update_pr` with `base` only",
+                "merge-base --is-ancestor",
+                "before the next call",
+                "`closed: <branch> PR <N>`",
+            ):
+                assert phrase in publish, f"{where}: {phrase}"
             assert "git push --atomic <remote>" in publish, where
             assert "the `remote:` line of the latest `pr-comments-*`" in publish, where
             assert "reads as `remote: origin`" in publish, where
@@ -1436,8 +1461,14 @@ def test_followup_orchestrator_seeds_and_publishes(builds):
                 "no `stack=` or `stack=-`",
                 "`git rev-parse <b_{i+1}>^`",
                 "`git rev-list --first-parent --count <b1>^..<bn>` is `n`",
-                "--no-track -b <name> refs/heads/<bn>",
+                "--no-track -b <name> <start>",
+                "`refs/heads/<base>` with one",
                 "**prior working dir**",
+                "`git rev-parse refs/heads/<name>`",
+                "a name that does not resolve locally → STOP",
+                "in either shape of request",
+                "No base → the **stack** = inherited",
+                "A base → the **stack** is empty",
             ):
                 assert (phrase in setup) == followup, f"{where}: {phrase}"
             gate = _section(body, "### Design gate")
@@ -1475,6 +1506,7 @@ def test_followup_orchestrator_seeds_and_publishes(builds):
                 assert "Post carries" not in fetch_line, where
                 assert "takes each PR's repository from the comments documents" in post_line, where
                 assert "the remote the user's words named" in publish_line, where
+                assert "+ **inherited**" in publish_line, where
                 assert "rewritten, unpushed; commands in <publish path>" in liaison, where
                 assert "publish escalated, what reached the remote in <exception path>" in liaison, where
                 assert "follows each launch before the shipped end" in liaison, where
@@ -1488,6 +1520,14 @@ def test_followup_orchestrator_seeds_and_publishes(builds):
             state = _section(body, "## State you track")
             assert ("| **prior working dir** |" in state) == followup, where
             assert ("| **remote** |" in state) == followup, where
+            assert ("| **base** |" in state) == followup, where
+            assert ("| **inherited** |" in state) == followup, where
+            assembly = _section(body, "### Assembly — no gate")
+            launch = assembly[assembly.index("`ccc run pr-assembler`") : assembly.index("Then **HEAD check**")]
+            assert ("+ **inherited**" in launch) == followup, where
+            check = _section(body, "### Assembly check")
+            assert ("git branch -f <b> <setup commit>" in check) == followup, where
+            assert ("every inherited branch not in the stack at its setup commit, no local branch" in check) == followup, where
             assert ("liaison launch ordinal" in state) == followup, where
             chain = flat.split("## Information boundary")[0]
             assert ("request → fetch → design" in chain) == followup, where
@@ -1924,3 +1964,61 @@ def test_followup_designer_and_reviewer_carry_responses(builds):
                 design = " ".join(_raw_section(body, "## Mode: design").split())
                 assert ("Approve only responses the owner would sign" in design) == followup, where
                 assert ("every `pr-posted-<K>.md`" in design) == followup, where
+
+
+def test_followup_recreated_stack(builds):
+    """A follow-up launched with a base re-creates the stack on it: the
+    designer writes every entry in full and may drop an inherited one, the
+    implementer replays the shipped commit, and the assembler moves the
+    inherited branch instead of creating one. None of it renders into a plain
+    stack build.
+    """
+    for stem in STACK_STEMS:
+        build = builds[stem]
+        followup = stem in FOLLOWUP_STEMS
+        for name, body in build.bodies("designer"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            for phrase in (
+                "With a base — a **re-created stack** — the whole stack is re-created on the base",
+                "`removed: <branch>`",
+                "**Inherited-entry rule.**",
+                "an inherited entry of a re-created stack keeps its existing branch",
+                "and never when the entry is inherited",
+                *RECREATED_DELTA_RULES,
+            ):
+                assert (phrase in flat) == followup, f"{where}: {phrase}"
+        for name, body in build.bodies("design-reviewer"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert ("With a base — a re-created stack" in flat) == followup, where
+            delta_check = " ".join(body.split("**Does the composite stack hold?**")[1].split())
+            for phrase in (*RECREATED_DELTA_RULES, "and never when the entry is inherited"):
+                assert (phrase in delta_check) == followup, f"{where}: {phrase}"
+        for name, body in build.bodies("implementer"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            for phrase in (
+                "an open entry whose branch already exists is an inherited one",
+                "`git cherry-pick --no-commit refs/heads/<branch>`",
+                "then `git commit -C refs/heads/<branch>`, an ordinary commit that passes the hooks",
+                "never as fixups, since the entry is not assembled",
+                "Nothing is rebased, amended or checked out",
+            ):
+                assert (phrase in flat) == followup, f"{where}: {phrase}"
+        for name, body in build.bodies("forester"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            published = "its PRs re-targeted and closed as the stack says" in flat
+            assert published == (followup and "Decide: `approve`" in flat), where
+        for name, body in build.bodies("pr-assembler"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            for phrase in (
+                "**Awaiting re-creation** — an inherited branch not in the stack",
+                "`git branch -f <name> HEAD` when `<name>` is awaiting re-creation",
+                "git branch -f <name> <setup commit>",
+                "for the first, the same line naming the base",
+                "unless it was awaiting re-creation, its existence is the escalation",
+            ):
+                assert (phrase in flat) == followup, f"{where}: {phrase}"

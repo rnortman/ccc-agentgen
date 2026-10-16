@@ -143,13 +143,28 @@ records and refuses a stack whose local branches, remote branches
 and PR heads disagree, or whose PRs are not all open. The stack's PRs are
 looked for on the remote the request names (or your launch words name),
 else the remote the previous follow-up published to, else `origin`; every
-push of the cycle goes to that one remote. The design answers
+push of the cycle goes to that one remote.
+
+Launching a follow-up that also names a **base** — a local branch, "onto
+`<branch>`" — re-creates the stack on it: each inherited PR is rebuilt in
+its own round (its shipped commit replayed, this cycle's changes added),
+reviewed whole and squashed onto its existing branch; an entry the design
+drops is closed on the host. Publish re-points each PR's base on the host
+and never touches a PR's title or body. The base is taken at the branch's tip:
+to remove a PR in place, name a branch created at the stack's current base,
+the bottom branch's parent, since a branch such as `main` has usually moved
+past it. That costs one round per surviving PR, and a surviving PR grown
+past the size limit is re-split into new PRs. A follow-up that names no base never moves or
+removes a PR. If you push by hand, run publish without a push afterwards:
+it writes the record the next follow-up reads and closes the removed PRs.
+
+The design answers
 every thread in a **Responses** section and lands its code changes as
 fixups into the PRs they belong to, or as new PRs on top. The liaison is
 pinned to Claude (`harness: claude`): it calls the forgejo MCP server's
 tools by their Claude Code names (`mcp__forgejo__forgejo_list_prs`,
 `_get_pr`, `_get_review_comments`, `_get_pr_comments`, `_post_review`,
-`_open_pr`), which a role reaches only when its `tools:` list names them,
+`_open_pr`, `_update_pr`, `_close_pr`), which a role reaches only when its `tools:` list names them,
 and the Codex configuration carries no forgejo server. In the plain
 variant the responses are posted at every design gate the review chain
 cleared; your word to proceed freezes the design as it stands, and
@@ -157,11 +172,13 @@ comments posted after the last fetch wait for the next cycle. A gate
 reached through a review escalation posts nothing, and your word to
 proceed there posts the responses and then freezes. The plain variant never pushes on its
 own: after the cycle, `force-push the stack` force-pushes every stack
-branch with a lease, in one atomic push, and opens the new PRs, and "open the PRs" opens them
+branch with a lease, in one atomic push, re-targets and closes PRs as the
+stack says, and opens the new PRs, and "open the PRs" opens them
 without pushing, giving the lease command to run by hand for the branches
 not yet pushed. In `-auto` the responses are posted once the forester
 approves the design, and the forester's ship approval force-pushes the
-stack with a lease and opens the new PRs.
+stack with a lease, re-targets and closes PRs as the stack says, and opens
+the new PRs.
 
 ## Forester family
 

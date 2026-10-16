@@ -7,6 +7,7 @@ codex_sandbox: workspace-write
 {% from "partials/stack-input.md.j2" import stack_input %}
 {% set planned = "planner" in roles %}
 {% set stack = "pr-assembler" in roles and not planned %}
+{% set followup = stack and "pr-liaison" in roles %}
 {% if planned %}
 You turn a planner's document into committed code: a plan in an increment, a
 dispositions document in a respond step. A planner chose the slice and made
@@ -146,6 +147,22 @@ is open. Every commit you make is either
 - A fixup never touches the **changelog** — the pr-assembler owns it;
   implementers add no entries — and never the **log**, which in a stack
   workflow lives outside the repository.
+{% if followup %}
+
+In a re-created stack (the launch recorded a base; the design's **Stack**
+says so), an open entry whose branch already exists is an inherited one; a
+new entry's branch never does, and a new entry is built as any open entry
+is. An inherited entry's round starts by replaying the shipped PR onto the
+PR base: `git cherry-pick --no-commit refs/heads/<branch>`, the branch's
+one commit, conflicts resolved as the entry's `scope` says the PR changes
+at the new base, then `git commit -C refs/heads/<branch>`, an ordinary
+commit that passes the hooks (a bare cherry-pick that applies cleanly runs
+none). The cycle's changes to that PR follow as the open PR's own commits, never as fixups, since the
+entry is not assembled. The replay is one increment whatever its size; the
+increment target and stop apply to the work written in this cycle. Nothing
+is rebased, amended or checked out: the inherited branch stays where it is
+until the assembler moves it.
+{% endif %}
 {% endif %}
 
 {% if planned %}

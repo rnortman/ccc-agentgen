@@ -5,6 +5,8 @@ codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
 {% from "partials/stack-input.md.j2" import stack_input %}
+{% set stack = "pr-assembler" in roles and "planner" not in roles %}
+{% set followup = stack and "pr-liaison" in roles %}
 A finished, reviewed round sits on top of a stack of PRs, one commit and one
 branch each. You turn it into the stack's next PR: every fixup the round made
 to an earlier PR folded into that PR, the round's own work squashed into one
@@ -19,8 +21,9 @@ tree that was reviewed**, the changelog excepted.
 
 Working dir, request path, design and deltas, log path, round `R`, original
 base, PR base, pre-assembly HEAD, {{ stack_input() }} —
-target `pr-r<R>.md`, exception path, sometimes a
-triage dispositions path.
+{% if followup %}**inherited** — the follow-up's inherited branches with
+their setup commits — the base, when recorded, {% endif %}target
+`pr-r<R>.md`, exception path, sometimes a triage dispositions path.
 
 - **PR base** — the commit the open PR sits on: the top assembled PR's
   commit, or the original base when nothing is assembled yet.
@@ -28,7 +31,9 @@ triage dispositions path.
   applied in order, a later delta superseding what it says it overrides.
 - **Added lines** — insertions only, deletions never offsetting; workflow
   artifacts and docs excluded.
-
+{% if followup %}
+- **Awaiting re-creation** — an inherited branch not in the stack.
+{% endif %}
 ## Process
 
 1. **Identify.** Read the effective stack. The PR this round built is the
@@ -49,7 +54,9 @@ triage dispositions path.
    assemble; the open entry cannot be identified from the stack; the round
    has own commits and no open entry; a fixup's title matches no stack
    branch's commit; the round has own commits and the open entry's branch
-   already exists (`git rev-parse -q --verify refs/heads/<name>` succeeds).
+   already exists (`git rev-parse -q --verify refs/heads/<name>` succeeds){% if followup %}
+   and is not awaiting re-creation; an inherited branch awaiting
+   re-creation is not at its setup commit — someone moved it{% endif %}.
 
    A triage dispositions path, when given, rules on an earlier escalation of
    this assembly. It binds how you resolve what it covers — which side of a
@@ -133,8 +140,11 @@ triage dispositions path.
    restacked PR (on a fixup-only round the top PR's rewritten commit is
    HEAD), and
    `git branch <name> HEAD` — never `-f` — for the new PR, the name step 1
-   found free. HEAD stays attached to the working branch. Never push; never touch
-   a branch outside the stack.
+   found free{% if followup %}, **or** `git branch -f <name> HEAD` when `<name>`
+   is awaiting re-creation, its setup commit recorded for the restore{% endif %}.
+   HEAD stays attached to the working branch. Never push; never touch
+   a branch outside the stack{% if followup %}, except the one awaiting
+   re-creation that this step moves{% endif %}.
 8. **Verify**, then reply:
    - `git diff --name-only <pre-assembly HEAD> HEAD` names nothing beyond the
      path you reply as `changelog=`;
@@ -156,7 +166,8 @@ one line a reviewer needs to run it, if any. Nothing else: no headings, no
 review guide, no deviations — the design was a proposal nobody on the code
 host has seen, and the code is the source of truth — no deferral or TODO
 catalogue, no test inventory. For every PR but the first, a final line
-`Stacked on: <previous branch>`.
+`Stacked on: <previous branch>`{% if followup %}; for the first, the same line
+naming the base when the cycle recorded one{% endif %}.
 
 No attribution lines, no references to workflow documents, no round,
 increment or fixup vocabulary: a reader on the code host has none of it. No
@@ -173,7 +184,9 @@ The entry is the PR's, not the cycle's, under the subject of the PR's title.
 ## Escalation
 
 Write the exception document and reply `ESCALATE` when: one of step 1's
-checks fails; a conflict cannot be resolved without
+checks fails;{% if followup %} a fixup would empty its PR's rewritten commit —
+the rebase stops on it — which the document says means the entry must be
+removed through a re-created follow-up;{% endif %} a conflict cannot be resolved without
 changing what the pre-assembly tree holds; a rewritten PR fails the
 project's check; a hook rejects the squash; a verification fails.
 
@@ -186,13 +199,15 @@ git worktree remove --force <path>     # every temporary worktree you added
 git checkout -f -B <working branch> <pre-assembly HEAD>
 git branch -f <b_i> <recorded c_i>     # every stack branch
 git branch -D <name>                   # the new PR's branch, if you created it
-```
+{% if followup %}git branch -f <name> <setup commit>    # an inherited branch this launch moved
+{% endif %}```
 
 `checkout -f` discards everything the launch staged or wrote to tracked
 files — the changelog line is the only such write; step 1 found the tracked
 tree clean, so nothing else is lost. Delete only a branch this launch
 created at step 7; a name that already existed when you started is not
-yours, and its existence is the escalation. After the restore HEAD and every
+yours{% if followup %} — restore it if you moved it, never delete it — and,
+unless it was awaiting re-creation, its existence is the escalation{% else %}, and its existence is the escalation{% endif %}. After the restore HEAD and every
 stack branch are where the launch found them, no branch the launch created
 exists, no temporary worktree you added exists, and the log holds no
 assembly entry for this round. Never bypass a hook, never patch code to

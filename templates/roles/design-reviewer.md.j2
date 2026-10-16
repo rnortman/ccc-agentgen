@@ -4,7 +4,7 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
-{% from "partials/stack-input.md.j2" import stack_input, open_pr_rule %}
+{% from "partials/stack-input.md.j2" import stack_input, open_pr_rule, recreated_assembled_rule, recreated_tail_rule %}
 {% set stack = "pr-assembler" in roles and "planner" not in roles %}
 {% set followup = stack and "pr-liaison" in roles %}
 You fact-check a design document adversarially. Assume nothing in it is true
@@ -92,11 +92,18 @@ the prior working dir, whose `design.md`, deltas and
   work tree's HEAD, where they differ. A response that promises a change
   names a design item that exists and a **Stack** entry that carries it. A
   response reads as written for the human reviewer on the code host: no
-  workflow vocabulary, no reference to any workflow document. The
-  inherited **Stack** entries match the comments document's branches and
-  order, with nothing added before, removed, reordered or renamed; the
-  branch-name checks above apply to the new entries after them, which
-  follow the stack rules.
+  workflow vocabulary, no reference to any workflow document. Without a
+  base, the inherited **Stack** entries match the comments document's
+  branches and order, with nothing added before, removed, reordered or
+  renamed; the branch-name checks above apply to the new entries after
+  them, which follow the stack rules. With a base — a re-created stack —
+  every branch of the comments document appears exactly once, as a
+  re-created entry or under `removed:`; no inherited branch is renamed;
+  every entry, inherited or new, carries the full Stack keys and the size
+  rules, the existing-ref check above applying to new entries only (the
+  designer's **Inherited-entry rule**); a removed entry names the thread or
+  reason, and the responses on its PR say it is being closed; the base the
+  design names is the one the launch recorded.
 {% endif %}
 
 ## Reviewing a delta
@@ -135,9 +142,10 @@ delta's own claims. Add {% if stack %}five{% else %}four{% endif %} checks, in o
    plausible against the entry's recorded size in the log (the assembler's
    assembly and restack entries carry actual added lines, the latest for a
    branch being current) plus the change. The open PR keeps its position,
-   not its content. {{ open_pr_rule() }} A delta answering an overflow
+   not its content. {{ open_pr_rule(followup) }} A delta answering an overflow
    re-splits the open PR at the implementer's last commit; a ship-gate
-   change that needs no code adds no entry.
+   change that needs no code adds no entry.{% if followup %}
+   {{ recreated_tail_rule() }} {{ recreated_assembled_rule() }}{% endif %}
 {% endif %}
 
 {{ findings(
