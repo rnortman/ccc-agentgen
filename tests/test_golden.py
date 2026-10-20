@@ -1147,6 +1147,20 @@ def test_triage_orchestrator_may_relay_git_output(builds):
         assert "of `todo-triage` and of the git commands" in boundary, filename
 
 
+def test_triage_orchestrator_checks_review_state_before_sending_back(builds):
+    """Setup checks which named entries are already sent back or awaiting
+    approval before any `retriage`, says what it skipped, and stops on a
+    surfaced `pending` row."""
+    for filename, body in builds[TRIAGE_STEM].bodies("triage-orchestrator"):
+        setup = _section(body, "### Setup")
+        assert _in_order(setup, "`todo-triage list --review pending retriage`",
+                         "`retriage` row", "already sent back, this message not added as a note",
+                         "`pending` row", "say it was not sent back",
+                         "`todo-triage retriage <slug> --notes-file -`",
+                         "Any `pending` row surfaced or any exit 1 → STOP"), filename
+        assert "by a session the user has not reviewed" not in setup, filename
+
+
 def test_site_remover_never_commits(builds):
     build = builds[TRIAGE_STEM]
     role = build.by_id["site-remover"]

@@ -281,7 +281,11 @@ it.
   retriage <slug> --note TEXT` sends it back, and the next triage session
   takes it first and answers your note; `todo-triage override <slug>
   --disposition …` replaces it with your own ruling. A ruling over a cluster
-  is approved or sent back as one, for every entry it covers. To walk the
+  is approved or sent back as one, for every entry it covers. `retriage`
+  also takes an entry you ruled yourself with `override`, or approved
+  earlier: the entry stops counting as settled until the next triage
+  session rules on it and you approve that ruling; `override` it again to
+  take the request back. To walk the
   inbox in conversation instead, `ccc-use todo-triage`, then `ccc launch
   triage-clerk --cwd <repo>` and name the store: the `triage-clerk`
   tells you in plain prose what each pending ruling proposes and why, with a

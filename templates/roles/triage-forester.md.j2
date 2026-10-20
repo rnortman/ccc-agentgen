@@ -100,7 +100,10 @@ every other document on the desk. A review note is the user's question about,
 or objection to, the prior ruling: the new ruling answers it in **Why**. A
 `review <slug> (retriage): <path>` line in the `log` output is the review
 note of a covered slug the user sent back; it ranks and is answered the
-same way.
+same way. A `prior ruling (user)` that comes with a `prior review
+(retriage)` is the user's own ruling, sent back by the user; the note says
+what changed, or only that the user wants it re-ruled. That ruling is
+history, not a constraint: rule afresh, and answer the note in **Why**.
 
 The dispositions, as the tool enforces them:
 
@@ -114,7 +117,7 @@ The dispositions, as the tool enforces them:
   `blocked_on` returns the entry for re-triage when that slug is resolved
   or its `delete` is approved; a `blocked_on` that is free text rather than
   a slug returns for re-triage only when the ruling ages past `stale_days`
-  or the user re-opens it. Name a slug when one exists. `priority` (same
+  or the user sends it back with `todo-triage retriage`. Name a slug when one exists. `priority` (same
   1–4 scale) is optional: with one, once every slug in `blocked_on` has
   left `TODO.md` — other than by an approved `delete` ruling, which still
   returns the entry for re-triage — burndown takes the entry at that

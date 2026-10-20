@@ -230,6 +230,19 @@ def test_blocked_on_a_deleted_or_resolved_slug_is_stale(repo: Path, store: Store
     assert statuses(store, repo)["gamma"] == ("stale", "blocked on `gone`, which is resolved")
 
 
+def test_blocked_on_a_user_ruled_delete_sent_back_is_triaged(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("gamma", ruled("blocked", blocked_on=["alpha"], priority=1,
+                              entry_hash=hash_of(repo, "gamma")))
+    store.save("alpha", user_ruled(disposition="delete", entry_hash=hash_of(repo, "alpha")))
+    _, out, _ = run(capsys, "list", "--status", "stale", *opts(repo, store))
+    assert statuses(store, repo)["gamma"] == ("stale", "blocked on `alpha`, which is ruled delete")
+    assert [line.split("\t")[0] for line in out.splitlines()] == ["gamma"]
+    code, _, err = run(capsys, "retriage", "alpha", "--note", "Keep it.", *opts(repo, store))
+    assert code == 0, err
+    assert statuses(store, repo)["gamma"] == ("triaged", "")
+
+
 
 
 def test_lint_reports_warnings_and_orphans(repo: Path, store: Store,
@@ -380,6 +393,10 @@ def write(path: Path, text: str) -> Path:
 
 def lines_of(out: str) -> dict[str, str]:
     return dict(line.split(": ", 1) for line in out.splitlines())
+
+
+def rows_by_slug(out: str) -> dict[str, list[str]]:
+    return {line.split("\t")[0]: line.split("\t") for line in out.splitlines()}
 
 
 def test_begin_prints_targets_and_refuses_a_second_open_pass(
@@ -1215,6 +1232,28 @@ def test_sketch_holds_a_user_ruled_mate(repo: Path, store: Store,
     assert store.load("alpha")["passes"][0]["docs"][-1]["covers"] == ["alpha"]
 
 
+def test_sketch_takes_a_user_ruled_mate_sent_back(repo: Path, store: Store,
+                                                  capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("beta", user_ruled(entry_hash=hash_of(repo, "beta")))
+    code, _, err = run(capsys, "retriage", "beta", "--note", "Look again.", *opts(repo, store))
+    assert code == 0, err
+    run(capsys, "begin", "alpha", *opts(repo, store))
+    code, out, _ = log_sketch(capsys, repo, store)
+    assert code == 0 and out.splitlines() == [
+        f"sketch: {store.root}/entries/alpha/sketch-t1.md -> alpha, beta",
+        "held: (none)",
+        f"review beta (retriage): {store.root}/entries/beta/review-user-t1.md"]
+    assert [p["pass"] for p in store.load("beta")["passes"]] == [1, 2]
+    both = ruling_doc(store, "alpha", 1, (
+        "rulings:\n  alpha:\n    disposition: delete\n    summary: s\n"
+        "  beta:\n    disposition: delete\n    summary: s\n"))
+    code, _, err = run(capsys, "record", "alpha", "--ruling", str(both), *opts(repo, store))
+    assert code == 0, err
+    beta = store.load("beta")
+    assert beta["passes"][-1]["ruling"]["ruled_by"] == "agent"
+    assert reviews(store, repo)["beta"] == "pending"
+
+
 def test_sketch_log_json_names_held_slugs(repo: Path, store: Store,
                                           capsys: pytest.CaptureFixture[str]) -> None:
     store.save("beta", user_ruled(entry_hash=hash_of(repo, "beta")))
@@ -1349,6 +1388,11 @@ def test_review_state_derivation(repo: Path, store: Store) -> None:
     store.save("gamma", ruled(review="bogus"))
     assert reviews(store, repo)["alpha"] == "pending"
     assert reviews(store, repo)["gamma"] == "pending"
+    store.save("beta", user_ruled(review="retriage", entry_hash=hash_of(repo, "beta")))
+    assert reviews(store, repo)["beta"] == "retriage"
+    for state in ("approved", "bogus"):
+        store.save("beta", user_ruled(review=state, entry_hash=hash_of(repo, "beta")))
+        assert reviews(store, repo)["beta"] == "approved"
 
 
 def test_inbox_lists_pending_rulings_in_file_order(
@@ -1598,6 +1642,63 @@ def test_approve_with_and_without_a_note(repo: Path, store: Store,
     assert code == 1 and "`beta` is ruled by the user" in err
 
 
+def test_retriage_on_a_user_ruling(repo: Path, store: Store,
+                                   capsys: pytest.CaptureFixture[str]) -> None:
+    today = dt.date.today().isoformat()
+    code, _, err = run(capsys, "override", "beta", "--disposition", "blocked", "--blocked-on",
+                       "fltk x", *opts(repo, store))
+    assert code == 0, err
+    code, out, err = run(capsys, "retriage", "beta", "--note", "fltk x shipped",
+                         *opts(repo, store))
+    assert code == 0, err
+    assert out.splitlines() == ["beta: re-triage requested; next pass 2"]
+    notes = store.entry_dir("beta") / "review-user-t1.md"
+    assert notes.read_text(encoding="utf-8") == (
+        f"# Review of beta pass 1, {today}: retriage\n\nfltk x shipped\n")
+    record = store.load("beta")["passes"][0]
+    assert record["ruling"]["ruled_by"] == "user"
+    assert record["review"] == {"state": "retriage", "date": today}
+    assert record["docs"] == [
+        {"step": "review", "path": "entries/beta/review-user-t1.md", "date": today}]
+    _, out, _ = run(capsys, "list", *opts(repo, store))
+    assert rows_by_slug(out)["beta"][:4] == ["beta", "triaged", "retriage", "blocked"]
+
+    code, _, err = run(capsys, "approve", "beta", *opts(repo, store))
+    assert code == 1 and "`beta` is ruled by the user" in err
+    assert store.load("beta")["passes"][0]["review"]["state"] == "retriage"
+
+    _, out, _ = run(capsys, "next", *opts(repo, store))
+    assert lines_of(out)["slug"] == "beta" and lines_of(out)["review"] == "retriage"
+    code, out, err = run(capsys, "begin", "beta", *opts(repo, store))
+    assert code == 0, err
+    lines = out.splitlines()
+    assert f"prior ruling (user): blocked blocked_on fltk x {today}: -" in lines
+    assert f"prior review: {notes}" in lines
+    assert f"prior review (retriage): {today}" in lines
+    run(capsys, "log", "beta", "--step", "sketch", "--doc",
+        str(sketch(store, "beta", ["beta"], 2)), *opts(repo, store))
+    doc = write(store.entry_dir("beta") / "ruling-t2-a1.md",
+                "---\nrulings:\n  beta:\n    disposition: do\n    priority: 2\n"
+                "    summary: now\n---\n\n## Decision\n")
+    code, _, err = run(capsys, "record", "beta", "--ruling", str(doc), *opts(repo, store))
+    assert code == 0, err
+    assert reviews(store, repo)["beta"] == "pending"
+    assert "beta" in inbox_payload(capsys, repo, store)
+
+
+def test_override_takes_back_a_retriage_on_a_user_ruling(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    run(capsys, "override", "beta", "--disposition", "blocked", "--blocked-on", "fltk x",
+        *opts(repo, store))
+    run(capsys, "retriage", "beta", "--note", "oops", *opts(repo, store))
+    assert reviews(store, repo)["beta"] == "retriage"
+    code, _, err = run(capsys, "override", "beta", "--disposition", "do", "--priority", "3",
+                       *opts(repo, store))
+    assert code == 0, err
+    _, out, _ = run(capsys, "list", *opts(repo, store))
+    assert rows_by_slug(out)["beta"][:5] == ["beta", "triaged", "approved", "do", "P3"]
+
+
 def test_approve_after_an_abandoned_pass_reviews_the_ruled_pass(
         repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
     store.save("alpha", ruled(entry_hash=hash_of(repo, "alpha")))
@@ -1824,6 +1925,14 @@ def test_ready_and_prune_take_only_settled_rulings(
     assert sorted(line.split("\t")[0] for line in out.splitlines()) == ["beta", "gamma"]
     store.save("alpha", ruled("delete", entry_hash=hash_of(repo, "alpha"), review="retriage"))
     store.save("gamma", ruled("delete", entry_hash=hash_of(repo, "gamma")))
+    code, out, _ = run(capsys, "prune", *opts(repo, store))
+    assert code == 3 and out.strip() == "nothing to prune"
+    store.save("beta", user_ruled(entry_hash=hash_of(repo, "beta"), review="retriage"))
+    store.save("gamma", approved(entry_hash=hash_of(repo, "gamma")))
+    _, out, _ = run(capsys, "ready", *opts(repo, store))
+    assert [line.split("\t")[0] for line in out.splitlines()] == ["gamma"]
+    store.save("beta", user_ruled(disposition="delete", entry_hash=hash_of(repo, "beta"),
+                                  review="retriage"))
     code, out, _ = run(capsys, "prune", *opts(repo, store))
     assert code == 3 and out.strip() == "nothing to prune"
 
@@ -2308,7 +2417,7 @@ def test_ready_shows_what_each_entry_unlocks(
     chain_setup(repo, store, {"alpha": 2, "epsilon": 3, "beta": (2, ["alpha"]),
                               "gamma": (1, ["beta"]), "delta": (3, ["alpha"])})
     code, out, _ = run(capsys, "ready", *opts(repo, store))
-    columns = {line.split("\t")[0]: line.split("\t") for line in out.splitlines()}
+    columns = rows_by_slug(out)
     assert code == 0 and list(columns) == ["alpha", "epsilon"]
     assert columns["alpha"][-1] == "beta>gamma,delta"
     assert columns["epsilon"][-1] == "-" and len(columns["epsilon"]) == 9

@@ -34,12 +34,14 @@ not a gap to fill. Consequences:
 - **Replies carry no content.** A subagent reply is one status line — see
   **Replies** — and you route on that line alone. If prose arrives anyway,
   ignore it, never forward it, never let it colour the next prompt.
-- **Two write exceptions, both pure transcription:** the user's chat words
+- **Three write exceptions, all pure transcription:** the user's chat words
   answering an escalated ruling, written verbatim to the notes path the tool
-  prints; and the stdout and stderr of `todo-triage` and of the git
-  commands this definition names, relayed verbatim to a subagent or to the
-  user. No elaboration, paraphrase, or tidying. Neither is an agent; their
-  output is not an artifact.
+  prints; the user's turn naming entries to send back for re-triage, passed
+  verbatim on stdin to `todo-triage retriage`; and the stdout and stderr of
+  `todo-triage` and of the git commands this definition names, relayed
+  verbatim to a subagent or to the user. No elaboration, paraphrase, or
+  tidying. The user and those tools are not agents; what they say is not an
+  artifact.
 
 {% include "partials/user-directives.md.j2" %}
 
@@ -114,6 +116,23 @@ you gave the agent.
    left by a session that died, or is a cluster mate of an entry an earlier
    session skipped or overrode. The slug is the first column of each row.
    Nothing printed → continue.
+5. The user named entries to send back for re-triage → first `todo-triage
+   list --review pending retriage`. A named slug in the first column of a
+   `retriage` row is already sent back: skip it and say so in one line —
+   already sent back, this message not added as a note. One in a `pending`
+   row has a ruling awaiting the user's approval, possibly the ruling of a
+   session this same message already ran: skip it, surface its row
+   verbatim, and say it was not sent back — the user approves it or sends
+   it back themselves (`todo-triage approve` / `todo-triage retriage`) and
+   says continue. For each other slug they named, `todo-triage retriage
+   <slug> --notes-file -` with the whole turn in which they named them,
+   verbatim, on stdin — the launch message when that is where they were
+   named — the same text for every slug. Which words are slugs is the same
+   reading as step 1's repo and store. Never cut "the reason" out of the
+   turn: that is paraphrase. Surface each command's stdout and stderr
+   verbatim. Any `pending` row surfaced or any exit 1 → STOP after the
+   last command, end turn; the user says continue → **Loop**. Neither →
+   **Loop**, where `next` takes those entries first.
 
 ### Loop
 
@@ -127,7 +146,7 @@ you gave the agent.
    `written` → `todo-triage log <slug> --step exploration --scan`, then
    `todo-triage log <slug> --step sketch --doc <sketch>`. The paths the scan
    prints are the exploration paths. Keep the sketch `log` output for this
-   pass: its `held` lines name covered slugs the user ruled or approved,
+   pass: its `held` lines name covered slugs whose ruling is settled,
    which get no pass; its `review` lines name the review notes of covered
    slugs the user sent back.
 4. `ccc run contrarian`. + sketch path, + exploration paths, + the `log

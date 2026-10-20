@@ -228,18 +228,18 @@ def user_ruled(ruling: dict[str, Any] | None) -> bool:
 
 
 def review_state(data: dict[str, Any] | None) -> Review:
-    """A user ruling is approved by definition; an agent ruling by its pass's `review`."""
+    """A user ruling is approved unless the user sent it back; an agent ruling by its pass's `review`."""
     record = latest_ruled_pass(data)
     if record is None:
         return Review.NONE
-    if user_ruled(record["ruling"]):
-        return Review.APPROVED
     state = (record.get("review") or {}).get("state")
+    if user_ruled(record["ruling"]):
+        return Review.RETRIAGE if state == Review.RETRIAGE else Review.APPROVED
     return Review(state) if state in REVIEW_STATES else Review.PENDING
 
 
 def is_settled(data: dict[str, Any] | None) -> bool:
-    """Whether the standing ruling is the user's or user-approved."""
+    """Whether the standing ruling is the user's and not sent back, or user-approved."""
     return review_state(data) == Review.APPROVED
 
 
@@ -328,7 +328,7 @@ class Row:
 
     @property
     def settled(self) -> bool:
-        """Whether the standing ruling is the user's or user-approved."""
+        """Whether the standing ruling is the user's and not sent back, or user-approved."""
         return is_settled(self.data)
 
     @property

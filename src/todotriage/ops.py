@@ -158,7 +158,7 @@ def require_open(store: Store, slug: str) -> tuple[dict[str, Any], dict[str, Any
 
 @dataclass(frozen=True)
 class Settled:
-    """A standing ruling the user ruled or approved; `review` is None for the user's own."""
+    """A settled standing ruling; `review` is None for the user's own."""
 
     ruling: dict[str, Any]
     review: dict[str, Any] | None
@@ -249,7 +249,7 @@ def begin(store: Store, todo: TodoFile, slug: str, resume: bool) -> Targets:
 
 
 def standing_settled(store: Store, slug: str) -> Settled | None:
-    """`slug`'s standing ruling when the user ruled or approved it; a sketch cannot re-rule it."""
+    """`slug`'s standing ruling when it is settled; a sketch cannot re-rule it."""
     data = store.load(slug)
     if not is_settled(data):
         return None
@@ -319,9 +319,10 @@ def log_docs(store: Store, todo: TodoFile, slug: str, step: str, doc: Path | Non
              scan: bool) -> list[Logged]:
     """Register documents in the open pass and, for a sketch, its covered mates' passes.
 
-    A covered mate whose standing ruling the user ruled or approved is held: no pass
-    is opened for it and nothing is registered in one it holds. A covered mate the user
-    sent back for re-triage is reported with its review notes, which this pass must answer.
+    A covered mate whose standing ruling is settled (the user's and not sent back, or
+    user-approved) is held: no pass is opened for it and nothing is registered in one
+    it holds. A covered mate the user sent back for re-triage is reported with its
+    review notes, which this pass must answer.
     """
     data, record = require_open(store, slug)
     if scan:
@@ -842,13 +843,16 @@ def review(store: Store, todo: TodoFile, slug: str, state: Review,
     if data is None or record is None:
         raise TriageError(f"`{slug}` has no ruling to review")
     ruling = record["ruling"]
-    if user_ruled(ruling):
+    if user_ruled(ruling) and state != Review.RETRIAGE:
         raise TriageError(f"`{slug}` is ruled by the user ({ruling.get('date')}); "
                           f"`todo-triage override {slug}` changes it")
     date = today().isoformat()
     path: Path | None = None
     doc: dict[str, Any] | None = None
     if note is not None and note.strip():
+        # TODO(correctness-step5-guard-misses-named-cluster-mates-double-note): a
+        # `retriage` of a mate already sent back by an earlier `retriage` of its
+        # cluster writes and registers the same note again.
         t = int(record["pass"])
         directory = store.entry_dir(slug)
         directory.mkdir(parents=True, exist_ok=True)

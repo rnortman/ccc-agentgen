@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Entries you ruled yourself can be sent back for re-triage.**
+  `todo-triage retriage <slug> --note …` now works on a ruling made with
+  `override` (it used to refuse, and the only way back was another
+  `override`); the `triage-orchestrator` runs it for the entries you name
+  when you launch it, with your message as the note, and takes them first. A named entry
+  already sent back is skipped with a one-line notice; one whose ruling
+  still awaits your approval is shown to you and the session stops until
+  you approve it or send it back.
 - **New `review-chain-stack-followup` and `review-chain-stack-followup-auto`
   workflows answer review comments on a stack of open PRs.** Point one at
   the working dir of the cycle that last shipped the PRs, a stack cycle or
