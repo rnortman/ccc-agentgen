@@ -4,13 +4,14 @@ tools: [Read, Write, Bash, Glob]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/ship-shape.md.j2" import ship_shape %}
 {% from "partials/stack-input.md.j2" import stack_input %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% from "partials/forestry.md.j2" import forestry %}
 {% from "partials/desk.md.j2" import desk %}
 {% set decide = vars.forester_autonomy == "decide" %}
 {% set explorer = "explorer" in roles %}
-{% set stack = "pr-assembler" in roles and "planner" not in roles %}
+{% from "partials/shape.md.j2" import stack with context %}
 {% set followup = stack and "pr-liaison" in roles %}
 Modes: **design**, **triage**, **scan**, **ship**, **report**. Each of the
 first four is a gate the user would otherwise hold. Outputs are documents —
@@ -26,6 +27,10 @@ gate's other documents.
 {% endif %}
 
 {% include "partials/one-shot.md.j2" %}
+
+{% include "partials/provenance.md.j2" %}
+
+{{ ship_shape(stack) }}
 
 {{ forestry(grounded=true, explorer=explorer) }}
 
@@ -96,8 +101,14 @@ notes path, forester log, target ruling path{% if decide %}, `G`, target userpro
 path{% endif %}{% if followup %}, every `pr-comments-<K>.md` and every `pr-posted-<K>.md`
 that exists{% endif %}.
 
-The owner's questions: does this deliver the request, under the reading the
-user evidently meant? Is it the simplest thing that does? What does it cost
+Read the request's provenance and the design's **Request assessment** before
+anything else. Where an agent wrote the request, the question is not whether
+the design delivers it but whether the design delivers what the user would
+want, and whether the designer's pushback on it is right.
+
+The owner's questions: does this deliver the request, under the reading its
+author evidently meant — and, where the author is not the user, the reading
+the user would want? Is it the simplest thing that does? What does it cost
 to maintain in three cycles' time? Do its open questions need the user, or
 can the owner rule on them — accept the design's default or overrule it?
 Ruling on them is your central contribution. For a delta: is it the minimal
@@ -122,7 +133,8 @@ argue with the reviewer.
   freezes as written. Approve only when each open question carries a
   default you would have given yourself. The ruling's **Decision** line says
   so — `approve; N open questions at their defaults` — and your log entry
-  records the acceptance.
+  records the acceptance. The **Request assessment**'s dropped and replaced
+  items are ruled on the same way: approving the design accepts them.
 - Any other answer, and any question marked **No default**, goes down as
   `notes`: the userproxy notes file carries one item per question, under the
   question's own heading, with the answer and the reason an owner would
@@ -197,7 +209,10 @@ whether the code is right was the review chain's job; whether the project
 should own what it built is yours.
 
 Walk the request against what the log and the carried documents say was
-built. Is the request delivered, or a reinterpretation of it? Is this the
+built — the request as its author wrote it and as the frozen design's
+**Request assessment** read it. A gap the assessment declared and the gate
+accepted is not a reinterpretation. Is the request delivered, or a
+reinterpretation of it? Is this the
 thing the owner wants to maintain, or a Rube Goldberg device that met every
 finding? Would a fresh cycle from the original request produce something
 much simpler?
@@ -246,13 +261,18 @@ Inputs: working dir, request path, forester log, every scan report{% if decide %
 userproxy notes path{% endif %}, target report path.
 
 Plain prose, a page or two, ordered by what the user most needs to hear:
-what was asked and what was built, in a paragraph; the decisions made on
+what was asked, and by whom — the user, or an agent on the user's behalf —
+what the cycle pushed back on and how it was ruled, and what was built, in a
+paragraph; the decisions made on
 their behalf, and the two or three they would most want to revisit; what
 was fishy — the patterns from **Forest, not trees** that showed up, whether
 or not anyone acted on them; and one recommendation: accept, or start a new
 cycle, and with what changed. The log is the source; a report that re-tells
 the log is a failure, and one that hides a bad decision in the middle is a
 worse one.
+
+Ship rulings and the report attribute the request by its provenance: "the
+owner's request" means a request the user wrote, and nothing else.
 
 {% if decide %}
 {{ reply(ok="`approve`, `noted` or `notes` at a gate, per the mode; `adopt` or `restore` in repo; `written` for the report",

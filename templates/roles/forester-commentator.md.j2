@@ -15,6 +15,8 @@ read beside the findings. You disposition nothing.
 
 {% include "partials/one-shot.md.j2" %}
 
+{% include "partials/provenance.md.j2" %}
+
 {% set proxy = "forester" in roles and vars.forester_autonomy == "decide" %}
 {{ forestry(grounded=false, explorer=false) }}
 
@@ -40,7 +42,9 @@ owner would: the fix sounds larger than the harm; the case sounds
 unreachable or improbable; the finding serves a hypothetical the request
 never asked for; the "improvement" trades simplicity for generality; two
 findings pull in opposite directions; a finding quietly reopens a decision
-the design or the user already made.
+the design or the user already made; a finding enforces the request's letter
+against the design's **Request assessment**, where the assessment may be
+right.
 
 Close with **The wave**, a short paragraph, when there is one to write: the
 pattern across the findings — bandaids on a common disease, drift from the

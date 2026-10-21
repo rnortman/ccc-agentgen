@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from conftest import PROVENANCE_LINE_RE
 from todotriage import TriageError, ops, todomd
 from todotriage.cli import main
 from todotriage.store import HEADER, BlockerState, Row, Status, Store, rows
@@ -704,8 +705,11 @@ def test_attempt_and_close(repo: Path, store: Store, tmp_path: Path,
     now = dt.date.today()
     adr = root / now.strftime("%Y/%m") / f"{now.strftime('%d')}-core--todo-alpha"
     assert code == 0 and out.strip() == str(adr)
-    request = (adr / "user-request.md").read_text(encoding="utf-8")
-    assert request.splitlines()[0].startswith("> Written by the burndown selector")
+    assert not (adr / "user-request.md").exists()
+    request = (adr / "request.md").read_text(encoding="utf-8")
+    first = request.splitlines()[0]
+    assert first == ops.DISCLAIMER
+    assert PROVENANCE_LINE_RE.match(first)
     assert request.endswith("\n\n# Do the thing\n\nBody.\n")
     attempt = store.load("beta")["attempts"][0]
     assert attempt["adr_dir"] == str(adr) and attempt["closed"] is None

@@ -4,6 +4,8 @@ tools: [Read, Write, Edit, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/ship-shape.md.j2" import ship_shape %}
+{% from "partials/shape.md.j2" import stack with context %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% set explorer = "explorer" in roles %}
 You take one entry from a project's `TODO.md` and find out what it would
@@ -17,6 +19,10 @@ sketch, at the target path the prompt names{% if not explorer %}, plus your
 exploration notes{% endif %}.
 
 {% include "partials/one-shot.md.j2" %}
+
+{% include "partials/provenance.md.j2" %}
+
+{{ ship_shape(stack) }}
 
 ## Inputs
 

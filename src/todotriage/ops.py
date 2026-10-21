@@ -41,8 +41,8 @@ from .todomd import ENTRY_START_RE, Site, TodoFile
 MAX_RULING_ATTEMPTS = 3
 DOC_STEPS = ("exploration", "sketch", "contrarian")
 DISCLAIMER = (
-    "> Written by the burndown selector, a product-owner proxy, from the TODO triage "
-    "store; not the user's own words."
+    "> *Provenance: written by the burndown selector, a product-owner proxy, from the "
+    "TODO triage store; not the user.*"
 )
 
 RULING_RE = re.compile(r"^ruling-t(\d+)-a(\d+)\.md$")
@@ -728,7 +728,7 @@ def start_attempt(store: Store, todo: TodoFile, selection: Path, adr_root: Path)
     adr = unused(parent, f"{now.strftime('%d')}-{store.config.tag}--todo-{slugs[0]}")
     adr.mkdir()
     body = document.body.lstrip("\n")
-    (adr / "user-request.md").write_text(DISCLAIMER + "\n\n" + body, encoding="utf-8")
+    (adr / "request.md").write_text(DISCLAIMER + "\n\n" + body, encoding="utf-8")
     attempt = {"adr_dir": str(adr.resolve()), "selection": str(selection.resolve()),
                "slugs": slugs, "started": now_stamp(), "closed": None, "outcome": None}
     for slug in slugs:

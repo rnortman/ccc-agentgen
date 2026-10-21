@@ -137,7 +137,7 @@ They are the stack variants plus a `pr-liaison` role, the only role that
 talks to the code host: it reads every PR's review threads into
 `pr-comments-<K>.md`, posts the answers the design writes, and publishes
 the rewritten stack. Name the working dir of the cycle that last shipped
-the stack (the directory of its `user-request.md`), a stack cycle or an
+the stack (the directory holding its `design.md`), a stack cycle or an
 earlier follow-up, when you launch; the liaison finds the stack from its
 records and refuses a stack whose local branches, remote branches
 and PR heads disagree, or whose PRs are not all open. The stack's PRs are

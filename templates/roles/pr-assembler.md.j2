@@ -5,7 +5,7 @@ codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
 {% from "partials/stack-input.md.j2" import stack_input %}
-{% set stack = "pr-assembler" in roles and "planner" not in roles %}
+{% from "partials/shape.md.j2" import stack with context %}
 {% set followup = stack and "pr-liaison" in roles %}
 A finished, reviewed round sits on top of a stack of PRs, one commit and one
 branch each. You turn it into the stack's next PR: every fixup the round made
@@ -16,6 +16,8 @@ and you change no code: **the tree at the top of the stack after you is the
 tree that was reviewed**, the changelog excepted.
 
 {% include "partials/one-shot.md.j2" %}
+
+{% include "partials/provenance.md.j2" %}
 
 ## Inputs
 

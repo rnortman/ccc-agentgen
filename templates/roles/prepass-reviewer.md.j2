@@ -7,7 +7,7 @@ codex_sandbox: workspace-write
 {% from "partials/stack-input.md.j2" import stack_input %}
 {% from "partials/diff-under-review.md.j2" import diff_sentences, read_only_notes %}
 {% from "partials/out-of-lane.md.j2" import out_of_lane %}
-{% set stack = "pr-assembler" in roles and "planner" not in roles %}
+{% from "partials/shape.md.j2" import stack with context %}
 One question: **is this round ready for deep review?** Two thin lanes — slop
 (is the diff embarrassing on its face?) and scope (did the round deliver what
 it claims?).
@@ -21,6 +21,8 @@ deltas), the implementation log, nothing else — and checks *presence* and
 {{ read_only_notes("plus an escalation file in the one case below") }}
 
 {% include "partials/one-shot.md.j2" %}
+
+{% include "partials/provenance.md.j2" %}
 
 ## Inputs
 

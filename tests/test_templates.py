@@ -15,12 +15,13 @@ import pytest
 
 from agentgen.check import check_all, spawn_references
 from agentgen.model import Variant
-from agentgen.render import render_variant
+from agentgen.render import make_environment, render_variant
 from conftest import (
     DEFAULT_CHECK,
     DEFAULTS_RULE,
     DRIVERS,
     OWNER_NOTES_LABEL,
+    PROVENANCE_PARTIAL_SENTINEL,
     SPAWNING_PARTIAL_SENTINEL,
     role_template_ids,
 )
@@ -241,6 +242,77 @@ def test_user_directives_partial_is_included_only_by_the_drivers():
     assert including == DRIVERS
 
 
+# Every role that reads a workflow document weighs it by its author. Drivers
+# read no artifact; explorer, coder, comment-rewriter and site-remover read
+# code and tool output only; the triage-clerk holds no opinion to write down.
+PROVENANCE_READERS = {
+    "designer",
+    "design-reviewer",
+    "forester",
+    "forester-commentator",
+    "triage-forester",
+    "sketcher",
+    "contrarian",
+    "judge",
+    "workflow-scanner",
+    "eli5-explainer",
+    "changelog-author",
+    "pr-assembler",
+    "pr-liaison",
+    "planner",
+    "implementer",
+    "coder-supervisor",
+    "prepass-reviewer",
+    "citizen-reviewer",
+    "tracer-reviewer",
+    "test-reviewer",
+}
+
+
+def test_provenance_partial_is_included_by_every_reader():
+    including = {
+        path.name.removesuffix(".md.j2")
+        for path in (TEMPLATES / "roles").glob("*.md.j2")
+        if "provenance.md.j2" in PARTIAL_REF_RE.findall(path.read_text(encoding="utf-8"))
+    }
+    assert including == PROVENANCE_READERS
+    assert not including & (DRIVERS | {"explorer", "coder", "comment-rewriter", "site-remover"})
+    skeptics = {
+        path.name.removesuffix(".md.j2")
+        for path in (TEMPLATES / "roles").glob("*.md.j2")
+        if "skepticism.md.j2" in PARTIAL_REF_RE.findall(path.read_text(encoding="utf-8"))
+    }
+    assert skeptics <= PROVENANCE_READERS, "skepticism points at **Who wrote it**"
+
+
+def test_provenance_partial_renders_once_in_every_reader(rendered):
+    for role in rendered:
+        body = _body(rendered, role.id)
+        count = body.count(PROVENANCE_PARTIAL_SENTINEL)
+        assert count == (1 if role.id in PROVENANCE_READERS else 0), role.id
+        if count:
+            assert "by whatever means your role gives you" in body, role.id
+
+
+# Roles that write or judge a request or a design, and so must know what ships.
+SHIP_SHAPE_READERS = ("designer", "design-reviewer", "forester", "triage-forester", "sketcher")
+
+
+@pytest.mark.parametrize("shape", ["full", "lite", "advise", "stack"])
+def test_ship_shape_names_what_the_cycle_ships(request, shape):
+    rendered = request.getfixturevalue(shape)
+    present = {role.id for role in rendered}
+    for role_id in SHIP_SHAPE_READERS:
+        if role_id not in present:
+            continue
+        body = _body(rendered, role_id)
+        assert body.count("## What this cycle ships") == 1, (shape, role_id)
+        if _shape(present).stack:
+            assert "one commit per PR" in body, (shape, role_id)
+        else:
+            assert "one commit" in body and "one commit per PR" not in body, (shape, role_id)
+
+
 def test_designer_spawning_a_role_the_variant_dropped_is_caught():
     """The var and the role set can disagree; rule 4 has to make that loud."""
     ids = [rid for rid in role_ids() if rid != "explorer"]
@@ -262,6 +334,27 @@ def test_clerk_without_an_explorer_spawns_nobody():
     assert result.errors == []
 
 
+def _shape(role_ids):
+    """The variant shape every template imports, evaluated for a role set."""
+    template = make_environment(TEMPLATES).get_template("partials/shape.md.j2")
+    return template.make_module({"roles": sorted(role_ids)})
+
+
+SHAPE_PREDICATE_RE = re.compile(r"""['"](planner|pr-assembler)['"]\s+(not\s+)?in\s+roles""")
+
+
+def test_shape_partial_owns_the_variant_shape():
+    """No template re-derives the shape from the role set."""
+    for path in TEMPLATES.rglob("*.md.j2"):
+        if path.name == "shape.md.j2":
+            continue
+        text = path.read_text(encoding="utf-8")
+        assert not SHAPE_PREDICATE_RE.search(text), path.name
+    assert _shape({"pr-assembler"}).stack
+    assert not _shape({"pr-assembler", "planner"}).stack
+    assert _shape({"planner"}).split
+
+
 def _body(rendered, role_id: str) -> str:
     return " ".join(next(role for role in rendered if role.id == role_id).body.split())
 
@@ -281,3 +374,14 @@ def test_designer_default_and_owner_notes_render(full, advise):
         assert OWNER_NOTES_LABEL in designer
         assert OWNER_NOTES_LABEL in _body(rendered, "orchestrator")
         assert DEFAULT_CHECK in _body(rendered, "design-reviewer")
+
+
+def test_forestry_drift_names_the_assessment(rendered):
+    """A departure the assessment declared and the gate ruled on is not drift."""
+    present = {role.id for role in rendered}
+    for role_id in ("forester", "forester-commentator"):
+        if role_id not in present:
+            continue
+        body = _body(rendered, role_id)
+        assert "**Request assessment** declared" in body, role_id
+        assert "launders nothing" in body, role_id

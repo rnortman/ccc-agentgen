@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **Agents now treat the request as fallible input and push back on it.**
+  Every request file says who wrote it on its first line: requests written
+  by the burndown selector say so in a new uniform wording, a request you
+  give in chat is transcribed under a line marking it as your own words, and
+  a file you place by hand carries no line. Every agent that reads workflow
+  documents is told to weigh each one by its author, to attribute an
+  agent's text to that agent rather than to you, and to write down where it
+  disagrees — even with your own words. The designer now opens every design
+  with a **Request assessment**: who wrote the request, which of its
+  premises hold, and what it asks that the cycle cannot ship or the project
+  should not build. It drops or replaces such an ask with the reason, or
+  puts it to you as a **No default** question; when no honest design exists
+  (a false premise, an impossible ask, a harmful one) it stops on that
+  question instead of inventing a design. The design reviewer checks the
+  assessment, and the forester rules on what it dropped.
+- **The request file is now `request.md`, not `user-request.md`.** Launch
+  a cycle with `… request.md`; `todo-triage attempt` writes `request.md`.
+  An orchestrator launched with only a path to a file of any other name
+  stops at setup with one line naming the required name. **Cycles in
+  flight across this upgrade** (every `review-chain*` cycle paused at a
+  gate or stop, and every ADR dir `todo-triage summary` lists under Open
+  attempts) run the new orchestrator text when resumed. Before resuming or
+  relaunching one: if its artifact repo has no freeze commit for
+  `user-request.md` yet, rename the file to `request.md`; if it is already
+  frozen, leave it alone, since a rename would read as a change to the
+  frozen set. A frozen burndown attempt whose session cannot be resumed
+  cannot be relaunched under the old name; close it with `skip` and let a
+  later burndown select the unit again.
+- Agents that write and judge requests and designs are now told what a
+  cycle ships — one squashed commit, or one commit per PR in a stack
+  workflow — and burndown selections no longer ask for commit counts or
+  layouts.
 - **Entries you ruled yourself can be sent back for re-triage.**
   `todo-triage retriage <slug> --note …` now works on a ruling made with
   `override` (it used to refuse, and the only way back was another

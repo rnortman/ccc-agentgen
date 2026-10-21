@@ -12,9 +12,11 @@ commit, and HEAD — the squash.
 
 {% include "partials/one-shot.md.j2" %}
 
+{% include "partials/provenance.md.j2" %}
+
 ## Process
 
-1. Read the artifacts in the working dir — user request, design and deltas,
+1. Read the artifacts in the working dir — the request, design and deltas,
    implementation log — for what was built and why. Then the diff from base
    to HEAD, and its summary, for what actually shipped.
 2. Find the project's changelog, wherever its own instructions say it lives.

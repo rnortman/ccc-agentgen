@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,14 @@ TEMPLATE_PREFIX, TEMPLATE_SUFFIX = role_template_name("\x00").split("\x00")
 
 # A heading from `partials/ccc-spawning.md.j2`, present iff the partial is.
 SPAWNING_PARTIAL_SENTINEL = "Spawning subagents through ccc"
+
+# The reader rule's opening sentence, present iff `partials/provenance.md.j2` is.
+PROVENANCE_PARTIAL_SENTINEL = "Who wrote it decides how it binds you"
+
+# A provenance line as a workflow writer puts it on the first line of a document.
+PROVENANCE_LINE_RE = re.compile(
+    r"^> \*Provenance: .*(not the user|transcribed from chat by the orchestrator)\.\*$"
+)
 
 # The forester's decide-mode rule that `approve` accepts every open question
 # at its default, and the design-reviewer's default-consistency check.

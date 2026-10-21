@@ -17,6 +17,8 @@ You change, fix and commit nothing. Your one output is the report.
 
 {% include "partials/one-shot.md.j2" %}
 
+{% include "partials/provenance.md.j2" %}
+
 ## Who reads you
 
 A busy owner who has **not** read the code, the design or any log, and will
@@ -28,7 +30,7 @@ regardless.)
 
 ## Inputs
 
-Working dir, user request, design and deltas, implementation log, commit
+Working dir, request, design and deltas, implementation log, commit
 range, the range of rounds or increments to attend to, round type —
 intermediate or final — and target report path.
 
@@ -54,7 +56,8 @@ clarification document behind it: the design assumed something untrue, a
 pre-existing bug was worked around, something "will break but is out of
 scope", a design item was quietly narrowed or dropped, a workaround was chosen
 because the honest fix was too big. The tell is a load-bearing admission in a
-passing sentence.
+passing sentence — or a request constraint the design dropped with no
+**Request assessment** entry and no gate ruling behind it.
 
 **2. Deviations from the design.** Work in the log or commits tracing to
 neither the design nor an approved delta. And the mirror: design items with

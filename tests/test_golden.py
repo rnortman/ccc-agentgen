@@ -25,6 +25,7 @@ from conftest import (
     DEFAULTS_RULE,
     DRIVERS,
     OWNER_NOTES_LABEL,
+    PROVENANCE_LINE_RE,
     SPAWNING_PARTIAL_SENTINEL,
     role_template_ids,
 )
@@ -1533,6 +1534,10 @@ def test_followup_orchestrator_seeds_and_publishes(builds):
             assert ("| pr-liaison | fetch: `new-comments` · `no-new-comments`" in replies) == followup, where
             state = _section(body, "## State you track")
             assert ("| **prior working dir** |" in state) == followup, where
+            assert (
+                "the shipped cycle's working dir — the directory holding its `design.md`, "
+                "whatever its request file is named" in flat
+            ) == followup, where
             assert ("| **remote** |" in state) == followup, where
             assert ("| **base** |" in state) == followup, where
             assert ("| **inherited** |" in state) == followup, where
@@ -2036,3 +2041,112 @@ def test_followup_recreated_stack(builds):
                 "unless it was awaiting re-creation, its existence is the escalation",
             ):
                 assert (phrase in flat) == followup, f"{where}: {phrase}"
+
+
+def test_request_file_is_request_md(builds):
+    """The request file's name makes no authorship claim; its provenance line does."""
+    for build in builds.values():
+        for role in build.roles:
+            assert "user-request" not in role.frontmatter.get("description", ""), (
+                f"{build.stem}/{role.id}: description"
+            )
+            for name, body in build.bodies(role.id):
+                assert "user-request" not in body, f"{build.stem}/{name}"
+        if "orchestrator" not in build.by_id:
+            continue
+        for name, body in build.bodies("orchestrator"):
+            flat = " ".join(body.split())
+            where = f"{build.stem}/{name}"
+            assert "commit the frozen set — `request.md`," in flat, where
+            assert "Words naming an existing `request.md`" in flat, where
+            assert "— → its directory is the working dir" in flat, where
+
+
+def test_orchestrator_refuses_a_misnamed_request(builds):
+    """Words naming any other file are a setup stop, never a chat request to transcribe."""
+    seen = False
+    for build in builds.values():
+        if "orchestrator" in build.by_id:
+            for name, body in build.bodies("orchestrator"):
+                flat = " ".join(body.split())
+                where = f"{build.stem}/{name}"
+                accept = "Words naming an existing `request.md` — alone or with other words"
+                stop = (
+                    "words that are one path and nothing else — to a file not named "
+                    "`request.md`, or to a `request.md` that does not exist — are not a "
+                    "request to transcribe"
+                )
+                chat = "Any other words are a chat request"
+                for phrase in (accept, stop, chat):
+                    assert phrase in flat, (where, phrase)
+                assert flat.index(accept) < flat.index(stop) < flat.index(chat), where
+                assert "the required name `request.md`" in flat, where
+                reply = flat[flat.index("## Reply"):]
+                assert "a misnamed or missing request path at setup" in reply, where
+        if "burndown-orchestrator" in build.by_id:
+            seen = True
+            for name, body in build.bodies("burndown-orchestrator"):
+                assert '"<ADR dir>/request.md"' in body, f"{build.stem}/{name}"
+    assert seen, "no variant emitted the burndown-orchestrator"
+
+
+def test_provenance_names_quoted_reviewers_where_the_liaison_runs(builds):
+    """A comments document quotes human reviewers; readers must not class it as agent text."""
+    seen = False
+    clause = "a `pr-comments-…` file quotes the code host's human reviewers verbatim"
+    for build in builds.values():
+        if "designer" not in build.by_id:
+            continue
+        liaison = "pr-liaison" in build.by_id
+        seen |= liaison
+        for name, body in build.bodies("designer"):
+            flat = " ".join(body.split())
+            assert (clause in flat) == liaison, f"{build.stem}/{name}"
+    assert seen, "no variant emitted the pr-liaison"
+
+
+def test_designer_assesses_the_request(builds):
+    """The designer pushes back in a mandatory assessment or stops the design;
+    the design-reviewer checks both.
+    """
+    seen = False
+    for build in builds.values():
+        if "designer" in build.by_id:
+            seen = True
+            for name, body in build.bodies("designer"):
+                flat = " ".join(body.split())
+                where = f"{build.stem}/{name}"
+                assert "- **Request assessment** — mandatory" in flat, where
+                assert '"Not written: see Q<n>."' in flat, where
+                assert flat.count("## Owner's answers") == 1, where
+                assert flat.count("A question never survives being answered by the owner") == 1, where
+                assert flat.count("**Owner's answers** applies") == 1, where
+                assert "answers open questions under **Owner's answers**" in flat, where
+        if "design-reviewer" in build.by_id:
+            for name, body in build.bodies("design-reviewer"):
+                flat = " ".join(body.split())
+                where = f"{build.stem}/{name}"
+                assert "- **Feasibility** — the design promises nothing" in flat, where
+                assert "Check the **Request assessment**." in flat, where
+                assert "**Can the composite ship?**" in flat, where
+    assert seen, "no variant emitted the designer"
+
+
+def test_provenance_line_is_uniform(builds):
+    """Every provenance line a writer is told to write has the one grammar; only
+    the orchestrator's transcription and the deciding forester's proxy notes
+    carry one.
+    """
+    for build in builds.values():
+        autonomy = build.variant.vars.get("forester_autonomy")
+        for role in build.roles:
+            expected = {"orchestrator": 1, "forester": 1 if autonomy == "decide" else 0}.get(role.id, 0)
+            for name, body in build.bodies(role.id):
+                where = f"{build.stem}/{name}"
+                lines = [
+                    line.strip() for line in body.splitlines()
+                    if line.strip().startswith("> *Provenance:")
+                ]
+                for line in lines:
+                    assert PROVENANCE_LINE_RE.match(line), f"{where}: {line}"
+                assert len(lines) == expected, where

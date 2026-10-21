@@ -1,0 +1,5 @@
+{#- The variant's shape, derived once from its role set. Import `with context`.
+    `split`: a planner splits each increment into plan and code.
+    `stack`: the cycle ships one PR per stack entry, assembled by the pr-assembler. #}
+{% set split = "planner" in roles %}
+{% set stack = "pr-assembler" in roles and not split %}

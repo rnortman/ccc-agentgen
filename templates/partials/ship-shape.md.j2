@@ -1,0 +1,18 @@
+{% macro ship_shape(stack) %}
+## What this cycle ships
+
+{% if stack %}
+The cycle ships one commit per PR of the design's **Stack** section, in
+stack order, each on its own branch. The designer decides the split, and nothing ships
+outside it: no PR the section does not name, no second commit inside a PR,
+no other order. A request or design that dictates a different commit shape
+specifies something this workflow will not produce.
+{% else %}
+The whole cycle lands as **one commit** on the launch branch: every round
+is squashed, and the ship gate squashes all rounds into one. No
+intermediate commit, branch or ordering survives. A request or design that
+specifies several commits, separate PRs or a particular commit sequence
+specifies something this workflow cannot produce. Another workflow ships
+work as several reviewable commits; this is not it.
+{% endif %}
+{%- endmacro %}

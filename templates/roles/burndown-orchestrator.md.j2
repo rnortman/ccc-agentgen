@@ -135,9 +135,9 @@ you gave the agent, or, from the orchestrator, `-`.
    session recoverable repeat the launch; route by this step. Stop →
    **End**.
 3. `todo-triage attempt --selection <target> --adr-root <ADR root>` → it
-   prints the unit's ADR dir, which now holds `user-request.md`. Exit 1 →
+   prints the unit's ADR dir, which now holds `request.md`. Exit 1 →
    STOP, surface its stderr verbatim, end turn.
-4. `ccc run orchestrator --cwd <repo> "<ADR dir>/user-request.md"`, with the
+4. `ccc run orchestrator --cwd <repo> "<ADR dir>/request.md"`, with the
    limit at your tool's ceiling: a unit runs for hours. Nothing else in the
    prompt. Keep the session id — from the trailer, or after a cut-off from
    **Cut-off launch** step 2. A cut-off launch →

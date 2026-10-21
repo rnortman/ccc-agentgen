@@ -10,7 +10,7 @@ codex_sandbox: workspace-write
 {% set prepass = "prepass-reviewer" in roles %}
 {% set scanner = "workflow-scanner" in roles %}
 {% set changelog = "changelog-author" in roles %}
-{% set split = "planner" in roles %}
+{% from "partials/shape.md.j2" import split, stack with context %}
 {% set worker = "coder-supervisor" if "coder" in roles else "implementer" %}
 {% set wshort = "supervisor" if "coder" in roles else "implementer" %}
 {% set forester = "forester" in roles %}
@@ -23,7 +23,6 @@ codex_sandbox: workspace-write
 {% set fg_triage = forester and "triage" in vars.forester_gates %}
 {% set fg_scan = forester and scanner and "scan" in vars.forester_gates %}
 {% set fg_ship = forester and "ship" in vars.forester_gates %}
-{% set stack = "pr-assembler" in roles and not split %}
 {% set autopush = decide and fg_ship and not stack %}
 {% set followup = stack and "pr-liaison" in roles %}
 {% set gate_posts = followup and not (decide and fg_design) %}
@@ -69,7 +68,8 @@ to fill. Consequences:
   triage ruling or the user; you have read nothing and cannot tell a
   clarification from a redesign.
 - **Three write exceptions, all pure transcription:** the user's request into
-  `user-request.md`; any chat instruction from the user that must reach a
+  `request.md`, under the one provenance line of **Setup** step 1 — the only
+  addition a transcription ever carries; any chat instruction from the user that must reach a
   subagent, written verbatim to a notes file; and the output of a git command
   you ran, copied unchanged into `commit-failure-<K>.md` (**Commit
   failure**). No elaboration, paraphrase, or tidying. A user instruction for a
@@ -103,7 +103,7 @@ Three places, kept apart throughout:
 - **repo** — the git work tree `ccc` launched you in (`--cwd`). **HEAD
   check**, round measurement, increments, squashes and pushes happen here,
   and only here.
-- **working dir** — the directory of `user-request.md`; every artifact lives
+- **working dir** — the directory of `request.md`; every artifact lives
   in it. It may be inside the repo or not.
 - **artifact repo** — the git repository containing the working dir; the
   repo itself when the working dir is inside it. Every git command you run
@@ -228,18 +228,30 @@ retries mid-work often omits the commit it already made.
 
 ### Setup
 
-1. Capture the request. User points at an existing `user-request.md` → its
-   directory is the working dir. Request arrives in chat → pick the working
-   dir (per the project's documentation standard if any){% if stack %},
-   outside the repo — a standard that places it inside → ask the user for
-   one, end turn{% endif %}; write the request there verbatim.
+1. Capture the request. Words naming an existing `request.md` — alone or
+   with other words{% if followup %}, such as the prior working dir, remote
+   or base below{% endif %} — → its directory is the working dir. Otherwise,
+   words that are one path and nothing else — to a file not named
+   `request.md`, or to a `request.md` that does not exist — are not a
+   request to transcribe: STOP — one line naming the path and the required
+   name `request.md` — end turn. Any other words are a chat request → pick
+   the working dir (per the project's
+   documentation standard if any){% if stack %}, outside the repo — a
+   standard that places it inside → ask the user for one, end turn{% endif %};
+   write the request there verbatim, with this one line above it:
+
+   > *Provenance: the user's own words, transcribed from chat by the orchestrator.*
+
 {% if stack %}
    The **request slug** is the working dir's basename (e.g.
    `12-fix-login-timeout`).
 {% if followup %}
    The user's words must also name the **prior working dir**, the shipped
-   cycle's `user-request.md` directory; absent → ask once, end turn.
-   Words pointing at an existing `user-request.md` may also name the
+   cycle's working dir — the directory holding its `design.md`, whatever
+   its request file is named; absent → ask once, end turn. A path given
+   as the prior working dir, the directory or any file in it, is never the
+   request.
+   Words pointing at an existing `request.md` may also name the
    **remote**, the git remote holding the stack's PRs: recorded when they
    do, never asked for. A request written from chat records none — the
    liaison settles the remote from the request itself.
@@ -438,7 +450,7 @@ the user.
 
 ### Freeze
 
-Before the first increment: commit the frozen set — `user-request.md`,
+Before the first increment: commit the frozen set — `request.md`,
 `design.md`{% if eli5_at_gate %}, `design-eli5.md`{% endif %} — in the artifact repo **by explicit pathspec**:
 
 ```
@@ -1347,6 +1359,6 @@ and history-rewriting rules only as **Destructive git** says.
 {% set ok_text %}`shipped` when the cycle ran to its end: ship squash done{% if changelog %}, changelog amended{% endif %}{% if forester %}, the forester report written{% endif %}, whether or not HEAD is pushed; `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting squash approval, a change request under way{% endset %}
 {% endif %}
 {% set out_text %}for `shipped`, {% if forester %}the forester report{% else %}`-`{% endif %}; for `gate`, the primary document you surfaced{% endset %}
-{% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if followup %}a pr-liaison escalation or failed stack check before the ship gate, {% endif %}{% if stack %}a rebase in progress at setup, a work branch that could not be created at setup{% else %}a detached HEAD at setup{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
+{% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if followup %}a pr-liaison escalation or failed stack check before the ship gate, {% endif %}a misnamed or missing request path at setup, {% if stack %}a rebase in progress at setup, a work branch that could not be created at setup{% else %}a detached HEAD at setup{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
 {{ reply(ok=ok_text, out=out_text, escalate=escalate_text, commit="current HEAD",
          prose="**Stop commit** first, when the artifact repo is separate. Above the status line goes only what the stop already surfaces — the paths, in at most two lines — plus the one `artifact commit rejected: …` line when the stop commit was rejected; nothing else. A human operator reads those lines; a parent driver relays them and routes on the status line.") }}
