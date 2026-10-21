@@ -303,7 +303,13 @@ it.
   chain whole — `review-chain` or `review-chain-auto` — because the inner
   orchestrator resolves its roles from the same `agents_dir`. In the plain
   variant the inner chain's gates are relayed to you; in `-auto` its forester
-  holds them.
+  holds them. At every relayed gate the driver also shows what
+  `todo-triage attempt-close --dry-run` would record, so the ship gate
+  reveals entries the cycle would leave in `TODO.md`. A unit whose cycle
+  reports shipped with entries still listed closes `incomplete` and the
+  session stops: `retry` opens a follow-up cycle on the remaining entries,
+  selected from the prior attempt's record; `skip` leaves them for a later
+  session; `stop` ends the session.
 
 Instructions to agents that create files inside the code repo (scratch
 notes, observation files) are checked by the repo's own hooks like any other

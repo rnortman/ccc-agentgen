@@ -608,10 +608,23 @@ def cmd_attempt(ctx: Context, args: argparse.Namespace) -> Output:
     return Output([str(adr)], {"adr_dir": str(adr)})
 
 
+def still_listed(todo_path: str, slugs: list[str]) -> str:
+    """The text naming a closed or closing attempt's slugs still in the TODO file."""
+    return f"still in {todo_path}: {', '.join(slugs)}"
+
+
 def cmd_attempt_close(ctx: Context, args: argparse.Namespace) -> Output:
     store = ctx.store()
-    outcome, slugs = ops.close_attempt(store, ctx.todo(store), args.adr, args.outcome)
-    return Output([f"{outcome}: {', '.join(slugs)}"], {"outcome": outcome, "slugs": slugs})
+    if args.dry_run and args.outcome:
+        raise TriageError("--dry-run takes no --outcome")
+    closed = ops.close_attempt(store, ctx.todo(store), args.adr, args.outcome,
+                               dry_run=args.dry_run)
+    prefix = "would close " if args.dry_run else ""
+    lines = [f"{prefix}{closed.outcome}: {', '.join(closed.slugs)}"]
+    if closed.remaining:
+        lines.append(still_listed(store.config.todo_path, closed.remaining))
+    return Output(lines, {"outcome": closed.outcome, "slugs": closed.slugs,
+                          "remaining": closed.remaining, "dry_run": args.dry_run})
 
 
 def cmd_prune(ctx: Context, args: argparse.Namespace) -> Output:
@@ -717,7 +730,9 @@ def cmd_summary(ctx: Context, args: argparse.Namespace) -> Output:
             if closed is None:
                 attempts_open.append(f"{adr} ({covered}), started {attempt.get('started')}")
             elif since is None or closed >= since:
-                attempts_closed.append(f"{adr} ({covered}): {attempt.get('outcome')}")
+                left = attempt.get("remaining") or []
+                suffix = f", {still_listed(todo_path, left)}" if left else ""
+                attempts_closed.append(f"{adr} ({covered}): {attempt.get('outcome')}{suffix}")
     abandoned = []
     for row in all_rows:
         for record in (row.data or {}).get("passes") or []:
@@ -892,8 +907,10 @@ def make_parser() -> argparse.ArgumentParser:
     att.add_argument("--selection", required=True, type=Path)
     att.add_argument("--adr-root", required=True, type=Path)
 
-    close = add("attempt-close", cmd_attempt_close, "close the open attempt for an ADR dir")
+    close = add("attempt-close", cmd_attempt_close, "close the open attempt for an ADR dir; "
+                "--dry-run prints what it would record and changes nothing")
     close.add_argument("--adr", required=True, type=Path)
+    close.add_argument("--dry-run", action="store_true")
     close.add_argument("--outcome", choices=(Outcome.STOPPED.value,))
 
     prune = add("prune", cmd_prune, "list entries ruled delete and their code sites; "

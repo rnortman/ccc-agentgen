@@ -738,8 +738,22 @@ def start_attempt(store: Store, todo: TodoFile, selection: Path, adr_root: Path)
     return adr
 
 
-def close_attempt(store: Store, todo: TodoFile, adr: Path,
-                  outcome: str | None) -> tuple[str, list[str]]:
+@dataclass(frozen=True)
+class Closed:
+    """The outcome of an attempt close: the unit's slugs and those still in TODO.md."""
+
+    outcome: str
+    slugs: list[str]
+    remaining: list[str]
+
+
+def close_attempt(store: Store, todo: TodoFile, adr: Path, outcome: str | None,
+                  dry_run: bool = False) -> Closed:
+    """Close the open attempt for `adr`; `outcome` None means shipped or incomplete by TODO.md.
+
+    `dry_run` computes the result without saving anything. Raises TriageError when the
+    attempt is missing or already closed.
+    """
     target = str(adr.resolve())
     matches: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for slug in store.slugs():
@@ -753,16 +767,18 @@ def close_attempt(store: Store, todo: TodoFile, adr: Path,
     if not still_open:
         raise TriageError(f"the attempt for {target} is already closed")
     covered = [s for s, _, _ in still_open]
+    in_file = todo.by_slug()
+    remaining = [s for s in covered if s in in_file]
     if outcome is None:
-        in_file = todo.by_slug()
-        outcome = (Outcome.SHIPPED if all(s not in in_file for s in covered)
-                   else Outcome.INCOMPLETE).value
-    stamp = now_stamp()
-    for slug, data, attempt in still_open:
-        attempt["closed"] = stamp
-        attempt["outcome"] = outcome
-        store.save(slug, data)
-    return outcome, covered
+        outcome = (Outcome.INCOMPLETE if remaining else Outcome.SHIPPED).value
+    if not dry_run:
+        stamp = now_stamp()
+        for slug, data, attempt in still_open:
+            attempt["closed"] = stamp
+            attempt["outcome"] = outcome
+            attempt["remaining"] = list(remaining)
+            store.save(slug, data)
+    return Closed(outcome, covered, remaining)
 
 
 def prunable(all_rows: list[Row]) -> list[Row]:

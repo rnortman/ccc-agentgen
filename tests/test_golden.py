@@ -783,6 +783,54 @@ def test_burndown_routes_a_directive_as_the_named_result(builds):
             assert step.index("as if the status line had read so") < routes, f"{stem}/{name}"
 
 
+def test_burndown_stops_on_an_incomplete_close(builds):
+    """An `incomplete` close stops the driver with the tool's output and offers
+    `retry`, `skip` and `stop`; `retry` runs a follow-up selection on the
+    entries the tool says are still listed.
+    """
+    for stem in BURNDOWN_EMBEDS:
+        for name, body in builds[stem].bodies("burndown-orchestrator"):
+            flat = " ".join(body.split())
+            step = flat[flat.index("4. `ccc run orchestrator") :]
+            step = step[: step.index("### Never")]
+            shipped = step.index("- `shipped` →")
+            incomplete = step.index("`incomplete` → STOP")
+            before = step[shipped:incomplete]
+            assert "Exit 1 → STOP, surface its stderr verbatim" in before, name
+            exit1 = before[before.index("Exit 1 → STOP") : before.index("Exit 0 →")]
+            assert "- `skip` → step 1." in exit1, name
+            assert "- `stop` → **End**." in exit1, name
+            assert "closes or clears" not in flat, name
+            assert "It runs once per unit" in before, name
+            assert "does not run it again; it returns to that stop" in before, name
+            assert ("Resolved += the first line's slugs that the second line does not name"
+                    in before), name
+            assert ('the one exception to "branch on the exit code, never on the text"'
+                    in step), name
+            stop = step[incomplete : step.index("- `gate` →")]
+            for word in ("- `retry` →", "- `skip` →", "- `stop` →"):
+                assert word in stop, f"{name}: {word}"
+            assert "`incomplete` → add them to the excluded slugs" not in flat, name
+            follow = step[step.index("**Follow-up.**") :]
+            assert "--slugs <the slugs on the close's second line>" in follow, name
+            assert "a second line naming them, `still in <TODO file>: <slugs>`" in step, name
+            assert "transcribed from the tool's output" in follow, name
+            escalate = follow[follow.index("- `ESCALATE` or a missing status line") :]
+            escalate = escalate[: escalate.index("- A cut-off")]
+            assert "`skip` → add the unit's slugs to the excluded slugs" in escalate, name
+
+
+def test_burndown_relays_a_dry_run_close_at_every_gate(builds):
+    for stem in BURNDOWN_EMBEDS:
+        for name, body in builds[stem].bodies("burndown-orchestrator"):
+            flat = " ".join(body.split())
+            gate = flat[flat.index("- `gate` →") : flat.index("- `ESCALATE` → STOP")]
+            assert "`todo-triage attempt-close --adr <ADR dir> --dry-run`" in gate, name
+            assert "followed by its stdout verbatim" in gate, name
+            assert "at every gate" in gate, name
+            assert "never route on the dry run" in gate, name
+
+
 def test_spawning_roles_know_the_limit_exit_code(builds):
     for name, body in _all_bodies(builds):
         if SPAWNING_PARTIAL_SENTINEL in body:
@@ -1090,6 +1138,10 @@ def test_forester_select_mode_offers_chains_and_combined_units(builds):
             assert ("every `blocked_on` item of every follower must be resolved or in the"
                     " selection") in flat, filename
             assert "overlapping `site_dirs`" in flat, filename
+            assert "latest `forester-report-<K>.md`" in flat, filename
+            assert "work in a repository other than the one the chain runs in" in flat, filename
+            assert "the other candidates are the unit's other remaining entries" in flat, filename
+            assert "there never is one" not in flat, filename
 
 
 def test_burndown_orchestrator_defers_to_ready(builds):

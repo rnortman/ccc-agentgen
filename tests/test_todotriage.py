@@ -717,8 +717,10 @@ def test_attempt_and_close(repo: Path, store: Store, tmp_path: Path,
     assert code == 1 and "`alpha` already has an open attempt" in err
 
     code, out, _ = run(capsys, "attempt-close", "--adr", str(adr), *opts(repo, store))
-    assert code == 0 and out.strip() == "incomplete: alpha, beta"
+    assert code == 0 and out.splitlines() == ["incomplete: alpha, beta",
+                                              "still in TODO.md: alpha, beta"]
     assert store.load("alpha")["attempts"][0]["outcome"] == "incomplete"
+    assert store.load("alpha")["attempts"][0]["remaining"] == ["alpha", "beta"]
     code, _, err = run(capsys, "attempt-close", "--adr", str(adr), *opts(repo, store))
     assert code == 1 and "already closed" in err
 
@@ -730,7 +732,7 @@ def test_attempt_and_close(repo: Path, store: Store, tmp_path: Path,
     assert "beta" in todomd.read(repo, "TODO.md").by_slug()
     code, out, _ = run(capsys, "attempt-close", "--adr", out.strip(), "--outcome", "stopped",
                        *opts(repo, store))
-    assert out.strip() == "stopped: alpha, beta"
+    assert out.splitlines() == ["stopped: alpha, beta", "still in TODO.md: beta"]
 
 
 def test_attempt_close_shipped_when_every_entry_is_gone(
@@ -741,8 +743,70 @@ def test_attempt_close_shipped_when_every_entry_is_gone(
     write(repo / "TODO.md", TODO.replace(TODO[TODO.index("## `gamma`"):
                                               TODO.index("## `example")], ""))
     code, out, _ = run(capsys, "attempt-close", "--adr", out.strip(), *opts(repo, store))
-    assert code == 0 and out.strip() == "shipped: gamma"
+    assert code == 0 and out.splitlines() == ["shipped: gamma"]
+    assert store.load("gamma")["attempts"][0]["remaining"] == []
     assert run(capsys, "attempt-close", "--adr", str(tmp_path), *opts(repo, store))[0] == 1
+
+
+def without_alpha() -> str:
+    return TODO.replace(TODO[TODO.index("## `alpha`"):TODO.index("## beta")], "")
+
+
+def test_attempt_close_dry_run(repo: Path, store: Store, tmp_path: Path,
+                               capsys: pytest.CaptureFixture[str]) -> None:
+    for slug in ("alpha", "beta"):
+        store.save(slug, approved(entry_hash=hash_of(repo, slug)))
+    _, out, _ = run(capsys, "attempt", "--selection", str(selection(store, ["alpha", "beta"])),
+                    "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
+    adr = out.strip()
+    write(repo / "TODO.md", without_alpha())
+    for _ in range(2):
+        code, out, _ = run(capsys, "attempt-close", "--adr", adr, "--dry-run",
+                           *opts(repo, store))
+        assert code == 0 and out.splitlines() == ["would close incomplete: alpha, beta",
+                                                  "still in TODO.md: beta"]
+        attempt = store.load("beta")["attempts"][0]
+        assert attempt["closed"] is None and "remaining" not in attempt
+    code, _, err = run(capsys, "attempt-close", "--adr", adr, "--dry-run", "--outcome",
+                       "stopped", *opts(repo, store))
+    assert code == 1 and "--dry-run takes no --outcome" in err
+    code, out, _ = run(capsys, "attempt-close", "--adr", adr, "--dry-run", "--json",
+                       *opts(repo, store))
+    assert code == 0 and json.loads(out) == {
+        "outcome": "incomplete", "slugs": ["alpha", "beta"], "remaining": ["beta"],
+        "dry_run": True}
+    write(repo / "TODO.md", TODO.replace(TODO[TODO.index("## `alpha`"):
+                                              TODO.index("## `gamma`")], ""))
+    code, out, _ = run(capsys, "attempt-close", "--adr", adr, "--dry-run", *opts(repo, store))
+    assert code == 0 and out.splitlines() == ["would close shipped: alpha, beta"]
+    assert run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))[0] == 0
+    code, _, err = run(capsys, "attempt-close", "--adr", adr, "--dry-run", *opts(repo, store))
+    assert code == 1 and "already closed" in err
+
+
+def test_attempt_close_lists_slugs_alphabetically(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for slug in ("alpha", "beta"):
+        store.save(slug, approved(entry_hash=hash_of(repo, slug)))
+    _, out, _ = run(capsys, "attempt", "--selection", str(selection(store, ["beta", "alpha"])),
+                    "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
+    code, out, _ = run(capsys, "attempt-close", "--adr", out.strip(), *opts(repo, store))
+    assert code == 0 and out.splitlines()[0] == "incomplete: alpha, beta"
+    assert store.load("beta")["attempts"][0]["remaining"] == ["alpha", "beta"]
+
+
+def test_ready_json_carries_remaining(repo: Path, store: Store, tmp_path: Path,
+                                      capsys: pytest.CaptureFixture[str]) -> None:
+    for slug in ("alpha", "beta"):
+        store.save(slug, approved(entry_hash=hash_of(repo, slug)))
+    _, out, _ = run(capsys, "attempt", "--selection", str(selection(store, ["alpha", "beta"])),
+                    "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
+    write(repo / "TODO.md", without_alpha())
+    run(capsys, "attempt-close", "--adr", out.strip(), *opts(repo, store))
+    code, out, _ = run(capsys, "ready", "--json", *opts(repo, store))
+    beta = next(e for e in json.loads(out) if e["slug"] == "beta")
+    assert code == 0 and beta["attempts"][0]["outcome"] == "incomplete"
+    assert beta["attempts"][0]["remaining"] == ["beta"]
 
 
 ENGINE = "x = 1  # TODO(alpha)\ny = 2  # TODO(beta) and TODO(orphan)\n"
@@ -879,6 +943,48 @@ def test_summary_contents(repo: Path, store: Store, tmp_path: Path,
     second = Path(out.strip()).read_text(encoding="utf-8")
     assert f"Previous summary: {path}" in second
     assert f"## Rulings since {dt.date.today().isoformat()}" in second
+
+
+def test_summary_names_entries_left_by_a_closed_attempt(
+        repo: Path, store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for slug in ("alpha", "beta"):
+        store.save(slug, approved(entry_hash=hash_of(repo, slug)))
+    _, out, _ = run(capsys, "attempt", "--selection", str(selection(store, ["alpha", "beta"])),
+                    "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
+    write(repo / "TODO.md", without_alpha())
+    run(capsys, "attempt-close", "--adr", out.strip(), *opts(repo, store))
+    old = approved(entry_hash=hash_of(repo, "gamma"))
+    old["attempts"] = [{"adr_dir": "/old", "slugs": ["gamma"], "started": "t",
+                        "closed": dt.datetime.now().isoformat(timespec="seconds"),
+                        "outcome": "incomplete"}]
+    store.save("gamma", old)
+    _, out, _ = run(capsys, "summary", *opts(repo, store))
+    text = Path(out.strip()).read_text(encoding="utf-8")
+    assert "(alpha, beta): incomplete, still in TODO.md: beta\n" in text
+    assert "- /old (gamma): incomplete\n" in text
+
+
+def test_attempt_close_names_the_configured_todo_file(
+        repo: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (repo / "docs").mkdir()
+    write(repo / "docs" / "TODO.md", TODO)
+    store = Store.init(tmp_path / "docs-store", "core", "docs/TODO.md", 180,
+                       ["example-placeholder"])
+    for slug in ("alpha", "beta"):
+        store.save(slug, approved(entry_hash=hash_of(repo, slug)))
+    sel = selection(store, ["alpha", "beta"])
+    _, out, _ = run(capsys, "attempt", "--selection", str(sel),
+                    "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
+    adr = out.strip()
+    write(repo / "docs" / "TODO.md", without_alpha())
+    expected = ["incomplete: alpha, beta", "still in docs/TODO.md: beta"]
+    _, out, _ = run(capsys, "attempt-close", "--adr", adr, "--dry-run", *opts(repo, store))
+    assert out.splitlines() == [f"would close {expected[0]}", expected[1]]
+    _, out, _ = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
+    assert out.splitlines() == expected
+    _, out, _ = run(capsys, "summary", *opts(repo, store))
+    text = Path(out.strip()).read_text(encoding="utf-8")
+    assert "(alpha, beta): incomplete, still in docs/TODO.md: beta\n" in text
 
 
 def test_slug_options_accept_commas(repo: Path, store: Store,
@@ -2570,10 +2676,11 @@ def test_attempt_close_on_a_chain_unit(
     adr = out.strip()
     write(repo / "TODO.md", without(CHAINS, "`alpha`"))
     code, out, _ = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
-    assert code == 0 and out.strip() == "incomplete: alpha, beta"
+    assert code == 0 and out.splitlines() == ["incomplete: alpha, beta",
+                                              "still in TODO.md: beta"]
     chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"])})
     code, out, _ = attempt_on(capsys, repo, store, root, ["alpha", "beta"])
     assert code == 0
     write(repo / "TODO.md", without(CHAINS, "`alpha`", "beta"))
     code, out2, _ = run(capsys, "attempt-close", "--adr", out.strip(), *opts(repo, store))
-    assert code == 0 and out2.strip() == "shipped: alpha, beta"
+    assert code == 0 and out2.splitlines() == ["shipped: alpha, beta"]

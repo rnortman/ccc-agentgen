@@ -195,8 +195,33 @@ rediscover for each. One cycle per unit of shared context is the aim; a
 single entry is the default only when nothing ready shares its ground. The
 rulings' `cluster` fields, the code-site
 directories and the attempt history `ready` prints are the evidence; the
-pick is your judgement. An entry whose earlier attempt ended `incomplete`
-is weighed, not skipped: why did it not finish?
+pick is your judgement.
+
+**An entry with an `incomplete` attempt.** Its latest attempt in `attempts`
+ended `incomplete`: a cycle reported shipped and the tool found the entry
+still in `TODO.md`; `remaining` names which of the unit's entries were
+left. Read that attempt's ADR dir (`adr_dir`): its `request.md`, and the
+latest `forester-report-<K>.md`; absent a report, `design.md` and
+`forester-log.md`. The report says what was built and what the cycle pushed
+back on; the design's **Request assessment** says what it dropped and why.
+Decide from these whether the remainder is a unit — one that finishes the
+work — or a sign that the entry should not be attempted this way. The
+selection document for a follow-up names the prior attempt (ADR dir and
+the commit the report names), states what it shipped and what it left, why
+it left it as far as the record says, and asks for the remainder only; its
+closing item (that the work removes each named entry and its `TODO(slug)`
+comments) stands. The chain reads the request as a new cycle's — the prior
+cycle's design is history it may consult, not a spec it inherits. A prior
+ADR dir that is gone leaves you `remaining`, the sketch and the ruling; the
+selection says the record was unavailable.
+
+A remainder this workflow cannot deliver — work in another repository, a
+product decision the record shows nobody made, an entry whose text the
+prior cycle changed so that it now needs re-triage — is not selected.
+Under a follow-up's `--slugs` the other candidates are the unit's other
+remaining entries; select those a cycle can deliver. If the filters leave
+no other candidate, reply `ESCALATE`: `out` is the target path, whose document
+says what the remainder needs and why a cycle cannot do it.
 
 An entry with `unblocked` true was ruled `blocked` with a priority and the
 blockers in its `blocked_on` have since been resolved; its sketch and ruling predate
@@ -258,7 +283,11 @@ agents there see none of the store, so it stands alone:
   PR layout. Sequencing the design must respect is stated as a constraint
   on the code, not on the commits; entries that genuinely need separate
   landings ("B lands after A is in production") are a chain of units, not
-  one request asking for several commits;
+  one request asking for several commits; nor work in a repository other
+  than the one the chain runs in: code changes land only in the repo the
+  orchestrator is launched in; the artifact repo, when separate, receives
+  the cycle's documents and nothing else. A change elsewhere is a unit of a
+  burndown over that repository, or the user's;
 - that completing the work removes each `TODO.md` entry named and its
   `TODO(slug)` comments, per the repo's convention.
 
@@ -271,4 +300,4 @@ the one exception, quoted and marked as the user's.
 
 {{ reply(ok="`ruled` in rule mode; `selected`, or `nothing` when nothing is ready, in select mode",
          out="the ruling or selection document you wrote",
-         escalate="rule mode, the call is the user's; or either mode, the triage tool is not on PATH. `result=-`; `out` is the target document, which states why.") }}
+         escalate="rule mode, the call is the user's; select mode, the remainder of an incomplete attempt this workflow cannot deliver and nothing else to select; or either mode, the triage tool is not on PATH. `result=-`; `out` is the target document, which states why.") }}

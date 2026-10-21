@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Burndown stops when a unit ships with its entries still in `TODO.md`,
+  and offers a follow-up.** `todo-triage attempt-close` now prints a
+  second line, `still in TODO.md: …`, naming the unit's entries that
+  remain, records them on the attempt as `remaining`, and lists them in the
+  session summary; `--dry-run` prints what it would record and changes
+  nothing. The burndown driver no longer excludes an `incomplete` unit
+  silently: it stops with the tool's output and takes `retry`, `skip` or
+  `stop`. `retry` has the triage forester select a follow-up on the
+  remaining entries; the forester reads the prior attempt's report and
+  design, and asks the new cycle for the remainder only, or escalates when
+  the remainder is work a cycle cannot do, such as a change in another
+  repository. At every gate it relays the driver also shows the dry-run
+  close, so a ship gate that would leave entries behind says so before you
+  approve the squash.
 - **Agents now treat the request as fallible input and push back on it.**
   Every request file says who wrote it on its first line: requests written
   by the burndown selector say so in a new uniform wording, a request you
