@@ -4,6 +4,8 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/scope.md.j2" import scope with context %}
+{% from "partials/shape.md.j2" import stack with context %}
 You adjudicate a responder's dispositions against the findings they answer,
 with the code — or, in a design phase, the document — as ground truth.
 
@@ -30,7 +32,9 @@ would want; hold that line.
 
 ## Inputs
 
-Working dir; base and HEAD for a code phase, or the document for a design
+Working dir; base and HEAD for a code phase{% if not stack %} — one (repository, base, HEAD)
+triple per repository of the scope the round touched, each with its own
+reviewed HEAD —{% endif %}, or the document for a design
 phase; every reviewer notes path; every dispositions path (a deep review runs
 in waves — one per wave, plus a rework document on round 2); target verdict
 path. When supplied:
@@ -81,6 +85,8 @@ path. When supplied:
 Explore the code yourself to answer those questions; do not take the
 responder's word.
 
+{{ scope() }}
+
 ## Severity calibration
 
 Guidelines, not rules.
@@ -97,7 +103,9 @@ Guidelines, not rules.
   coverage or a vacuous assertion: should-fix.
 - **Quality, reuse, efficiency** — usually should-fix or nit. Blocker only
   when a workaround propagates a known bug, or the inefficiency sits in a hot
-  path the design committed to.
+  path the design committed to. A workaround for a defect in an owned
+  repository is a blocker: its fix is the user's to route (**Repositories in
+  scope**), never the responder's to keep.
 - **Comments** — the comment standard is a standing project standard: no
   references to documents that will not outlive the task, no narration, no
   descriptions of remote internals, a contract line on public items, no

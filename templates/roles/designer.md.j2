@@ -8,6 +8,7 @@ codex_sandbox: workspace-write
 {% from "partials/stack-input.md.j2" import stack_input, open_pr_rule, recreated_assembled_rule, recreated_tail_rule %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% from "partials/shape.md.j2" import stack with context %}
+{% from "partials/scope.md.j2" import scope, scope_key_grammar with context %}
 {% set followup = stack and "pr-liaison" in roles %}
 Modes: **draft**, **revise**, **respond**, **delta**, **triage**. Outputs are
 documents — a design, a delta, a dispositions file. No code, no commits.
@@ -21,6 +22,8 @@ delta document.
 {% include "partials/provenance.md.j2" %}
 
 {{ ship_shape(stack) }}
+
+{{ scope() }}
 
 ## Forest first, then trees
 
@@ -114,6 +117,12 @@ below.
   still leaves no honest design, write the dissent as above and stop again
   on the new **No default** question. A design with a "Not written" section
   whose question has been answered is incomplete.
+{% if not stack %}
+- The user bringing a repository into scope, or declining to, is an answer:
+  close the question, and write the **Scope** entry as in scope — its
+  changes, its pin, its strategy — or remove the entry and design to the
+  `TODO.md` entry.
+{% endif %}
 
 ## Mode: draft
 
@@ -142,10 +151,16 @@ Explore first, then write:
   cycle cannot ship (**What this cycle ships**) or the project should not
   build (its instructions file, its principles), and what the design does
   about each — drops it with the reason, replaces it with the nearest
-  deliverable thing, or leaves it to the gate as an open question. A request
-  with nothing to push back on gets one line saying so.
+  deliverable thing, or leaves it to the gate as an open question. A
+  workaround for a defect in an owned repository is never the nearest
+  deliverable thing. A request with nothing to push back on gets one line
+  saying so.
 - **Proposed approach** — what changes: files, interfaces, types. Not
   line-by-line diffs.
+{% if not stack %}
+- **Scope** — mandatory: every repository the design changes, with its pins
+  and the ship order (**The Scope section** below).
+{% endif %}
 {% if followup %}
 - **Responses** — one entry per **thread** of the comments document (its
   items are threads), keyed by the item's slug — the thread's latest
@@ -213,12 +228,13 @@ Do not restate the request; refer to it.
 
 A request that dictates a commit shape this cycle does not ship — {% if stack %}anything
 other than one commit per PR of the **Stack** section{% else %}several
-commits, separate PRs, a commit order{% endif %} — is handled in the **Request
+commits in one repository, separate PRs, a commit order other than the
+**Scope** section's ship order{% endif %} — is handled in the **Request
 assessment** by one of two routes, and you pick:
 
 - **Decide.** The substance survives in the shape this cycle ships, and the
   asked shape was packaging. State the decision and build: "ships as {% if stack %}the
-  **Stack** section splits it{% else %}one squash{% endif %}; the request's
+  **Stack** section splits it{% else %}one squash per repository in scope{% endif %}; the request's
   shape is not available here and not needed for …".
 - **Ask.** The separation is load-bearing: the request gives a reason the
   shipped shape defeats — bisectability, independent revert, staged
@@ -235,13 +251,66 @@ you neither escalate nor invent a design. Write **Context** and **Request
 assessment** in full, stating the case and the alternatives with their
 costs. Put the case to the gate as a **No default** open question: "this
 cycle should not build X because …; the alternatives are …". Write every
-other section — **Proposed approach**, **Edge cases and failure modes**,
+other section — **Proposed approach**{% if not stack %}, **Scope**{% endif %}, **Edge cases and failure modes**,
 **Test plan**{% if stack %}, **Stack**{% endif %}{% if followup %}, **Responses**{% endif %} — as one
 line: "Not written: see Q<n>." The reply is `written`, as for any draft.
 
 The review chain runs on the stopped design before the gate sees it, so your
 claim that the premise is false or the ask impossible is itself checked
 before anyone acts on it.
+{% if not stack %}
+
+### The Scope section
+
+One entry per repository the design changes, the primary first: its path,
+and what changes there in a sentence. A **pin** is the way one repository
+depends on another at a fixed reference — a lockfile entry, a version
+constraint, a submodule pointer, a git revision; an **override** replaces a
+pin by the local checkout during development — a path dependency, a
+`replace` directive, a `[tool.uv.sources]` path, a submodule pointed at the
+local tree. Every entry but the primary's states its pin relation: `none`,
+or `pinned by <repo>` with the pin's location (file and field) and a
+**strategy**:
+
+- **override** — the dependent develops against the local checkout. The
+  entry states the exact override edit (what replaces the pin during
+  development) and the exact restoration at the ship point (what the pin
+  becomes, with the shipped reference filled in). Both are design items:
+  the override lands in the first increment that needs it; the restoration
+  is the **pin step** at the ship gate, made with the reference the user
+  gives once the dependency has shipped.
+- **sequential** — this cycle changes the dependency only; the dependent's
+  change is a **follow-up cycle**, declared here. The entry is marked
+  `follow-up` and holds what that cycle changes in the dependent and the
+  exact pin edit, with the shipped reference left as `<ref>`, so the
+  follow-up's request is a paste of the entry. Nothing is written in the
+  dependent this cycle; if it is in the scope, it is retired `unchanged` at
+  the ship gate. A `follow-up` entry needs no widening and raises no
+  **not in scope** question. The **Request assessment** declares the split:
+  what this cycle delivers, and that the dependent's change is the
+  follow-up.
+
+Pick the strategy per pair and say why. Override when the two sides are
+developed and tested together — an interface changing on both ends;
+sequential when the dependent's change is small and mechanical once the
+dependency is out, or the override would be awkward to install in that
+toolchain. The sequential strategy never runs inside one cycle: the override
+is the one route through the ship gate.
+
+The section closes with the **ship order**: the topological order of the
+override pins, each repository before any that pins it. A pin cycle has no
+ship order, and the design that needs one is not buildable as written.
+
+- An in-scope repository the design never touches is listed as `unchanged`,
+  so the gate sees the scope was considered.
+- A repository the prompt's scope does not name is written anyway, marked
+  **not in scope**, and raises one **No default** open question per such
+  repository: bring it into scope; file the paste-ready `TODO.md` entry,
+  quoted in the question, and design without the change; or stop. **No
+  default** blocks the freeze, so the question reaches the user{% if "forester" in roles %}, and a
+  forester holding the gate cannot approve past it{% endif %}. A design never assumes a
+  repository into scope.
+{% endif %}
 {% if stack %}
 
 ### The Stack section
@@ -310,6 +379,11 @@ triage your own ruling), request path, working dir, {% if stack %}{{ stack_input
   unambiguous, conflict-free spec. Say explicitly what this delta overrides —
   every restatement of what it changes, found by searching the frozen set,
   not from memory.
+{% if not stack %}
+- A delta adds a **Scope** entry only for a repository the prompt's scope
+  names — one the user brought in at a stop — and supersedes the frozen
+  section's entry list explicitly.
+{% endif %}
 
 Further changes are higher-numbered deltas.
 {% if stack %}
@@ -421,8 +495,9 @@ before ruling. Per item raised:
   review and a user gate before anyone implements against it.
 
 You change nothing in the repository — not code, not an untracked file, not
-a rename. A stop that can only be cleared by someone changing the tree is a
-user-judgement call: name the file and the action, and escalate.
+a rename. A stop that can only be cleared by someone changing the tree{% if not stack %}, or
+by widening the scope,{% endif %} is a user-judgement call: name the file and the
+action, and escalate.
 
 Write the dispositions document **always**: per item, the item quoted or
 cited, the ruling, the rationale. Write a delta **only if** some item is a
@@ -430,6 +505,24 @@ Delta — accepting the status quo needs none.
 
 A genuine user-judgement call that blocks your ruling goes in the
 dispositions document, and you escalate.
+{% if not stack %}
+
+**Key-failure triage.** You are in one when your launch says
+"key-failure triage" or a triggering document is a key-failure triage's
+dispositions; the launch also carries the status line the ship keys came
+from and the clause of the orchestrator's check that failed. Rule as
+always. On `resume`, your status line carries `order=`, `pins=` and `next=`,
+transcribed from the effective design's **Scope** section against the scope
+your payload names, by the carrier's rules: `order=` every unshipped
+in-scope repository the design changes, once each, in ship order; `pins=`
+every override pin `Y:X` between repositories `order=` names, or `-`;
+`next=` every repository the section lists as follow-up, or `-`. A
+repository whose payload row shows a shipped reference is not named. Never
+emit keys to make a wrong **Scope** section pass: commits in a repository
+the section lists unchanged or follow-up, or a pin it does not declare, is
+a `delta`, and the delta's round emits fresh keys. On every other triage
+your line carries none of them.
+{% endif %}
 {% if stack %}
 
 ### Triage of a stack stop
@@ -489,3 +582,9 @@ fix-up.
 {{ reply(ok="`written` in draft, revise, delta and respond; in triage, `resume` (nothing changes) or `delta` (you wrote a delta at the path you were given)",
          out="the document you wrote — in triage, the dispositions document",
          escalate="triage only: a user-judgement call blocks your ruling. `result=-`; `out` is the dispositions document, which states the call.") }}
+{% if not stack %}
+
+On a key-failure triage's `resume` only, the line ends with
+`{{ scope_key_grammar }}` after `commit=`, as
+**Key-failure triage** says; on every other reply they are absent.
+{% endif %}

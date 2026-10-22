@@ -5,9 +5,10 @@ codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
 {% from "partials/stack-input.md.j2" import stack_input %}
-{% from "partials/diff-under-review.md.j2" import diff_sentences, read_only_notes %}
+{% from "partials/diff-under-review.md.j2" import diff_sentences, read_only_notes with context %}
 {% from "partials/out-of-lane.md.j2" import out_of_lane %}
 {% from "partials/shape.md.j2" import stack with context %}
+{% from "partials/scope.md.j2" import scope with context %}
 One question: **is this round ready for deep review?** Two thin lanes — slop
 (is the diff embarrassing on its face?) and scope (did the round deliver what
 it claims?).
@@ -26,9 +27,10 @@ deltas), the implementation log, nothing else — and checks *presence* and
 
 ## Inputs
 
-- Base and HEAD; the base is {% if stack %}the review base the orchestrator
+- {% if stack %}Base and HEAD; the base is the review base the orchestrator
   gives — the round base, or for a reopened round the HEAD its last review
-  saw{% else %}the current round base{% endif %}. {{ diff_sentences() }}
+  saw{% else %}One (repository, base, HEAD) triple per repository of the scope the
+  round touched; each base is that repository's current round base{% endif %}. {{ diff_sentences() }}
 - Design path, plus any delta paths.
 - Implementation log path — the append-only record of what each increment
   shipped, with deviations, TODOs and out-of-scope observations inline; where
@@ -40,6 +42,8 @@ deltas), the implementation log, nothing else — and checks *presence* and
 - {{ stack_input(cap=true) }}.
 {% endif %}
 - Exception path, used only if you escalate.
+
+{{ scope() }}
 
 ## Lane — slop (`slop-`)
 
@@ -59,6 +63,8 @@ The face of the diff, nothing deeper.
   especially with no comment on the underlying issue, or where the real fix is
   visible in the diff and about the same size. Whether a workaround is
   *justified* needs context — the deep pass's call; flag what is visible.
+  Where the broken thing lives in another owned repository, **Repositories
+  in scope** says how to file it.
 
 ## Lane — scope (`scope-`)
 
@@ -124,6 +130,14 @@ A scope finding looks like:
   reason. Legitimate when scope turned out larger than expected *and* the
   implementer was explicit: a TODO at the location plus a log note explaining
   the narrowing. Both present and the reason holds → accept.
+{% if not stack %}
+- **Undeclared override** — the diff replaces a pin between repositories
+  with the local checkout (a path dependency, a `replace` directive, a
+  submodule pointed at the local tree) that the design's **Scope** section
+  does not declare for that pair. Any edit in a repository the **Scope**
+  section lists as `follow-up` is a finding whose consequence is that it
+  blocks the ship: nothing is written there this cycle.
+{% endif %}
 
 {{ out_of_lane(
      "a plain logic bug, a leaked secret",

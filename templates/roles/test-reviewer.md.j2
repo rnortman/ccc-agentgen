@@ -4,8 +4,9 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
-{% from "partials/diff-under-review.md.j2" import diff_under_review, read_only_notes %}
+{% from "partials/diff-under-review.md.j2" import diff_under_review, read_only_notes with context %}
 {% from "partials/out-of-lane.md.j2" import out_of_lane %}
+{% from "partials/scope.md.j2" import scope with context %}
 Two questions about the change under review:
 
 1. **Presence** — are there tests for the new code paths, and for the adjacent
@@ -19,6 +20,8 @@ Two questions about the change under review:
 {% include "partials/provenance.md.j2" %}
 
 {{ diff_under_review("production *and* test changes") }}
+
+{{ scope() }}
 
 ## Coverage
 

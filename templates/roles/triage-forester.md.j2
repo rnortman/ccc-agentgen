@@ -283,11 +283,15 @@ agents there see none of the store, so it stands alone:
   PR layout. Sequencing the design must respect is stated as a constraint
   on the code, not on the commits; entries that genuinely need separate
   landings ("B lands after A is in production") are a chain of units, not
-  one request asking for several commits; nor work in a repository other
-  than the one the chain runs in: code changes land only in the repo the
-  orchestrator is launched in; the artifact repo, when separate, receives
-  the cycle's documents and nothing else. A change elsewhere is a unit of a
-  burndown over that repository, or the user's;
+  one request asking for several commits; nor work ordered in a repository
+  other than the one the chain runs in: the request is deliverable in that
+  repository alone, and the artifact repo, when separate, receives the
+  cycle's documents and nothing else. A change elsewhere is a unit of a
+  burndown over that repository, or the user's. Where the sketch shows the
+  work needs a change in an owned sibling, the request says so in one
+  sentence the designer carries into its **Scope** section: the user brings
+  that repository into scope at the design gate, or the designer stops on
+  it;
 - that completing the work removes each `TODO.md` entry named and its
   `TODO(slug)` comments, per the repo's convention.
 

@@ -111,12 +111,12 @@ STATUSES = ("OK", "RETRY", "ESCALATE")
 # the orchestrator routes on exactly these.
 RESULTS = {
     "planner": {"complete", "final", "intermediate", "dispositioned", "delta-complete", "delta-remaining"},
-    "coder-supervisor": {"done", "replan", "respawn"},
+    "coder-supervisor": {"done", "replan", "respawn", "pinned"},
     "coder": {"done"},
-    "implementer": {"done", "in-progress", "responded", "delta-complete", "delta-remaining"},
+    "implementer": {"done", "in-progress", "responded", "delta-complete", "delta-remaining", "pinned"},
     # The implementer behind a planner lands plans, so it speaks the supervisor's
     # vocabulary instead of choosing its own slices.
-    "implementer/planned": {"done", "replan", "respawn"},
+    "implementer/planned": {"done", "replan", "respawn", "pinned"},
     # The implementer of a stack variant also closes a PR short of the design.
     "implementer/stack": {"done", "pr-done", "in-progress", "responded", "delta-complete", "delta-remaining"},
     "designer": {"written", "resume", "delta"},
@@ -675,8 +675,9 @@ def test_push_is_never_a_gate(builds):
                 assert "`<branch> at <HEAD>, unpushed`" not in flat, where
             else:
                 for fact in (
-                    "`<branch> at <HEAD>, pushed to origin`",
-                    "`<branch> at <HEAD>, unpushed`",
+                    "`<path>: <branch> at <HEAD>, pushed to origin`",
+                    "`<path>: <branch> at <HEAD>, unpushed`",
+                    "`<path>: unchanged`",
                 ):
                     assert fact in flat, f"{where}: {fact}"
             post_cycle = _section(body, "### Post-cycle turns")
@@ -716,7 +717,7 @@ def test_autopush_pushes_only_off_main(builds):
             where = f"{stem}/{name}"
             ship = _section(body, "### Ship gate")
             chain = " ".join(body[: body.index("## ")].split())
-            assert ("push it to `origin` without asking" in ship) == autopush, where
+            assert ("push X to `origin` without asking" in ship) == autopush, where
             assert ("on a branch other than `main`" in ship) == autopush, where
             assert ("→ push" in chain) == autopush, where
 
@@ -1139,7 +1140,8 @@ def test_forester_select_mode_offers_chains_and_combined_units(builds):
                     " selection") in flat, filename
             assert "overlapping `site_dirs`" in flat, filename
             assert "latest `forester-report-<K>.md`" in flat, filename
-            assert "work in a repository other than the one the chain runs in" in flat, filename
+            assert "work ordered in a repository other than the one the chain runs in" in flat, filename
+            assert "the designer carries into its **Scope** section" in flat, filename
             assert "the other candidates are the unit's other remaining entries" in flat, filename
             assert "there never is one" not in flat, filename
 
@@ -2202,3 +2204,553 @@ def test_provenance_line_is_uniform(builds):
                 for line in lines:
                     assert PROVENANCE_LINE_RE.match(line), f"{where}: {line}"
                 assert len(lines) == expected, where
+
+
+# The roles that carry **Repositories in scope**, and the ones that never do.
+SCOPE_ROLES = {
+    "designer", "design-reviewer", "implementer", "planner", "coder-supervisor", "coder",
+    "prepass-reviewer", "citizen-reviewer", "tracer-reviewer", "test-reviewer", "judge",
+    "workflow-scanner", "comment-rewriter", "changelog-author", "forester",
+}
+SCOPE_SHORT_FORM_ROLES = {"comment-rewriter", "changelog-author"}
+NO_SCOPE_ROLES = {
+    "eli5-explainer", "explorer", "forester-commentator", "site-remover", "sketcher", "contrarian",
+    "triage-clerk", "pr-assembler", "pr-liaison",
+}
+SCOPE_WIDENING_RULE = "Only the user widens the scope."
+SCOPE_STACK_RULE = "This cycle runs in **exactly one repository**"
+SCOPE_NO_WRITE_RULE = "files a TODO in a"
+
+
+def test_code_facing_roles_carry_the_scope_rule(builds):
+    """Every code-facing role knows which repositories it may change and what
+    to do about a change needed in another; the rest never mention it.
+    """
+    for build in builds.values():
+        stack = "pr-assembler" in build.variant.roles
+        for role in build.roles:
+            for name, body in build.bodies(role.id):
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                carries = "## Repositories in scope" in body
+                if role.id in NO_SCOPE_ROLES:
+                    assert not carries, where
+                    continue
+                assert carries == (role.id in SCOPE_ROLES), where
+                if not carries:
+                    continue
+                assert body.count("## Repositories in scope") == 1, where
+                section = _raw_section(body, "## Repositories in scope")
+                section_flat = " ".join(section.split())
+                if role.id in SCOPE_SHORT_FORM_ROLES:
+                    assert "only the user knows" in section_flat, where
+                    assert "**Your channel**" not in section_flat, where
+                    continue
+                assert SCOPE_NO_WRITE_RULE in section_flat, where
+                assert "presumed owned — sibling checkout" in section_flat, where
+                assert "**A write the harness refuses.**" in section_flat, where
+                assert "writable_roots" in section_flat, where
+                assert "**Your channel" in section_flat, where
+                if stack:
+                    assert SCOPE_STACK_RULE in section_flat, where
+                    assert SCOPE_WIDENING_RULE not in flat, where
+                    assert "**Scope** section" not in flat, where
+                else:
+                    assert SCOPE_WIDENING_RULE in section_flat, where
+                    assert SCOPE_STACK_RULE not in flat, where
+                    assert "a paste-ready `TODO.md` entry" in section_flat, where
+
+
+def test_scope_channels_route_to_someone_who_can_act(builds):
+    """The need goes up each role's own channel: an escalation, a finding, a
+    disputed verdict, a stop.
+    """
+    for build in builds.values():
+        for role_id, phrase in (
+            ("implementer", '"the fix for this belongs in `<other repo>`"'),
+            ("judge", "is invalid unless an escalation document carries the need to the user"),
+            ("judge", "A workaround for a defect in an owned repository is a blocker"),
+            ("citizen-reviewer", "is a finding whose consequence is that it blocks the ship"),
+            ("citizen-reviewer", "Where the broken thing lives in another owned repository"),
+            ("prepass-reviewer", "Where the broken thing lives in another owned repository"),
+        ):
+            if role_id not in build.by_id:
+                continue
+            for name, body in build.bodies(role_id):
+                assert phrase in " ".join(body.split()), f"{build.stem}/{name}: {phrase}"
+        if "prepass-reviewer" in build.by_id:
+            stack = "pr-assembler" in build.variant.roles
+            for name, body in build.bodies("prepass-reviewer"):
+                assert ("**Undeclared override**" in body) == (not stack), f"{build.stem}/{name}"
+        for role_id in ("implementer", "judge", "planner"):
+            if role_id not in build.by_id:
+                continue
+            for name, body in build.bodies(role_id):
+                flat = " ".join(body.split())
+                if "## Deferring with a TODO" in body:
+                    assert "never one in a repository outside the scope" in flat, f"{build.stem}/{name}"
+
+
+def test_designer_scope_section_is_non_stack_only(builds):
+    """Non-stack designs carry a **Scope** section with pins and strategies;
+    stack designs keep their **Stack** section and raise a question instead.
+    """
+    seen = False
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = "pr-assembler" in build.variant.roles
+        for name, body in build.bodies("designer"):
+            seen = True
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert ("### The Scope section" in body) == (not stack), where
+            assert ("- **Scope** — mandatory" in flat) == (not stack), where
+            for phrase in (
+                "**override** — the dependent develops against the local checkout",
+                "**sequential** — this cycle changes the dependency only",
+                "The entry is marked `follow-up`",
+                "**ship order**: the topological order of the override pins",
+                "marked **not in scope**, and raises one **No default** open question",
+                "is listed as `unchanged`",
+                "The user bringing a repository into scope, or declining to, is an answer",
+                "A delta adds a **Scope** entry only for a repository the prompt's scope names",
+                "or by widening the scope,",
+            ):
+                assert (phrase in flat) == (not stack), f"{where}: {phrase}"
+            assert "A workaround for a defect in an owned repository is never the nearest deliverable thing" in flat, where
+            assert ("### The Stack section" in body) == stack, where
+            if stack:
+                assert "one **No default** open question per repository" in flat, where
+        if "design-reviewer" in build.by_id:
+            for name, body in build.bodies("design-reviewer"):
+                where = f"{stem}/{name}"
+                feasibility = _raw_section(body, "- **Feasibility**")
+                flat = " ".join(feasibility.split())
+                assert "No design item works around a defect in an owned repository" in flat, where
+                assert ("every pin between repositories the design changes has a strategy" in flat) == (not stack), where
+    assert seen, "no variant emitted the designer"
+
+
+def test_scanner_stops_on_out_of_scope_edits(builds):
+    """Three scope cases are stops, and the first two override the scanner's
+    "self-contained problems continue" rule.
+    """
+    seen = False
+    for build in builds.values():
+        if "workflow-scanner" not in build.by_id:
+            continue
+        for name, body in build.bodies("workflow-scanner"):
+            seen = True
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            for phrase in (
+                "a commit or edit in a repository outside the scope;",
+                "a workaround for a defect in an owned repository with no escalation behind it",
+                "in a repository at its ship point",
+                'The first two stop any round, whatever remains to build, the "self-contained" rule below included',
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            for phrase in (
+                "**Scope** section does not declare with its restoration edit, so no pin step at the ship gate removes it",
+                "An override the **Scope** section declares is expected in the tree at every round close",
+            ):
+                assert (phrase in flat) == (not _is_stack(build)), f"{where}: {phrase}"
+    assert seen, "no variant emitted the scanner"
+
+
+DIFF_REVIEWERS = ("prepass-reviewer", "citizen-reviewer", "tracer-reviewer", "test-reviewer")
+
+
+def test_reviewers_get_one_range_per_repository(builds):
+    """Non-stack reviewers review the union of per-repository ranges; stack
+    reviewers keep the single range.
+    """
+    seen = set()
+    for build in builds.values():
+        stack = _is_stack(build)
+        for role_id in DIFF_REVIEWERS:
+            if role_id not in build.by_id:
+                continue
+            for name, body in build.bodies(role_id):
+                seen.add(role_id)
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                assert ("the union, over the triples, of `git -C <repository> diff <base>..HEAD`" in flat) == (not stack), where
+                assert ("a finding names the repository it is in" in flat) == (not stack), where
+                assert ("The change under review is `git diff <base>..HEAD`" in flat) == stack, where
+                if role_id != "prepass-reviewer":
+                    assert ("You are given a base commit and a HEAD." in flat) == stack, where
+                    assert ("You are given one or more (repository, base, HEAD) triples" in flat) == (not stack), where
+    assert seen == set(DIFF_REVIEWERS), seen
+
+
+def test_forester_never_passes_a_gate_by_writing_it_down(builds):
+    """A need with no record but the forester's document is not handled: the
+    ship gate reads the log, cannot approve past such a need, and the report
+    names any it let through.
+    """
+    seen = False
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        decide = build.variant.vars.get("forester_autonomy") == "decide"
+        stack = "pr-assembler" in build.variant.roles
+        for name, body in build.bodies("forester"):
+            seen = True
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert "## Your document is the end of the line" in body, where
+            assert "has no record but your document is not handled; it is lost" in flat, where
+            ship = " ".join(_raw_section(body, "## Mode: ship").split())
+            assert "the implementation log" in ship, where
+            assert "is there anything the user must know or do before this ships?" in ship, where
+            assert "One without: the gate is not passed." in ship, where
+            assert ("a `follow-up` **Scope** entry" in ship) == (not stack), where
+            if decide:
+                assert "Approving and mentioning it is the one thing you may not do." in ship, where
+                trigger = "a TODO filed in another repository" if stack else (
+                    "a repository brought into scope, a TODO filed outside it, a shipped reference"
+                )
+                assert f"the cycle needs something only the user can give — {trigger} — and no stop has asked for it" in flat, where
+            else:
+                assert "**Recommendation** cannot be \"approve\" while **Unsettled** names such a need" in ship, where
+            report = " ".join(_raw_section(body, "## Mode: report").split())
+            assert "An item whose only record is this report is a gate you passed wrongly" in report, where
+            assert "whether or not anyone acted on them" not in report, where
+            for mode in ("## Mode: design", "## Mode: triage"):
+                assert "the scope is never yours" in " ".join(_raw_section(body, mode).split()).lower(), f"{where}: {mode}"
+            assert "never a substitute for `notes`" in flat, where
+        for name, body in build.bodies("orchestrator"):
+            flat = " ".join(body.split())
+            where = f"{build.stem}/{name}"
+            assert "− log path except in ship mode" in flat, where
+            gate = flat[flat.index("**Forester gate**, mode ship"):]
+            assert "+ log path" in gate[: gate.index("− diff range")], where
+    assert seen, "no variant emitted the forester"
+
+
+def _is_stack(build: Build) -> bool:
+    return "pr-assembler" in build.variant.roles
+
+
+def test_ship_shape_matches_the_ship_gate(builds):
+    """Every planning role is told the shape the orchestrator's ship gate
+    actually produces: one squash per repository, in pin order.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = _is_stack(build)
+        for role_id in ("designer", "design-reviewer", "forester"):
+            if role_id not in build.by_id:
+                continue
+            for name, body in build.bodies(role_id):
+                where = f"{stem}/{name}"
+                shape = " ".join(_raw_section(body, "## What this cycle ships").split())
+                assert ("**one commit per repository in scope**" in shape) == (not stack), where
+                assert "lands as **one commit** on the launch branch" not in shape, where
+                if stack:
+                    assert "one commit per PR of the design's **Stack** section" in shape, where
+        for name, body in build.bodies("designer"):
+            where = f"{stem}/{name}"
+            asks = " ".join(_raw_section(body, "### Commit-shape asks").split())
+            if not stack:
+                assert "a commit order other than the **Scope** section's ship order" in asks, where
+                assert "ships as one squash per repository in scope" in asks, where
+                assert "separate PRs, a commit order —" not in asks, where
+        for name, body in build.bodies("orchestrator"):
+            ship = _section(body, "### Ship gate")
+            assert ("squash X to its **original base**" in ship) == (not stack), f"{stem}/{name}"
+
+
+def test_non_stack_orchestrators_ship_per_repository(builds):
+    """The non-stack ship gate is a loop over the due repositories with a stop
+    for every pinned pair; the stack chains keep one repository and refuse a
+    second.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        stack = _is_stack(builds[stem])
+        for name, body in builds[stem].bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            phrases = (
+                "**Pin step**",
+                "`order=<repoA>,<repoB>,…`",
+                "`pins=<Y>:<X>,…`",
+                "`next=<path>,…`",
+                "`Waiting: the shipped reference of <X> for the pin in <Y>`",
+                "`<path>: unchanged`",
+                "`next: a follow-up cycle in <path>",
+                "names a repository whose HEAD is still at its original base",
+                "omits an unshipped repository whose HEAD has moved",
+                "### Scope keys",
+                "**pending pins**",
+                "X precedes Y",
+                "in every unshipped repository of the scope",
+                "struck from the recorded `order=`",
+                "requires the ADR directory in a separate repository",
+            )
+            for phrase in phrases:
+                assert (phrase in flat) == (not stack), f"{where}: {phrase}"
+            assert "ship=" not in flat, where
+            assert "A moved HEAD in a shipped repository" not in flat, where
+            ship = _section(body, "### Ship gate")
+            assert "The ship gate has one entry" in ship or stack, where
+            assert "fresh round after" not in ship, where
+            assert ("the stack chains run in exactly one repository" in flat) == stack, where
+            never = _section(body, "## Never")
+            assert ("mutates a repository outside the scope" in never) == (not stack), where
+
+
+def test_auto_ship_loop_keeps_the_autonomy_branches(builds):
+    """The loop changes what is squashed, never who approves it: a
+    forester-decided gate surfaces nothing, every other surfaces X and waits,
+    and the pin stop ends the turn in every autonomy.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        if _is_stack(build):
+            continue
+        autopush = _autopush(build.variant)
+        for name, body in build.bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            ship = _section(body, "### Ship gate")
+            step1 = ship[ship.index(" 1. ") : ship.index(" 2. ")]
+            step2 = ship[ship.index(" 2. ") : ship.index(" 3. ")]
+            step3 = ship[ship.index(" 3. ") : ship.index(" 4. ")]
+            if autopush:
+                assert "Nothing is surfaced" in step1, where
+                assert step2.startswith(" 2. Approval in hand"), where
+                assert "push X to `origin` without asking" in step2, where
+            else:
+                assert step1.startswith(" 1. Surface X"), where
+                assert "`ship 1 of 2: <X>`" in step1, where
+                assert step2.startswith(" 2. User approves the squash"), where
+                assert "without asking" not in step2, where
+            assert "End turn — in every autonomy, `-auto` included" in step3, where
+            assert "`notes-pin-<Y basename>-k<K>.md`" in step3, where
+
+
+def test_scope_keys_have_one_carrier_per_variant(builds):
+    """`order=`, `pins=` and `next=` ride exactly one role's round-ending
+    replies: the implementer's `done`, or the planner's `complete`/`final`.
+    """
+    keys = ("order=<repos|->", "pins=<pairs|->", "next=<paths|->")
+    # The per-key forms the worker emits and the orchestrator checks.
+    forms = ("`order=<repoA>,<repoB>,…`", "`pins=<Y>:<X>,…`", "`next=<path>,…`")
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = _is_stack(build)
+        planner = "planner" in build.by_id
+        for role_id in ("implementer", "planner", "coder-supervisor", "coder"):
+            if role_id not in build.by_id:
+                continue
+            carrier = not stack and (role_id == "planner" if planner else role_id == "implementer")
+            for name, body in build.bodies(role_id):
+                where = f"{stem}/{name}"
+                grammar = GRAMMAR_LINE_RE.findall(body)[0]
+                for key in keys:
+                    assert (key in grammar) == carrier, f"{where}: {key}"
+                section = " ".join(reply_section(body).split())
+                assert ("**Scope keys**" in section) == carrier, where
+                if carrier:
+                    on = "on `complete` and `final` only" if planner else "on `done` only"
+                    assert on in section, where
+                    assert "On every other reply all three are `-`." in section, where
+                    assert "`in-progress`" not in section[section.index("**Scope keys**"):], where
+                    for form in forms:
+                        assert form in section, f"{where}: {form}"
+        for name, body in build.bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            if stack:
+                assert "### Scope keys" not in body, where
+                continue
+            keys_section = _section(body, "### Scope keys")
+            carrier = "the planner's `complete` or `final`" if planner else "the implementer's `done`"
+            assert carrier in keys_section, where
+            keys_flat = " ".join(keys_section.split())
+            for form in forms:
+                assert form in keys_flat, f"{where}: {form}"
+            assert "the closing STOP of **Ship gate** transcribes it" in keys_flat, where
+            assert "**Ship gate** step" not in keys_flat, where
+            assert "→ **Triage**" not in keys_flat, where
+            assert "No other reply carries them, except the designer's `resume` on a key-failure triage" in keys_flat, where
+        for name, body in build.bodies("designer"):
+            where = f"{stem}/{name}"
+            section = " ".join(reply_section(body).split())
+            assert GRAMMAR_LINE_RE.findall(body)[0].endswith("commit=<hash|->"), where
+            for key in keys:
+                assert section.count(key) == (0 if stack else 1), f"{where}: {key}"
+            if not stack:
+                keys_at = section.index(keys[0])
+                assert "key-failure triage" in section[max(0, keys_at - 120) : keys_at + 120], where
+
+
+def test_worker_pin_mode_matches_the_orchestrator(builds):
+    """`pinned` is the worker's reply exactly where the orchestrator routes it;
+    the planner has no pin mode.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = _is_stack(build)
+        worker = "coder-supervisor" if "coder" in build.by_id else "implementer"
+        for name, body in build.bodies("orchestrator"):
+            table = body[body.index("## Replies") : body.index("## Flow")]
+            assert ("`pinned`" in table) == (not stack), f"{stem}/{name}"
+            assert (f"`ccc run {worker}`, mode **pin**" in " ".join(body.split())) == (not stack), f"{stem}/{name}"
+            if not stack:
+                flat_body = " ".join(body.split())
+                pin_step = flat_body[flat_body.index("**Pin step**, for every answered pending pin") :]
+                pin_step = pin_step[: pin_step.index("5. The recorded `order=`")]
+                assert "in `order=` order of Y" in pin_step, f"{stem}/{name}"
+                assert "replies `pinned`" in pin_step, f"{stem}/{name}"
+                assert "a `pinned` with Y's HEAD unmoved → **Triage**" in pin_step, f"{stem}/{name}"
+        for name, body in build.bodies(worker):
+            where = f"{stem}/{name}"
+            assert ("## Mode: pin" in body) == (not stack), where
+            assert ("`pinned`" in reply_section(body)) == (not stack), where
+            if stack:
+                continue
+            pin_mode = " ".join(_raw_section(body, "## Mode: pin").split())
+            for rule in (
+                "never invent one, never take it from the tree",
+                "Nothing else in Y, nothing anywhere else",
+                "never a fix in X or a workaround in Y",
+            ):
+                assert rule in pin_mode, f"{where}: {rule}"
+        if "planner" in build.by_id:
+            for name, body in build.bodies("planner"):
+                assert "## Mode: pin" not in body, f"{stem}/{name}"
+                assert "`pinned`" not in body, f"{stem}/{name}"
+
+
+def test_scope_phrase_is_the_only_widening(builds):
+    """The scope widens on the user's explicit phrase and nothing else."""
+    phrases = "`in scope:`, `also in scope:` or `scope:`"
+    readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+    assert phrases in readme
+    assert "`drop from scope: <path>`" in readme
+    assert "requires the ADR directory in a separate repository" in readme
+    for stem in REVIEW_CHAIN_STEMS:
+        stack = _is_stack(builds[stem])
+        for name, body in builds[stem].bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            directives = _raw_section(body, "## User directives")
+            directives_flat = " ".join(directives.split())
+            for phrase in (phrases, "`drop from scope: <path>`"):
+                assert (phrase in directives_flat) == (not stack), f"{where}: {phrase}"
+            assert flat.count(phrases) == (1 if stack else 2), where
+            assert "anything about scope" not in flat, where
+            assert flat.count("− any steer on how much to build") == 1, where
+            assert ("The primary is refused by name" in directives_flat) == (not stack), where
+            assert ("A shipped repository is refused by name" in directives_flat) == (not stack), where
+            if stack:
+                continue
+            refusal = flat[flat.index("When the artifact repo is the repo") :]
+            assert "at launch (checked at **Setup** step 3) or at any stop → STOP" in refusal[:300], where
+            assert "**Scope phrase.**" in flat, where
+            assert "A path mentioned any other way" in flat, where
+            assert "never widens the scope" in flat, where
+            for match in re.finditer(r"any plain words", flat):
+                window = flat[max(0, match.start() - 200) : match.end() + 200]
+                assert "scope" not in window, where
+    for stem in (BURNDOWN_STEM, BURNDOWN_AUTO_STEM):
+        for name, body in builds[stem].bodies("burndown-orchestrator"):
+            assert "drop from scope" not in body, f"{stem}/{name}"
+
+
+def test_key_failure_triage_carries_the_keys(builds):
+    """A ship-key failure is triaged with what failed, and the designer's
+    `resume` carries the re-transcribed keys back into the ship gate.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = _is_stack(build)
+        variant = build.variant
+        fg_decide = (
+            "forester" in variant.roles
+            and variant.vars.get("forester_autonomy") == "decide"
+            and "triage" in variant.vars.get("forester_gates", ())
+        )
+        for name, body in build.bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            triage = " ".join(_section(body, "### Triage").split())
+            phrases = (
+                "**Key-failure triage.**",
+                "+ the status line the recorded keys came from, verbatim",
+                "+ the clause of the **Key check** that failed",
+                "record the `order=`, `pins=` and `next=` of the designer's status line as the scope keys",
+                "with the prior dispositions as a second triggering document",
+            )
+            for phrase in phrases:
+                assert (phrase in triage) == (not stack), f"{where}: {phrase}"
+            continues = "the designer's re-triage after the forester triage gate's `notes`"
+            assert (continues in triage) == (not stack and fg_decide), where
+        for name, body in build.bodies("designer"):
+            where = f"{stem}/{name}"
+            mode = " ".join(_raw_section(body, "## Mode: triage").split())
+            assert ("**Key-failure triage.**" in mode) == (not stack), where
+            if not stack:
+                assert "Never emit keys to make a wrong **Scope** section pass" in mode, where
+                assert "`order=<repos|-> pins=<pairs|-> next=<paths|->` after `commit=`" in body, where
+
+
+def test_forester_ship_gate_checks_the_keys_against_the_scope(builds):
+    """The forester's ship gate gets the recorded keys and the pending pins and
+    compares them with the design's **Scope** section; a mismatch does not pass.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = _is_stack(build)
+        variant = build.variant
+        fg_ship = "forester" in variant.roles and "ship" in variant.vars.get("forester_gates", ())
+        decide = variant.vars.get("forester_autonomy") == "decide"
+        for name, body in build.bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            launch = "+ the recorded `order=` and `pins=`, + the pending pins"
+            assert (launch in _section(body, "### Ship gate")) == (fg_ship and not stack), where
+        if "forester" not in build.by_id:
+            continue
+        for name, body in build.bodies("forester"):
+            where = f"{stem}/{name}"
+            mode = " ".join(_raw_section(body, "## Mode: ship").split())
+            phrases = (
+                "the recorded `order=` and `pins=`, and the pending pins",
+                "**The ship keys.**",
+                "with the effective design's **Scope** section",
+                "a dependent ordered before its dependency",
+                "an override pin the section declares that is in neither `pins=` nor the pending pins",
+                "a repository the section changes that is neither in `order=` nor shipped",
+                "Any mismatch: the gate is not passed",
+            )
+            for phrase in phrases:
+                assert (phrase in mode) == (not stack), f"{where}: {phrase}"
+            if not stack:
+                outcome = "`notes` naming it" if decide else "it heads **Unsettled**"
+                assert outcome in mode, where
+
+
+def test_standard_payload_carries_the_scope(builds):
+    """Every launch carries the scope; the forester's document gates do not,
+    and only its ship gate gets the log.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = _is_stack(build)
+        for name, body in build.bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            payload = _section(body, "## Standard payload")
+            assert ("the scope — each repository's path, branch, round base, current HEAD and shipped reference, primary first" in payload) == (not stack), where
+            if "forester" not in build.by_id:
+                continue
+            gate = _section(body, "### Forester gate")
+            assert "− log path except in ship mode" in gate, where
+            if not stack:
+                assert "− the scope, except in repo mode, which gets the one repository concerned" in gate, where
+            flat = " ".join(body.split())
+            for mode in ("mode design", "mode triage", "mode scan"):
+                start = flat.find(f"**Forester gate**, {mode}")
+                if start == -1:
+                    continue
+                launch = flat[start : flat.index(".", flat.index("`", start + 30))]
+                assert "log path" not in launch, f"{where}: {mode}"

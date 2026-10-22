@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **A cycle can change several repositories, and only the ones you bring
+  into scope.** Name extra repositories with `in scope:`, `also in scope:`
+  or `scope:` and a path, at launch or at any stop; `drop from scope:
+  <path>` removes one. No agent writes, commits or files a TODO outside the
+  scope; a change needed in another repository you own is never worked
+  around but brought to you with a paste-ready `TODO.md` entry, and you
+  choose to bring the repository in, file the entry, or stop. Designs carry
+  a **Scope** section naming each repository's changes and, where one pins
+  another, either a local override developed in this cycle or a follow-up
+  cycle the closing stop names. The ship gate squashes each repository in
+  pin order and stops after a pinned dependency for you to ship it and give
+  its reference; the implementer then repoints the pin and the dependent
+  ships. Codex subagents need `writable_roots` (or `--add-dir`) covering
+  the repositories you may bring in; see **Operator configuration** in the
+  README. The stack chains stay single-repository.
+- **The forester no longer passes a gate by writing a concern into its
+  report.** Anything you must know or do before a cycle ships has to reach
+  you as notes or an escalation; at the ship gate the forester now reads the
+  implementation log and holds the gate on any workaround, dropped item or
+  cross-repository need with no other record. Its report names any item it
+  let through with only the report as its record.
 - **Burndown stops when a unit ships with its entries still in `TODO.md`,
   and offers a follow-up.** `todo-triage attempt-close` now prints a
   second line, `still in TODO.md: …`, naming the unit's entries that

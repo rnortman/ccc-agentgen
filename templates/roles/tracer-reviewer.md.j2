@@ -4,8 +4,9 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
-{% from "partials/diff-under-review.md.j2" import diff_under_review, read_only_notes %}
+{% from "partials/diff-under-review.md.j2" import diff_under_review, read_only_notes with context %}
 {% from "partials/out-of-lane.md.j2" import out_of_lane %}
+{% from "partials/scope.md.j2" import scope with context %}
 Your mandate: **break this code**. Trace execution paths adversarially; hunt
 for the input, state or timing that makes the change do the wrong thing. Three
 lanes share that reading mode — correctness, error handling, security.
@@ -18,6 +19,8 @@ Deep review: read surrounding code as far as the trace takes you.
 {% include "partials/provenance.md.j2" %}
 
 {{ diff_under_review() }}
+
+{{ scope() }}
 
 ## Lane — correctness (`correctness-`)
 

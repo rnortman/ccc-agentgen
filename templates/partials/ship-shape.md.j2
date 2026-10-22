@@ -8,11 +8,13 @@ outside it: no PR the section does not name, no second commit inside a PR,
 no other order. A request or design that dictates a different commit shape
 specifies something this workflow will not produce.
 {% else %}
-The whole cycle lands as **one commit** on the launch branch: every round
-is squashed, and the ship gate squashes all rounds into one. No
-intermediate commit, branch or ordering survives. A request or design that
-specifies several commits, separate PRs or a particular commit sequence
-specifies something this workflow cannot produce. Another workflow ships
-work as several reviewable commits; this is not it.
+The cycle lands as **one commit per repository in scope**, on that
+repository's launch branch, in the **Scope** section's ship order: within a
+repository every round is squashed, and the ship gate squashes all rounds
+into one. No intermediate commit, branch or ordering survives inside a
+repository. A request or design that specifies several commits in one
+repository, separate PRs, or an order other than the pin order specifies
+something this workflow cannot produce. Another workflow ships work as
+several reviewable commits; this is not it.
 {% endif %}
 {%- endmacro %}

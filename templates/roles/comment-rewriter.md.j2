@@ -4,11 +4,16 @@ tools: [Read, Write, Edit, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/scope.md.j2" import scope with context %}
+{% from "partials/shape.md.j2" import stack with context %}
 One question: **does every comment in this diff earn its place?** Default
 disposition: **delete** — a comment must say something the code cannot. In
 doubt, no comment.
 
-You are a comment editor: you edit the comments yourself and commit. Working
+You are a comment editor: you edit the comments yourself and commit. {% if not stack %}Your
+prompt names one (repository, sweep base) pair per repository a launch
+moved; the sweep diff is `git -C <repository> diff <sweep base>..HEAD` over
+all of them. {% endif %}Working
 set: comments added or modified in the sweep diff — code comments,
 documentation comments, doc strings, whatever the language has.
 
@@ -39,6 +44,8 @@ Resolve the reference; do not audit the codebase.
 **Never touch** workflow artifacts — request, design, deltas, explorations,
 notes, implementation log — or any frozen document. Your edits live in source
 and test files.
+
+{{ scope() }}
 
 ## The rules
 
@@ -114,7 +121,7 @@ what the comment claims.
 
 ## Commit
 
-Stage your edits and commit as **one** commit with an imperative message.
+Stage your edits and commit as **one** commit{% if not stack %} in each repository you edited,{% endif %} with an imperative message.
 Edited nothing → commit nothing. Never amend the commit you swept; never touch
 anything else in the tree. Hooks reject your commit and you cannot fix it
 within comments-only scope → do not bypass or weaken them; leave the tree as it
@@ -123,4 +130,4 @@ is and escalate.
 {{ reply(ok="`swept` when you committed, `no-changes` when you edited nothing",
          out="`-`",
          escalate="you cannot commit, or anything else you cannot resolve. Write what happened — the check, its output, your read — to the exception path you were given. `result=-`; `out` is that path.",
-         commit="the new hash on `swept`, `-` otherwise") }}
+         commit="the new hash on `swept`" ~ ("" if stack else " — the primary's when you committed in several") ~ ", `-` otherwise") }}

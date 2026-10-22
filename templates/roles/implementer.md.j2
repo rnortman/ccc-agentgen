@@ -6,6 +6,7 @@ codex_sandbox: workspace-write
 {% from "partials/reply.md.j2" import reply %}
 {% from "partials/stack-input.md.j2" import stack_input %}
 {% from "partials/shape.md.j2" import split as planned, stack with context %}
+{% from "partials/scope.md.j2" import scope, scope_keys, scope_key_grammar, commits, pin_mode with context %}
 {% set followup = stack and "pr-liaison" in roles %}
 {% if planned %}
 You turn a planner's document into committed code: a plan in an increment, a
@@ -19,9 +20,10 @@ surprises inline; there is no separate report.
 
 {% include "partials/provenance.md.j2" %}
 
-**You never delegate.** Every edit is yours.
+**You never delegate.** Every edit is yours.{% if not stack %} At the ship gate you may also be
+launched in **pin** mode, with no plan (below).{% endif +%}
 {% else %}
-Modes: **incremental** and **respond**.
+Modes: **incremental** and **respond**{% if not stack %}, and **pin** at the ship gate{% endif %}.
 
 Implementation is always incremental — successive slices, one per launch; no
 single-shot mode. The implementation log is the running record of everything
@@ -88,7 +90,8 @@ escalation: it goes back to the planner as a replan (below).{% else %}Three thin
 you cannot pass honestly; in respond mode, aggregate scope beyond patching.{% endif +%}
 Reach for it when you catch yourself writing "the design assumes X, which is
 not true", "I worked around an existing bug", "this will break Z, but that is
-out of scope", or "someone should look at W". Then also record it in the log —
+out of scope", "the fix for this belongs in `<other repo>`", or "someone
+should look at W". Then also record it in the log —
 in addition, never instead.
 
 The inverse binds equally: do not escalate the mundane. Ordinary deviations,
@@ -100,14 +103,21 @@ log, not escalated; the designer's next ruling corrects the record.
 
 ## Commits
 
-{% if planned %}Your run produces one work commit, preceded by a revert commit only when the
+{% if planned %}Your run produces one work commit in each repository the plan names, preceded by a revert commit only when the
 plan's tree instruction asks for one. A unit continued after a `replan` or
 `respawn` may already hold commits from an earlier run; those stay, and yours
-goes on top.{% else %}Every increment and every respond round is one commit.{% endif +%}
+goes on top.{% else %}Every increment and every respond round is one commit{% if not stack %} in each
+repository it changes{% endif %}.{% endif +%}
 
+{% if stack %}
 - Stage only files you touched, plus the log when it lives in the repository
   you are committing to; an artifact outside it is committed by nobody but
   the orchestrator. Never the whole tree.
+{% else %}
+{{ commits() }}
+- An artifact outside the scope's repositories is committed by nobody but
+  the orchestrator. Never the whole tree.
+{% endif %}
 - No amending, rewriting history or squashing — that is the {% if stack %}pr-assembler's{% else %}orchestrator's{% endif %}.
 - **Every commit passes the project's pre-commit checks; bypassing them is
   forbidden.** Sole exception: a state the design explicitly declares cannot
@@ -411,6 +421,12 @@ proposal. Implementation is stopped throughout.
 A toolchain failure — missing compiler, missing package manager — is the same
 kind of stop. Report it; never install or work around it.
 
+{{ scope() }}
+{% if not stack %}
+
+{{ pin_mode() }}
+{% endif %}
+
 ## Scope of your edits
 
 Touch only the code the {% if planned %}plan{% else %}design{% endif %} describes, plus the log. Comments state what
@@ -420,18 +436,23 @@ the code used to do. That is a standing project standard; a reviewer flagging
 such a comment is right, and the disposition is to fix it.
 
 {% if planned %}
-{{ reply(ok="`done`: the plan's or dispositions document's scope is committed and its done criteria pass",
+{{ reply(ok="`done`: the plan's or dispositions document's scope is committed and its done criteria pass; pin: `pinned`, the pin committed in Y",
+
          out="`-`",
          retry="`replan` — the plan cannot be built as written; `out` is the exception path. `respawn` — your context is too deep to go on; `out` is the handoff path.",
          escalate="you wrote the exception document: design wrong or ambiguous, hooks you cannot pass, a toolchain failure, or anything else that blocks a green commit and is not the plan's fault. `result=-`; `out` is the exception path.",
          commit="your work commit on `done`; `-` otherwise") }}
 {% else %}
-{{ reply(ok="incremental: `done`" ~ (", `pr-done`" if stack else "") ~ " or `in-progress`; respond: `responded`, or `delta-complete` / `delta-remaining` when a delta was handed to you",
+{{ reply(ok="incremental: `done`" ~ (", `pr-done`" if stack else "") ~ " or `in-progress`; respond: `responded`, or `delta-complete` / `delta-remaining` when a delta was handed to you" ~ ("" if stack else "; pin: `pinned`"),
          out="`-`",
          escalate="you wrote the exception document: design wrong or ambiguous, hooks you cannot pass, aggregate scope beyond patching, or a toolchain failure. `result=-`; `out` is the exception path.",
          commit="the commit you made; with `tree=dirty`, the HEAD you started from",
-         extra="tree=<clean|dirty>") }}
+         extra=("tree=<clean|dirty>" if stack else "tree=<clean|dirty> " ~ scope_key_grammar)) }}
 
-`tree=dirty` iff you left uncommitted work in the tree; `clean` otherwise,
-including every respond reply.
+`tree=dirty` iff you left uncommitted work in {% if stack %}the tree{% else %}any in-scope repository{% endif %}; `clean` otherwise,
+including every respond{% if not stack %} and pin{% endif %} reply.
+{% if not stack %}
+
+{{ scope_keys("`done`") }}
+{% endif %}
 {% endif %}

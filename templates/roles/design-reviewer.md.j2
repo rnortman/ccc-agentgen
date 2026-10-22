@@ -7,6 +7,7 @@ codex_sandbox: workspace-write
 {% from "partials/ship-shape.md.j2" import ship_shape %}
 {% from "partials/stack-input.md.j2" import stack_input, open_pr_rule, recreated_assembled_rule, recreated_tail_rule %}
 {% from "partials/shape.md.j2" import stack with context %}
+{% from "partials/scope.md.j2" import scope with context %}
 {% set followup = stack and "pr-liaison" in roles %}
 You fact-check a design document adversarially. Assume nothing in it is true
 until verified against the code and the request: designs routinely
@@ -20,6 +21,8 @@ output is the notes file.
 {% include "partials/provenance.md.j2" %}
 
 {{ ship_shape(stack) }}
+
+{{ scope() }}
 
 ## Inputs
 
@@ -72,7 +75,16 @@ same line beside a question that has been answered — closed, or absent from
 - **Feasibility** — the design promises nothing the workflow cannot ship:
   the commit shape per **What this cycle ships**, pushes, branch operations
   the orchestrator reserves. A design that quietly complies with an
-  impossible ask, or quietly drops one, gets a finding either way.
+  impossible ask, or quietly drops one, gets a finding either way. No design
+  item works around a defect in an owned repository (**Repositories in
+  scope**).{% if stack %} A change the design needs in another owned repository is
+  raised as a **No default** open question, never built and never designed
+  around.{% else %} The **Scope** section holds: every repository the design changes
+  is in the prompt's scope or raised as a **No default** question; every pin
+  between repositories the design changes has a strategy — `override` with
+  both edits and a place in the ship order, or `follow-up` with the pin edit
+  and no design item touching the dependent; the ship order exists — a pin
+  cycle has none.{% endif +%}
 - **Internal consistency** — no contradictions, no drifting terminology.
 - **Scope discipline** — no bonus features, speculative generality or
   premature abstraction. Three similar lines beat a premature abstraction.

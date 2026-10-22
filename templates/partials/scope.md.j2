@@ -1,0 +1,215 @@
+{#- The repositories a cycle may change, and what an agent does about a change
+    needed outside them. Import `with context`: `roles` decides which
+    neighbours a paragraph may name; `role.id` selects the closing channel. #}
+{% from "partials/shape.md.j2" import stack with context %}
+{% set reviewers = ("prepass-reviewer", "citizen-reviewer", "tracer-reviewer", "test-reviewer") %}
+{% set escalators = ("implementer", "planner", "coder-supervisor") %}
+{% set scope_key_grammar = "order=<repos|-> pins=<pairs|-> next=<paths|->" %}
+{% macro sandbox() %}
+{% set where = "the repository you run in" if stack else "an in-scope repository" %}
+{% set elsewhere = "somewhere else" if stack else "in the primary" %}
+{% set route = "a finding" if role.id in reviewers or role.id == "design-reviewer" else ("a question for your supervisor" if role.id == "coder" else "an escalation") %}
+**A write the harness refuses.** A sandbox denial on a write, commit or
+command in {{ where }} is not a reason to work {{ elsewhere }}
+instead, to leave the change out, or to work around it: it is {{ route }}
+that quotes the denial and names the operator's configuration as the fix. A Codex
+subagent is confined to its cwd unless the operator's Codex config lists the
+directory under `[sandbox_workspace_write] writable_roots`, or ccc's site
+config passes `[codex] extra_args = ["--add-dir", "<dir>"]`; a repository
+the sandbox refuses is the operator's to open, not yours to route around.
+{%- endmacro %}
+{% macro ownership() %}
+- **Owned** means a repository the user controls: the project's instructions
+  file or the request says so. A checkout beside {{ "yours" if stack else "the primary" }} (a sibling
+  directory) is not proof, but it is **presumed owned**: say "presumed owned
+  — sibling checkout" where you raise the need, and the user's "not mine"
+  turns it into ordinary engineering. Never guess "third-party" to license a
+  workaround: a false "owned" costs one stop and one word; a false
+  "third-party" ships the workaround.
+- A change needed in a repository the user does not own is ordinary
+  engineering: pin, vendor, or work around with a comment naming the
+  upstream issue, as the project's conventions say; the design says which.
+{%- endmacro %}
+{% set four_things %}four things: the repository; the change,
+  concretely; why no in-scope alternative is acceptable; and a paste-ready
+  `TODO.md` entry for that repository in its own convention, so "file a TODO
+  and move on" costs the user a paste{% endset %}
+{% macro channel() %}
+{% if role.id == "designer" and stack %}
+**Your channel** is one **No default** open question per repository,
+carrying the four things, with two outcomes: the user files the entry, or the
+cycle stops. In triage, such a need is a user-judgement call: the
+dispositions document names the four things, and you escalate.
+{%- elif role.id == "designer" %}
+**Your channel** is the design's **Scope** section and one **No default**
+open question per repository the scope does not name (**The Scope
+section**). In triage, such a need is a user-judgement call: the
+dispositions document names the four things, and you escalate.
+{%- elif role.id == "design-reviewer" %}
+**Your channel** is a finding. A design item that works around a defect in
+an owned repository, or that changes a repository the prompt's scope does
+not name without raising it as a **No default** question, is a feasibility
+finding.
+{%- elif role.id in escalators %}
+**Your channel** is the exception document and `ESCALATE`. "The fix for this
+belongs in `<other repo>`" is a reason to escalate, never to work around.
+{%- elif role.id == "coder" %}
+**Your channel** is your supervisor: `ESCALATE` with the four things above
+the line. "The fix for this belongs in `<other repo>`" is a question, never
+a reason to work around.
+{%- elif role.id in reviewers %}
+**Your channel** is a finding, under whichever lane fits. A workaround for a
+defect in an owned repository is a finding whose consequence is that it
+blocks the ship: name the repository the fix belongs in, and that the
+change there is the user's to bring into scope.
+{%- elif role.id == "judge" %}
+**Your channel** is the verdict. A `Won't-Do` or `TODO(slug)` disposition on
+a finding whose fix belongs in a repository outside the scope is invalid
+unless an escalation document carries the need to the user; the verdict
+disputes it and says so. A deferral cannot file its tracker entry there in
+any case — nothing is written outside the scope.
+{%- elif role.id == "workflow-scanner" %}
+**Your channel** is the report and its decision: a commit or edit outside
+the scope, and a workaround for a defect in an owned repository with no
+escalation behind it, are stops (**The hunt**, item 1).
+{%- elif role.id == "forester" and vars.forester_autonomy == "decide" %}
+**Your channel.** The scope is never yours to change, in any mode. A need
+the record raises that nothing has carried to the user is an escalation
+(**Your document is the end of the line**).
+{%- elif role.id == "forester" %}
+**Your channel.** The scope is never yours to change, in any mode. A need
+the record raises that nothing has carried to the user goes in the first
+lines of your brief, and your recommendation is that the user rule on it
+(**Your document is the end of the line**).
+{%- endif %}
+{%- endmacro %}
+{% macro scope() %}
+## Repositories in scope
+
+{% if role.id == "comment-rewriter" %}
+You edit comments only in the repositories your prompt names, and commit only
+there. Never anything in a repository outside them, for any reason: another
+session may be working there, and only the user knows.
+{%- elif role.id == "changelog-author" %}
+You edit the changelog of the repository your prompt names, and amend only
+there. Never anything in a repository outside the scope, for any reason:
+another session may be working there, and only the user knows.
+{%- elif stack %}
+This cycle runs in **exactly one repository** — the one you were launched
+in — and no other repository is ever brought in. No agent writes, commits,
+runs a mutating command, or files a TODO in any other repository, for any
+reason: another session may be working there, and only the user knows. The
+working dir is the one exception, for artifacts.
+
+- **A change needed in another owned repository** — a defect in an owned
+  dependency, a missing feature in an owned sibling — is never worked around
+  and never silently dropped. It has two outcomes, and the user picks: a
+  `TODO.md` entry the user files there, or the cycle stops. Put it to the
+  user through your channel (below) with
+  {{ four_things }}.
+{{ ownership() }}
+
+{{ sandbox() }}
+
+{{ channel() }}
+{%- else %}
+The **scope** is the ordered list of code repositories this cycle may
+change, as your prompt names them — each by absolute path, with its branch
+and current HEAD — the **primary**, the repository the cycle was launched
+in, first. A prompt that names no scope gives you a scope of one: the
+repository you were launched in. The artifact repository is never in it: it
+takes the cycle's documents and nothing else.
+
+- A code change lands in an in-scope repository or it does not land. **No
+  agent writes, commits, runs a mutating command, or files a TODO in a
+  repository outside the scope, for any reason** — another session may be
+  working there, and only the user knows. The working dir is the one
+  exception, for artifacts.
+- **Only the user widens the scope.** Not the designer, not a triage ruling,
+  not {{ "the forester" if "forester" in roles else "any agent" }} in any mode: bringing a repository in
+  means coordinating with whatever else is running against it, which only
+  the user can see.
+- **A change needed outside the scope** — a defect in an owned dependency, a
+  missing feature in an owned sibling, anything whose honest fix lives in
+  another owned repository — is never worked around and never silently
+  dropped. Three outcomes exist, and the user picks: the repository is
+  brought into scope; a `TODO.md` entry is filed there, by the user or once
+  the repository is in scope; or the cycle stops. Put the need to the user
+  through your channel (below) with
+  {{ four_things }}.
+{{ ownership() }}
+- With more than one repository in scope, every file reference in a
+  document names its repository: `<repo basename>:<path>:<line>`.
+
+{{ sandbox() }}
+
+{{ channel() }}
+{%- endif %}
+{%- endmacro %}
+{% macro scope_keys(reply) %}
+**Scope keys**, on {{ reply }} only, transcribed from the effective design's
+**Scope** section — never from the tree:
+
+- `order=<repoA>,<repoB>,…` — every unshipped in-scope repository the design
+  changes, by the path your prompt's scope gives it, once each, in the
+  section's ship order;
+- `pins=<Y>:<X>,…` — every override pin between repositories `order=` names,
+  `Y` pinning `X`; `-` when none;
+- `next=<path>,…` — every repository the section lists as follow-up; `-`
+  when none.
+
+On every other reply all three are `-`. At the ship gate the orchestrator
+checks the keys mechanically: `order=` against the repositories whose HEAD
+has moved, in both directions — a named repository has commits, a
+repository with commits is named — and every `pins=` pair between
+repositories `order=` names, X before Y. Whether they match the section is
+checked {% if "forester" in roles and "ship" in vars.forester_gates %}by the forester's ship gate and {% endif %}by the triage designer on a
+key failure. A repository the section lists as unchanged or
+follow-up is in neither `order=` nor `pins=`.
+{%- endmacro %}
+{% macro commits() %}
+- Stage only files you touched, in each repository separately, plus the
+  log when it lives in that repository. Hooks are each repository's own, and the pre-commit rule binds every
+  commit. `commit=` names the primary's commit, or the one repository's
+  commit that moved; the orchestrator checks every repository's HEAD either
+  way.
+- Build and test each changed repository with its own checks. Under an
+  override the dependent's checks exercise the dependency too; the final
+  increment passes every in-scope repository's full check.
+- A repository the design's **Scope** section lists as `follow-up` is never
+  written this cycle, whether or not it is in the scope: an item that names
+  it is a deviation from the design and an escalation.
+- With more than one repository in scope, the log names the repository on
+  every file reference.
+{%- endmacro %}
+{% macro pin_mode() %}
+## Mode: pin
+
+Run once per pinned pair at the ship gate, after the dependency X shipped.
+Inputs: design path and deltas, the scope, the repository Y that pins X, X,
+the notes file holding the user's own words with X's shipped reference, the
+log path, the exception path.
+
+1. Find the reference in the notes. Words that name none — or name two —
+   are an escalation; never invent one, never take it from the tree.
+{% if role.id == "coder-supervisor" %}
+2. No plan is involved. Your one prompt to the coder carries what a plan
+   would: Y's path, the exact restoration edit the design's **Scope**
+   section specifies for Y pinning X, with that reference filled in, the
+   override edit to remove, and Y's full check as the done criterion.
+   Nothing else in Y, nothing anywhere else. It is the one prompt that
+   carries content; the design's words go to it quoted, not paraphrased.
+3. Check as **When it says done** does, with one more item: no override of
+   X remains anywhere in Y. A failing full check — the shipped X differs
+   from the tree Y was developed against — is an escalation quoting the
+   output, never a fix in X or a workaround in Y.
+{%- else %}
+2. Make exactly the restoration edit the design's **Scope** section
+   specifies for Y pinning X, with that reference, and remove the override
+   if one is in the tree. Nothing else in Y, nothing anywhere else.
+3. Verify no override of X remains in Y; run Y's full check. A failure — the
+   shipped X differs from the tree Y was developed against — is an
+   escalation quoting the output, never a fix in X or a workaround in Y.
+4. Commit in Y, append a log entry naming the reference, reply `pinned`.
+{%- endif %}
+{%- endmacro %}

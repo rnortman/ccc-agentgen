@@ -4,8 +4,9 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
-{% from "partials/diff-under-review.md.j2" import diff_under_review, read_only_notes %}
+{% from "partials/diff-under-review.md.j2" import diff_under_review, read_only_notes with context %}
 {% from "partials/out-of-lane.md.j2" import out_of_lane %}
+{% from "partials/scope.md.j2" import scope with context %}
 Your lens is the **long-term owner of this codebase**. The tree should be in
 better shape after this change, not merely "the feature works". One reading
 mode across three lanes: compare the diff against the codebase it has to live
@@ -19,6 +20,8 @@ Deep review: read surrounding code and search the tree as much as needed.
 {% include "partials/provenance.md.j2" %}
 
 {{ diff_under_review() }}
+
+{{ scope() }}
 
 ## Lane — quality (`quality-`)
 
@@ -41,7 +44,8 @@ Deep review: read surrounding code and search the tree as much as needed.
    instead of fixing it. Worst when the underlying issue is not called out,
    when a direct fix is reasonable in scope, or when the pattern will
    propagate. Confirm both the brokenness and the reasonable fix in adjacent
-   code before filing.
+   code before filing. Where the broken thing lives in another owned
+   repository, **Repositories in scope** says how to file it.
 
 ## Lane — reuse (`reuse-`)
 

@@ -180,6 +180,70 @@ approves the design, and the forester's ship approval force-pushes the
 stack with a lease, re-targets and closes PRs as the stack says, and opens
 the new PRs.
 
+## Repositories in scope
+
+A review-chain cycle may change more than one repository, but only the ones
+you name. The **scope** starts as the repository the orchestrator is
+launched in (the **primary**). Widen it with a **scope phrase** — `in
+scope:`, `also in scope:` or `scope:` followed by one or more paths — in your
+launch words or your answer at any stop; narrow it with `drop from scope:
+<path>`. A path mentioned any other way, including in the request, never
+widens the scope. Only you widen it: no agent, triage ruling or forester
+does, because bringing a repository in means coordinating with whatever
+else is running there. At every stop the orchestrator states the scope back
+in one `scope:` line.
+
+No agent writes, commits, runs a mutating command or files a TODO in a
+repository outside the scope. A change an agent finds it needs in another
+repository you own — a defect in a dependency, a missing feature in a
+sibling — is never worked around: it reaches you with the repository, the
+change, why nothing in scope will do, and a paste-ready `TODO.md` entry,
+and you choose to bring the repository in, file the entry, or stop.
+
+Every non-stack design has a **Scope** section: one entry per repository it
+changes, primary first, with what changes there and, where one repository
+pins another, the strategy:
+
+- **override** — the dependent is developed and tested against the local
+  checkout of the dependency within the cycle; the design states the
+  override edit and the restoration of the pin.
+- **sequential** — this cycle changes the dependency only; the dependent's
+  change is a declared **follow-up** cycle whose request is the **Scope**
+  entry, and the closing stop names it (`next: a follow-up cycle in …`).
+
+The ship gate ships one squash per repository, in the **Scope** section's
+ship order, each with its own gate and changelog. After a repository that
+another one pins is squashed (and, in `-auto`, pushed off `main`), the
+cycle stops in every autonomy: `Waiting: the shipped reference of <X> for
+the pin in <Y>`. Ship it, answer with the reference, and the implementer
+restores the pin to it, runs the dependent's full check and commits; then
+the dependent ships. An in-scope repository the cycle never changed is
+retired as `unchanged`. The closing stop lists every repository. Once a
+repository has shipped, the orchestrator stops watching its HEAD: shipping
+it is yours, and it cannot be dropped from the scope. At a ship-gate stop,
+`drop from scope:` abandons a repository not yet shipped (`restore` resets
+its commits away first); a dependent whose dependency you drop goes to
+triage.
+
+The stack chains (`review-chain-stack*`) stay in one repository: they
+refuse a scope phrase, and a change needed elsewhere is a `TODO.md` entry
+you file or a stop.
+
+More than one repository in scope requires the ADR directory in a separate
+repository (the sidecar layout); in the same-repo layout a scope phrase is
+refused.
+
+### Operator configuration
+
+Claude subagents run with `bypassPermissions` and can write any in-scope
+repository. Codex subagents run in `workspace-write` and can write only
+their cwd unless the Codex config's `[sandbox_workspace_write]
+writable_roots`, or `[codex] extra_args = ["--add-dir", "<dir>"]` in
+`ccc`'s site config, covers every repository you may bring into scope — the
+directory holding the sibling checkouts is the natural root. Without it a
+Codex implementer is refused by the sandbox and escalates, quoting the
+denial; it never moves the work into the primary.
+
 ## Forester family
 
 Two product-owner-proxy roles, both pinned to the most capable models and
@@ -199,7 +263,12 @@ both working from documents, never code:
   mode with the `ship` gate, a forester-approved squash pushes the current
   branch to `origin` without asking; on `main` it does not, and the cycle
   ends `shipped` with the HEAD unpushed; a push on `main` is a later
-  instruction, never a gate.
+  instruction, never a gate. At the ship gate the forester reads the
+  implementation log too, and does not pass a gate while anything the user
+  must know or do has no record but its own document — a workaround, a
+  dropped item, a change another repository needs: it sends notes or
+  escalates instead. Its report names any item whose only record is the
+  report as a gate it passed wrongly.
 - `forester-commentator` — after every review wave with findings, before the
   responder, writes `commentary-<step>.md`: questions (reachability, cost to
   maintain, fit to the request), not dispositions. Tools are `Read` and

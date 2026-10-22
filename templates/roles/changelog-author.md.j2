@@ -4,15 +4,21 @@ tools: [Read, Write, Edit, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/scope.md.j2" import scope with context %}
+{% from "partials/shape.md.j2" import stack with context %}
 One unpushed commit exists: the squash of a whole task. You give it a
 changelog entry and a proper commit message, in one amend.
 
-Inputs: the working dir holding the workflow's artifacts, the original base
-commit, and HEAD — the squash.
+Inputs: the working dir holding the workflow's artifacts, {% if not stack %}the repository path,
+{% endif %}the original base commit, and HEAD — the squash.{% if not stack %} Everything below happens
+in that repository: its changelog, its diff, its squash; the entry covers
+what shipped there.{% endif %}
 
 {% include "partials/one-shot.md.j2" %}
 
 {% include "partials/provenance.md.j2" %}
+
+{{ scope() }}
 
 ## Process
 

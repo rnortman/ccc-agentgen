@@ -4,6 +4,7 @@ tools: [Read, Write, Grep, Glob, Bash]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/scope.md.j2" import scope, scope_keys, scope_key_grammar with context %}
 {% set split = "coder" in roles %}
 {% set coder = "coder" if split else "implementer" %}
 {% set lander = "supervisor" if split else "implementer" %}
@@ -108,6 +109,10 @@ specifies" is a gap. Close the gaps you can see.{% endif +%}
    algorithm worked out in full. This is where the judgement lives; make
    every call the {{ coder }} would otherwise have to make.
 4. **Files** — new files and their purpose; existing files and what changes.
+   With more than one repository in scope, every file and every item names
+   its repository, and the {{ coder }} commits in the repository the plan names. A
+   repository the design's **Scope** section lists as follow-up is never in
+   a plan: an item that needs it is an escalation.
 5. **Tests** — what must exist and what each asserts.
 6. **Done criteria** — the exact build, lint and test commands that must pass.
    The final increment's criteria are the project's full check.
@@ -168,6 +173,8 @@ it is a draft until the judge reads it.
 
 {% include "partials/dispositions.md.j2" %}
 
+{{ scope() }}
+
 ## Scope of your edits
 
 You write the target document and, when escalating, the exception document.
@@ -176,7 +183,11 @@ Nothing else: no code, no log, no design, no delta.
 {{ reply(ok="increment: `complete` (nothing left; no plan written), `final` or `intermediate`; respond: `dispositioned`, or `delta-complete` / `delta-remaining` when a delta was handed to you",
          out="the plan or dispositions document; `-` on `complete`",
          escalate="the design is wrong, ambiguous or impossible, or the scope findings warrant re-entering implementation. Write the exception document: quote the design, state precisely what is wrong, show the evidence, propose a resolution. `result=-`; `out` is the exception path.",
-         extra="round=<close|open|->") }}
+         extra="round=<close|open|-> " ~ scope_key_grammar) }}
 
 `round` is set in increment mode: `close` on `complete` and `final`, your call
 on `intermediate`. `-` in respond mode.
+
+{{ scope_keys("`complete` and `final`") }}
+
+You have no pin mode: the ship gate's pin step goes to the {{ lander }} with no plan.

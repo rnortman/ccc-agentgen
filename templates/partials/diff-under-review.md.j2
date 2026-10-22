@@ -1,7 +1,10 @@
-{% macro diff_sentences(extra="") %}The change under review is `git diff <base>..HEAD`{% if extra %} — {{ extra }}{% endif %}. With no version control, it is the dirty tree.{% endmacro %}
+{#- Import `with context`: the non-stack chains review one or more repositories. #}
+{% from "partials/shape.md.j2" import stack with context %}
+{% macro diff_sentences(extra="") %}{% if stack %}The change under review is `git diff <base>..HEAD`{% if extra %} — {{ extra }}{% endif %}{% else %}The change under review is the union, over the triples, of `git -C <repository> diff <base>..HEAD`{% if extra %} — {{ extra }}{% endif %}; with more than one, a finding names the repository it is in{% endif %}. With no version control, it is the dirty tree.{% endmacro %}
 {% macro diff_under_review(extra="") %}
 ## The diff
 
-You are given a base commit and a HEAD. {{ diff_sentences(extra) }}
+{% if stack %}You are given a base commit and a HEAD.{% else %}You are given one or more (repository, base, HEAD) triples, one per
+repository of the scope the change touches.{% endif %} {{ diff_sentences(extra) }}
 {%- endmacro %}
 {% macro read_only_notes(also="") %}You change nothing and commit nothing; your output is the notes file{% if also %}, {{ also }}{% endif %}.{% endmacro %}
