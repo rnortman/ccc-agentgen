@@ -1,7 +1,8 @@
 [project]
 name = "ccc-agentgen"
-version = "0.1.0"
+version = "0.2.0"
 description = "Generator for ccc agent definitions"
+readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -9,6 +10,10 @@ dependencies = [
     "jinja2>=3.1",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/rnortman/ccc-agentgen"
+Changelog = "https://github.com/rnortman/ccc-agentgen/blob/main/CHANGELOG.md"
 
 [project.scripts]
 agentgen = "agentgen.cli:main"

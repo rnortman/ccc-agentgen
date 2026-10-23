@@ -775,7 +775,8 @@ printf '%s\\n' "${{COMPREPLY[@]}}" | grep -Fx 'b space'
 test "$CCC_AGENTS_CONFIG" = prior
 test "$CCC_CONFIG" = /elsewhere/site.toml
 stale={only}
-warning="ccc-use: CCC_CONFIG=$stale was set by an older ccc-use and now names an agents config; run: unset CCC_CONFIG"
+configs_dir={shlex.quote(str(configs))}
+warning="ccc-use: CCC_CONFIG=$stale names a file under $configs_dir, which holds agents configs, not site config; run: unset CCC_CONFIG"
 export CCC_CONFIG=$stale
 ccc-use single only 2>"$err"
 grep -qxF "$warning" "$err"

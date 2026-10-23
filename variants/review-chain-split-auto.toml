@@ -56,14 +56,12 @@ codex_model = "gpt-6-sol"
 codex_effort = "medium"
 
 [roles.coder-supervisor]
+harness = "claude"
 model = "claude-opus-5-5[1M]"
 effort = "medium"
-codex_model = "gpt-6-sol"
-codex_effort = "medium"
 
 [roles.coder]
-model = "claude-sonnet-5"
-effort = "medium"
+harness = "codex"
 codex_model = "gpt-6-luna"
 codex_effort = "medium"
 

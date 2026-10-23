@@ -86,7 +86,7 @@ TOML_ESCAPES = {'"': '\\"', "\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t",
 
 
 def toml_basic_string(text):
-    """ccc's `toml_basic_string`, transcribed from `ccc-harness/src/harness/codex.rs`."""
+    """ccc's `toml_basic_string`, transcribed from `ccc/src/harness/codex.rs`."""
     out = []
     for ch in text:
         if ch in TOML_ESCAPES:

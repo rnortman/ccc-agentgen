@@ -123,6 +123,8 @@ def lint_issues(ctx: Context, store: Store | None, todo: todomd.TodoFile,
             issues.append(todomd.Issue("warning", entry.line,
                                        f"`{entry.slug}` has no `TODO({entry.slug})` code site"))
     known = set(todo.by_slug())
+    # TODO(lint-warns-on-documentation-examples): every example token in docs,
+    # templates, strings and fixtures lands here; see TODO.md.
     for site in sites:
         if site.slug not in known:
             issues.append(todomd.Issue(

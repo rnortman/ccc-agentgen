@@ -1,116 +1,251 @@
 # ccc-agentgen
 
-Generates [ccc](https://github.com/rnortman/ccc) agent definitions from shared templates and
-per-variant configuration, so one workflow can be emitted in several versions.
+Ready-made agent workflows for [`ccc`](https://github.com/rnortman/ccc), the
+CLI that runs an agent as a one-shot Claude Code or Codex subprocess: a
+**review chain** that designs, implements and reviews a change on Claude Code
+and/or Codex, and a **TODO triage and burndown** pair that rules on a
+repository's `TODO.md` and works it down. Plus the generator that renders
+them into ccc agent definitions.
+
+There are many variations of several different workflows. Using `ccc`, workflows
+can combine Claude and Codex agents. And they can run for a *verrrrry* long time
+and get a lot done, autonomously if you like:
+
+![The end of a todo-burndown run: 24 units shipped, closing 26 entries, over about 53 hours](docs/images/burndown-summary-anim.png)
+
+Long workflows like that are made possible by both the workflow design and by
+`ccc`, which can juggle multiple Claude subscription accounts, switching between
+them as they run out of usage.
+
+The key workflow design insight for long workflows is this: *the orchestrator
+should have no idea what you're building.* In these workflows, the orchestrator
+just manages the workflow. It doesn't design, or decompose tasks, or make
+decisions. It keeps the workflow moving. Sugagents communicate by writing
+documents and reading documents. The orchestrator never reads any of it. That
+keeps its context window clean and focused on orchestration.
+
+The todo burndown workflow takes this to another level: It has an orchestrator
+orchestrating orchestrators. The top-level orchestrator just launches
+sub-orchestrators for different units; that way a single top-level orchestrator
+can run for **53 hours** without ever filling up its context window and without
+ever compacting. If you need even longer workflows, you can hand off between
+sessions.
 
 `templates/` and `variants/` are the product; `src/agentgen/` is the tool that
-assembles them.
+assembles them. You can use the workflows as they are (they are customizable),
+or just take `agentgen` as a tool and build your own workflows.
 
-## Build a variant
+I frequently update my workflows. There is no stability here; fork it or pin a
+specific version if you want stability.
 
-```
-uv run agentgen build review-chain
-uv run agentgen build review-chain --out /path/to/dir
-```
+## Requirements
 
-- A bare variant name resolves to `<root>/variants/<name>.toml`; a path is used
-  as given. `--root` defaults to the current directory and must contain
-  `templates/`, plus `variants/` when the variant is named rather than pathed.
-- `--out` defaults to `<root>/build/<variant>/`. Every role is rendered and
-  every check rule run before anything is written; a failure writes nothing.
-- The output directory may be absent or empty. A build stamps it with an
-  `.agentgen-build` marker; on a later build that marker is what allows the
-  `*.md` in it to be cleared first, including stale harness overlays. A
-  non-empty directory without the marker, or a marked directory holding
-  anything but `*.md`, is an error.
+- **`ccc`** on `PATH`: `cargo install --locked ccc-harness`, or `cargo install
+  --locked --git https://github.com/rnortman/ccc`. See ccc's
+  [Install](https://github.com/rnortman/ccc#install) section for what that
+  needs.
+- **`claude` and/or `codex`** CLIs on `PATH`, logged in (`CCC_CLAUDE_BIN` /
+  `CCC_CODEX_BIN` override the lookup; ccc's
+  [Install](https://github.com/rnortman/ccc#install)). Every role in every
+  variant runs on either harness, except `coder` (Codex only) and
+  `coder-supervisor` (Claude only) in the `review-chain-split*` variants, and
+  `pr-liaison` (Claude only) in the `review-chain-stack-followup*` variants.
+  So:
+  - **With Claude alone** you can run every variant except
+    `review-chain-split`, `review-chain-split-auto`.
+  - **With Codex alone** you can run every variant except
+    `review-chain-split`, `review-chain-split-auto`,
+    `review-chain-stack-followup`, `review-chain-stack-followup-auto`.
+- **[`uv`](https://docs.astral.sh/uv/)**: every command below is `uv run …`.
+  uv fetches its own Python 3.12 (`.python-version`, `python-preference =
+  "only-managed"`), so no system Python is needed. Where uv's configuration
+  sets `python-downloads = "manual"` — distribution-packaged uv may, as
+  Fedora's does in `/etc/uv/uv.toml` — install that Python once:
 
-Every role has a `<role>.md` definition. When a later allowed harness renders
-a different body from the preferred/base render, agentgen also writes the
-body-only `<role>.claude.md` or `<role>.codex.md` overlay.
+  ```
+  uv python install 3.12
+  ```
+- **Bash with GNU findutils** for the `ccc-use` switcher (`shell/ccc-env.sh`
+  uses `mapfile`, `[[ -v ]]`, `complete` and `find -printf`): Linux, or macOS
+  with Homebrew `bash` and `findutils`. In another shell, set
+  `CCC_AGENTS_CONFIG` by hand to a file under `<ccc-dir>/configs/`.
+- **For `review-chain-stack-followup*` only:** the forgejo MCP server,
+  [`brenn-forgejo-mcp`](https://github.com/rnortman/brenn-forgejo-mcp),
+  configured in Claude Code under the server name `forgejo` (the liaison
+  calls its tools as `mcp__forgejo__forgejo_*`).
 
-## Install into ccc
+## Quick start
 
-Put reusable ccc preferences in the effective `<ccc-dir>/prefs/*.toml`. A
-preference file holds `[agents.<type>]` tables and optionally
-`default_harness`, nothing else: deploy refuses `agents_dir`, any site key
-(`[claude]`, `[codex]`, `[mqtt]`, `[process]`, `[launch]`), and any unknown
-top-level key. Site settings live in ccc's `<ccc-dir>/config.toml` and are
-always read, whatever pair is selected. Then deploy every shipped variant and
-compose the preference files:
+From nothing to a review-chain cycle on your own project. The TODO workflows
+have their own quick start in [TODO triage and burndown](#todo-triage-and-burndown).
 
-```
-uv run agentgen deploy
-```
+1. **Clone.**
 
-Every deploy regenerates `<ccc-dir>/configs/` from `prefs/ × variants`, so
-deleted inputs do not leave stale generated configs and no preferences leaves
-`configs/` empty. Each generated file is an agents config: `agents_dir` plus
-the preference file's text. `prefs/`, `config.toml` and `agents.toml` are
-untouched. A shell exporting a removed `CCC_AGENTS_CONFIG` names a nonexistent
-file, and ccc refuses to run with an error naming `CCC_AGENTS_CONFIG`; run
-`ccc-use off`, or restore preferences and redeploy before choosing a pair
-again. `ccc-use` with no arguments reports the current selection and currently
-existing pairs.
+   ```
+   git clone https://github.com/rnortman/ccc-agentgen && cd ccc-agentgen
+   ```
 
-Source the exact `shell/ccc-env.sh` path printed by deploy from `.bashrc`. It
-provides `ccc-use`, `ccc-use <variant> [prefs]`, and `ccc-use off`.
-`ccc-use <variant> [prefs]` exports `CCC_AGENTS_CONFIG`; `ccc-use off` unsets
-it, and ccc then reads the default `<ccc-dir>/agents.toml`. `ccc-use` never
-sets `CCC_CONFIG`; when `CCC_CONFIG` names a file under `<ccc-dir>/configs/`,
-which holds only agents configs, every `ccc-use` call warns and says to
-`unset CCC_CONFIG`.
-`[agents.<type>]` settings for a role absent from the selected variant are
-harmless, while requesting a harness the definition disallows remains a runtime
-ccc error.
+2. **Know `<ccc-dir>`.** It is ccc's configuration directory:
+   `$XDG_CONFIG_HOME/ccc` when `XDG_CONFIG_HOME` is set, else
+   `~/.config/ccc`. The rest of this README writes `<ccc-dir>` for it.
 
-## Layout
+3. **Write a preference file**, `<ccc-dir>/prefs/default.toml`. A complete
+   minimal one:
 
-- `templates/roles/<role>.md.j2` — literal YAML frontmatter (ccc keys intrinsic
-  to the role: `description`, `tools`, `codex_sandbox`) then a Jinja body.
-- `templates/partials/*.md.j2` — shared fragments and macros the bodies include.
-- `variants/<name>.toml` — `[defaults]` frontmatter for every role, `[vars]`
-  knobs the templates read, and one `[roles.<id>]` table per included role.
-  Frontmatter precedence, later wins: role template, `[defaults]`,
-  `[roles.<id>]`. `name` is always the role id, and a role id is lowercase
-  letters, digits and `-`, as ccc's agent types are.
+   ```toml
+   default_harness = "claude"   # or "codex"; the harness a role gets when nothing pins it
 
-The `harness` policy may appear at the template, `[defaults]`, or role tier.
-It accepts a scalar, comma-separated string, or list; entries are ordered, so
-the first is allowed and preferred and later entries are allowed fallbacks.
-Whole values replace earlier tiers. A blank value means the policy is absent
-at that tier. After precedence is resolved, keys for every harness excluded by
-the winning policy are removed automatically, including `model`, `effort`,
-`tools`, `codex_model`, `codex_effort`, and `codex_sandbox`. A more-specific
-tier must override `harness` itself if it wants to allow that harness.
-Template bodies receive `harness` for the current render and `harnesses` for
-the effective ordered policy. Overlays are written
-only when a later allowed harness's body differs from the preferred/base body.
+   [agents.explorer]            # optional per-role overrides, ccc's [agents.<type>] shape
+   effort = "low"
+   ```
 
-Fourteen variants ship: eleven review chains and three TODO workflows (see
-**TODO triage and burndown**). `review-chain` is the full chain with one `implementer`
-role. `review-chain-lite` drops the ELI5 rendering, the review pre-pass, the
-round-close scan, the explorer and the forester family, and runs cheaper
-models. `review-chain-split` replaces the implementer with `planner` (chooses
-the slice, writes a stand-alone plan), `coder-supervisor` (Claude-only; runs
-the coder to a commit) and `coder` (Codex-only; implements the plan).
-`review-chain-planner` keeps the planner but drops the supervisor: the
-`implementer` lands each plan itself, sees the design, checks its own work, and
-returns `replan` or `respawn` exactly as the supervisor does. It keeps the
-`implementer` agent type so operator settings for `coder` apply only to the
-split chain. The orchestrator renders the planned loop on `"planner" in roles`,
-naming `coder-supervisor` or `implementer` as the worker on `"coder" in roles`;
-without a planner it renders the self-scoping implementer loop.
-`review-chain-auto`, `review-chain-split-auto` and `review-chain-planner-auto`
-are those chains with the forester deciding instead of advising. In them the
-plain-language rendering is not produced at the design gate — the forester
-holds it — but the user can ask for one at any stop, and gets
-`design-eli5-<K>.md` covering the design and every delta.
+   An empty file is valid too. A preference file holds `default_harness` and
+   `[agents.<type>]` tables (`harness`, `model`, `effort`, `codex_model`,
+   `codex_effort`, and `"*"` as a wildcard type; ccc's
+   [Configuration](https://github.com/rnortman/ccc#configuration) section)
+   and nothing else. `deploy` refuses `agents_dir` (it writes that line
+   itself), any site key (`[claude]`, `[codex]`, `[mqtt]`, `[process]`,
+   `[launch]`, which belong in ccc's `<ccc-dir>/config.toml`, as the error
+   says), and any unknown top-level key. Several files make several
+   selectable preference sets; the file stem is the `[prefs]` argument to `ccc-use` below — with
+   one file it can be omitted, with more than one it must be named. If you
+   already have a `<ccc-dir>/agents.toml`, copy it to
+   `<ccc-dir>/prefs/default.toml` and delete its `agents_dir` line.
+
+4. **Deploy.** From the clone root:
+
+   ```
+   uv run agentgen deploy
+   ```
+
+   (or `agentgen deploy --root <clone>` from anywhere, after `uv tool install
+   .`). Every variant's definitions go to `<ccc-dir>/agents/<variant>/`, and
+   one agents config per variant and preference file to
+   `<ccc-dir>/configs/<variant>/<prefs>.toml`. It prints the `source …` line
+   for the next step. Re-running `deploy` after a `git pull`
+   is the upgrade path; variant directories under `<ccc-dir>/agents/` that no
+   variant produces any more are reported and left for you to remove.
+
+5. **Select a variant.** Add the printed `source <clone>/shell/ccc-env.sh` to
+   `.bashrc`, open a new shell, and run:
+
+   ```
+   ccc-use review-chain
+   ```
+
+   `ccc-use` alone lists the variant/preference pairs and the current
+   selection; `ccc-use off` returns to `<ccc-dir>/agents.toml`.
+
+6. **Tell your project where cycle artifacts go.** A cycle writes its
+   request, design, reviews and implementation log into one directory, the
+   **working dir**. The orchestrator picks it "per the project's
+   documentation standard if any", so give the project one: a paragraph in
+   its `CLAUDE.md` or `AGENTS.md` naming an **ADR directory** convention —
+   where each cycle's directory lives. Two layouts:
+
+   - **Same-repo**: inside the project, committed with it. Not available to
+     the stack chains (`review-chain-stack*`) or to a cycle with more than
+     one repository in scope.
+
+     > Workflow artifacts go under `docs/adr/YYYY/MM/DD-<slug>/` in this
+     > repository, one directory per cycle.
+
+   - **Sidecar**: a separate repository beside the project, which the
+     orchestrator commits to itself.
+
+     > All design docs and workflow artifacts go in the ADR sidecar repo
+     > `../<project>-adr`. Each cycle creates a new directory there,
+     > `YYYY/MM/DD-<slug>/`.
+
+7. **Raise the Bash ceiling** in the shell you launch drivers from:
+
+   ```
+   export BASH_MAX_TIMEOUT_MS=86400000
+   ```
+
+   Under Claude Code the Bash tool's background ceiling is two hours unless
+   `BASH_MAX_TIMEOUT_MS` raises it, and a ceiling hit kills the whole
+   subtree. Export it in the environment the top-level driver is started
+   from; every `ccc` and every harness child beneath it inherits it. Do not
+   set it through a `--settings` in the ccc config's `[claude] extra_args`:
+   that replaces the `Stop` hook ccc injects on interactive Claude launches.
+   A launch that returns without a reply — `ccc` exiting non-zero, or the
+   spawner's shell tool stopping it at its limit — is a **cut-off launch**,
+   and the spawner resumes it itself (`ccc resume <id> "Continue."`) before
+   anything reaches you: a failed one at most twice, a ceiling hit at most
+   four times.
+
+8. **Launch.** Know first what ccc's
+   [Quick start](https://github.com/rnortman/ccc#quick-start) step 3 says:
+   Claude subagents run with `--permission-mode bypassPermissions` unless
+   ccc's site config says otherwise, so the cycle's agents edit, run commands
+   and commit without prompting; and every Claude spawn marks its working
+   directory trusted in the account's `.claude.json`, so `--cwd` is a
+   statement that you trust that checkout's hooks and MCP servers. See
+   [Operator configuration](#operator-configuration).
+
+   ```
+   ccc launch orchestrator --cwd <your project>
+   ```
+
+   and type the request in the session that opens; or write `request.md` in
+   a fresh directory under your ADR directory first and name its path. The
+   cycle then stops for you at the design gate (approve, or send notes), at
+   the end of each implementation round, and at the ship gate, each a
+   question you answer in chat. In an `-auto` variant the forester answers
+   those stops instead and you come back to its report; see
+   [Choosing a variant](#choosing-a-variant).
+
+## Choosing a variant
+
+Fourteen variants ship: eleven review chains and three TODO workflows.
+
+| Variant | What it is | CLIs |
+| --- | --- | --- |
+| `review-chain` | The full chain, one `implementer` role | Claude or Codex |
+| `review-chain-auto` | `review-chain` with the forester deciding the stops | Claude or Codex |
+| `review-chain-lite` | A shorter chain on cheaper models | Claude or Codex |
+| `review-chain-split` | Implementer split into planner, Claude supervisor, Codex coder | Claude and Codex |
+| `review-chain-split-auto` | `review-chain-split` with the forester deciding | Claude and Codex |
+| `review-chain-planner` | Planner plus a self-checking implementer | Claude or Codex |
+| `review-chain-planner-auto` | `review-chain-planner` with the forester deciding | Claude or Codex |
+| `review-chain-stack` | Ships a stack of PR-sized commits | Claude or Codex |
+| `review-chain-stack-auto` | `review-chain-stack` with the forester deciding | Claude or Codex |
+| `review-chain-stack-followup` | Answers review on an open stack and republishes it | Claude |
+| `review-chain-stack-followup-auto` | `review-chain-stack-followup` with the forester deciding | Claude |
+| `todo-triage` | Rules on every unruled `TODO.md` entry | Claude or Codex |
+| `todo-burndown` | Works ruled entries down through `review-chain` | Claude or Codex |
+| `todo-burndown-auto` | Works ruled entries down through `review-chain-auto` | Claude or Codex |
+
+"Claude or Codex" means either CLI alone runs it; "Claude and Codex" means
+it needs both.
+
+`review-chain` is the full chain with one `implementer` role.
+`review-chain-lite` drops the ELI5 rendering, the review pre-pass, the
+comment rewriter, the round-close scan, the explorer and the forester
+family, and runs cheaper models. `review-chain-split` replaces the
+implementer with `planner` (chooses the slice, writes a stand-alone plan),
+`coder-supervisor` (Claude-only; runs the coder to a commit) and `coder`
+(Codex-only; implements the plan). `review-chain-planner` keeps the planner
+but drops the supervisor: the `implementer` lands each plan itself, sees the
+design, checks its own work, and returns `replan` or `respawn` exactly as the
+supervisor does. It keeps the `implementer` agent type so operator settings
+for `coder` apply only to the split chain. The orchestrator renders the
+planned loop on `"planner" in roles`, naming `coder-supervisor` or
+`implementer` as the worker on `"coder" in roles`; without a planner it
+renders the self-scoping implementer loop. `review-chain-auto`,
+`review-chain-split-auto` and `review-chain-planner-auto` are those chains
+with the forester deciding instead of advising. In them the plain-language
+rendering is not produced at the design gate — the forester holds it — but
+the user can ask for one at any stop, and gets `design-eli5-<K>.md` covering
+the design and every delta.
 
 `review-chain-stack` and `review-chain-stack-auto` ship a stack of PR-sized
 commits instead of one squashed commit. They are `review-chain` and
-`review-chain-auto` with a `pr-assembler` in place of the `changelog-author`.
-The design carries a **Stack** section — the ordered PRs, each with a
-branch name, a title, the design items it delivers and an estimated size
+`review-chain-auto` with a `pr-assembler` in place of the `changelog-author`,
+and with smaller increments (at most four per PR, 400–800 lines each, stopping
+at 1200). The design carries a **Stack** section — the ordered PRs, each with
+a branch name, a title, the design items it delivers and an estimated size
 (`[vars]` `pr_target_lines`, at most `pr_max_lines`) — reviewed and frozen
 with the design and changed only by deltas, which never move, remove or
 rename a PR already assembled. A round is one PR: it closes when the
@@ -154,31 +289,62 @@ and never touches a PR's title or body. The base is taken at the branch's tip:
 to remove a PR in place, name a branch created at the stack's current base,
 the bottom branch's parent, since a branch such as `main` has usually moved
 past it. That costs one round per surviving PR, and a surviving PR grown
-past the size limit is re-split into new PRs. A follow-up that names no base never moves or
-removes a PR. If you push by hand, run publish without a push afterwards:
-it writes the record the next follow-up reads and closes the removed PRs.
+past the size limit is re-split into new PRs. A follow-up that names no base
+never moves or removes a PR. If you push by hand, run publish without a push
+afterwards: it writes the record the next follow-up reads and closes the
+removed PRs.
 
-The design answers
-every thread in a **Responses** section and lands its code changes as
-fixups into the PRs they belong to, or as new PRs on top. The liaison is
-pinned to Claude (`harness: claude`): it calls the forgejo MCP server's
-tools by their Claude Code names (`mcp__forgejo__forgejo_list_prs`,
+The design answers every thread in a **Responses** section and lands its
+code changes as fixups into the PRs they belong to, or as new PRs on top.
+The liaison is pinned to Claude (`harness: claude`): it calls the forgejo MCP
+server's tools by their Claude Code names (`mcp__forgejo__forgejo_list_prs`,
 `_get_pr`, `_get_review_comments`, `_get_pr_comments`, `_post_review`,
-`_open_pr`, `_update_pr`, `_close_pr`), which a role reaches only when its `tools:` list names them,
-and the Codex configuration carries no forgejo server. In the plain
-variant the responses are posted at every design gate the review chain
-cleared; your word to proceed freezes the design as it stands, and
-comments posted after the last fetch wait for the next cycle. A gate
-reached through a review escalation posts nothing, and your word to
-proceed there posts the responses and then freezes. The plain variant never pushes on its
-own: after the cycle, `force-push the stack` force-pushes every stack
-branch with a lease, in one atomic push, re-targets and closes PRs as the
-stack says, and opens the new PRs, and "open the PRs" opens them
-without pushing, giving the lease command to run by hand for the branches
-not yet pushed. In `-auto` the responses are posted once the forester
-approves the design, and the forester's ship approval force-pushes the
-stack with a lease, re-targets and closes PRs as the stack says, and opens
-the new PRs.
+`_open_pr`, `_update_pr`, `_close_pr`), which a role reaches only when its
+`tools:` list names them, and the Codex configuration carries no forgejo
+server. In the plain variant the responses are posted at every design gate
+the review chain cleared; your word to proceed freezes the design as it
+stands, and comments posted after the last fetch wait for the next cycle. A
+gate reached through a review escalation posts nothing, and your word to
+proceed there posts the responses and then freezes. The plain variant never
+pushes on its own: after the cycle, `force-push the stack` force-pushes every
+stack branch with a lease, in one atomic push, re-targets and closes PRs as
+the stack says, and opens the new PRs, and "open the PRs" opens them without
+pushing, giving the lease command to run by hand for the branches not yet
+pushed. In `-auto` the responses are posted once the forester approves the
+design, and the forester's ship approval force-pushes the stack with a lease,
+re-targets and closes PRs as the stack says, and opens the new PRs.
+
+The TODO workflows are described in
+[TODO triage and burndown](#todo-triage-and-burndown).
+
+## Deploy and `ccc-use` in detail
+
+[Quick start](#quick-start) steps 3–5 give what a preference file may hold,
+where `agentgen deploy` writes, and how `ccc-use` selects a pair; this
+section covers the rest. Site settings live in ccc's `<ccc-dir>/config.toml`
+and are always read, whatever pair is selected.
+
+Every deploy regenerates `<ccc-dir>/configs/` from `prefs/ × variants`, so
+deleted inputs do not leave stale generated configs and no preferences leaves
+`configs/` empty (it keeps its `.agentgen-deploy` marker). Each generated file
+is an agents config: a one-line provenance comment, `agents_dir`, then the
+preference file's text. `prefs/`, `config.toml` and `agents.toml` are
+untouched. With `prefs/` empty, deploy warns, composes no configs and prints
+the command that starts one from an existing `agents.toml`. A shell exporting
+a removed `CCC_AGENTS_CONFIG` names a nonexistent file, and ccc refuses to run
+with an error naming `CCC_AGENTS_CONFIG`; run `ccc-use off`, or restore
+preferences and redeploy before choosing a pair again. `ccc-use` with no
+arguments reports the current selection and currently existing pairs.
+
+Source the exact `shell/ccc-env.sh` path printed by deploy from `.bashrc`. It
+provides `ccc-use`, `ccc-use <variant> [prefs]`, and `ccc-use off`.
+`ccc-use <variant> [prefs]` exports `CCC_AGENTS_CONFIG`; `ccc-use off` unsets
+it, and ccc then reads the default `<ccc-dir>/agents.toml`. `ccc-use` never
+sets `CCC_CONFIG`; when `CCC_CONFIG` names a file under `<ccc-dir>/configs/`,
+which holds only agents configs, every `ccc-use` call warns and says to
+`unset CCC_CONFIG`. `[agents.<type>]` settings for a role absent from the
+selected variant are harmless, while requesting a harness the definition
+disallows remains a runtime ccc error.
 
 ## Repositories in scope
 
@@ -230,8 +396,8 @@ refuse a scope phrase, and a change needed elsewhere is a `TODO.md` entry
 you file or a stop.
 
 More than one repository in scope requires the ADR directory in a separate
-repository (the sidecar layout); in the same-repo layout a scope phrase is
-refused.
+repository (the sidecar layout, [Quick start](#quick-start) step 6); in the
+same-repo layout a scope phrase is refused.
 
 ### Operator configuration
 
@@ -287,40 +453,44 @@ Every role ends its reply with one line the orchestrator routes on:
 hands a document up the supervision chain. `tests/test_golden.py` holds the
 closed `result` vocabulary per role.
 
-Under Claude Code the Bash tool's background ceiling is two hours unless
-`BASH_MAX_TIMEOUT_MS` raises it, and a ceiling hit kills the whole subtree.
-For drivers, raise it: export `BASH_MAX_TIMEOUT_MS=86400000` in the
-environment the top-level driver is started from; every `ccc` and every
-harness child beneath it inherits it. Do not set it through a `--settings`
-in the ccc config's `[claude] extra_args`: that replaces the `Stop` hook ccc
-injects on interactive Claude launches. A launch that returns without a
-reply — `ccc` exiting non-zero, or the spawner's shell tool stopping it at
-its limit — is a **cut-off launch**, and the spawner resumes it itself
-(`ccc resume <id> "Continue."`) before anything reaches the user: a failed
-one at most twice, a ceiling hit at most four times.
-
 ## TODO triage and burndown
 
 Two workflows over a repo's `TODO.md`, and the `todo-triage` tool they run on.
-Rulings and every document behind them live in a **store** outside the code
-repo, so nothing in the repo points at it and no agent adding a TODO can see or
-imitate the annotations. Suggested location: a sibling directory, e.g.
-`../<repo>-notes/todo-triage/`. Every command takes `--repo`
-(default: cwd) and `--store` (all but `lint`), before or after the command
-name; `todo-triage init --tag <tag>` creates `store.yaml`.
 
-Install the tool where agents can reach it (ccc adds nothing to `PATH`), from
-the root of your clone of this repository:
+**Quick start.**
 
-```
-uv tool install .
-```
+1. Install the tools from the root of your clone of this repository:
 
-That puts `todo-triage` in `~/.local/bin`. `agentgen deploy` does not install
-it.
+   ```
+   uv tool install .
+   ```
 
-- **`todo-triage`** — `ccc-use todo-triage`, then `ccc launch
-  triage-orchestrator --cwd <repo>` and name the store. For each entry nobody
+   That puts `todo-triage` and `agentgen` in `~/.local/bin`, where agents can
+   reach them (ccc adds nothing to `PATH`). `agentgen deploy` does not
+   install them.
+2. The repository needs a `TODO.md` in the grammar the tool parses: a `# `
+   title line, then one entry per `## <slug>` heading (the slug may be
+   backticked), each entry running to the next `## `. Code points at an entry
+   with a `TODO(<slug>)` comment. `todo-triage lint --repo <repo>` checks the
+   file. `--repo` must be a git work tree.
+3. Pick a **store** directory outside the code repo, e.g.
+   `../<repo>-notes/todo-triage/`, and a **tag**. You need not create the
+   store: when its `store.yaml` is missing, the triage orchestrator asks for
+   the tag and runs `init` itself. By hand it is
+   `todo-triage init --repo <repo> --store <store> --tag <tag>`. The tag names the burndown ADR directories,
+   `<adr-root>/YYYY/MM/DD-<tag>--todo-<slug>`, where the **ADR root** is the
+   root of your ADR directory ([Quick start](#quick-start) step 6) — for a
+   sidecar, the sidecar repository's root.
+4. `ccc-use todo-triage`, then `ccc launch triage-orchestrator --cwd <repo>`
+   and name the store.
+
+Rulings and every document behind them live in the store, so nothing in the
+repo points at it and no agent adding a TODO can see or imitate the
+annotations. Every command takes `--repo` (default: cwd) and `--store` (all
+but `lint`), before or after the command name, and the global `--json`
+option for machine-readable output.
+
+- **`todo-triage`** — launched as in step 4 above. For each entry nobody
   has ruled on, in file order: a `sketcher` ground-truths it against the code
   and argues for and against, a `contrarian` second-guesses the sketch, and
   the `triage-forester` rules as the product owner would — `do` with a
@@ -406,17 +576,68 @@ can tweak its workflow; nothing else can.
 in-band status markers (`NOT NOW`, `Triaged`, `[blocked-on …]` and the like)
 so they can be removed by hand before an entry is ruled.
 
-## Checks
+## Development
+
+For working on the templates, variants and the tool itself.
+
+### Build a variant
+
+```
+uv run agentgen build review-chain
+uv run agentgen build review-chain --out /path/to/dir
+```
+
+- A bare variant name resolves to `<root>/variants/<name>.toml`; a path is used
+  as given. `--root` defaults to the current directory and must contain
+  `templates/`, plus `variants/` when the variant is named rather than pathed.
+- `--out` defaults to `<root>/build/<variant>/`. Every role is rendered and
+  every check rule run before anything is written; a failure writes nothing.
+- The output directory may be absent or empty. A build stamps it with an
+  `.agentgen-build` marker; on a later build that marker is what allows the
+  `*.md` in it to be cleared first, including stale harness overlays. A
+  non-empty directory without the marker, or a marked directory holding
+  anything but `*.md`, is an error.
+
+Every role has a `<role>.md` definition. When a later allowed harness renders
+a different body from the preferred/base render, agentgen also writes the
+body-only `<role>.claude.md` or `<role>.codex.md` overlay.
+
+### Layout
+
+- `templates/roles/<role>.md.j2` — literal YAML frontmatter (ccc keys intrinsic
+  to the role: `description`, `tools`, `codex_sandbox`) then a Jinja body.
+- `templates/partials/*.md.j2` — shared fragments and macros the bodies include.
+- `variants/<name>.toml` — `[defaults]` frontmatter for every role, `[vars]`
+  knobs the templates read, and one `[roles.<id>]` table per included role.
+  Frontmatter precedence, later wins: role template, `[defaults]`,
+  `[roles.<id>]`. `name` is always the role id, and a role id is lowercase
+  letters, digits and `-`, as ccc's agent types are.
+
+The `harness` policy may appear at the template, `[defaults]`, or role tier.
+It accepts a scalar, comma-separated string, or list; entries are ordered, so
+the first is allowed and preferred and later entries are allowed fallbacks.
+Whole values replace earlier tiers. A blank value means the policy is absent
+at that tier. After precedence is resolved, keys for every harness excluded by
+the winning policy are removed automatically, including `model`, `effort`,
+`tools`, `codex_model`, `codex_effort`, and `codex_sandbox`. A more-specific
+tier must override `harness` itself if it wants to allow that harness.
+Template bodies receive `harness` for the current render and `harnesses` for
+the effective ordered policy. Overlays are written
+only when a later allowed harness's body differs from the preferred/base body.
+
+### Checks
 
 Rendered definitions are validated against ccc's contract before writing: the
 accepted frontmatter key set, `name` equal to the file stem, a non-empty
 description, a model for every allowed harness, the per-harness effort
-vocabularies, the sandbox values, and body size. Body size and spawn-reference
-checks apply to every emitted body, including overlays; an overlay may not
-begin with a frontmatter fence. One rule is ours: every `ccc run <role>` spawn
-reference in a rendered body must name a role the variant includes.
+vocabularies, the sandbox values, and body size (ccc's
+[Agent definitions](https://github.com/rnortman/ccc#agent-definitions)).
+Body size and spawn-reference checks apply to every emitted body, including
+overlays; an overlay may not begin with a frontmatter fence. One rule is
+ours: every `ccc run <role>` or `ccc launch <role>` spawn reference in a
+rendered body must name a role the variant includes.
 
-## Tests
+### Tests
 
 ```
 uv run pytest
@@ -424,9 +645,29 @@ uv run pytest
 
 `tests/test_golden.py` builds every shipped variant and asserts against the
 emitted files. When `ccc` is on `PATH` it also checks routing refusal and the
-selected `prompt=` file, as well as the resolved model, effort, and sandbox,
-and that `ccc which` reports `agents config:` on stderr. Without `ccc` that
-test is skipped. Set
-`AGENTGEN_REQUIRE_CCC=1` wherever `ccc` is expected, and the skip becomes a
-failure instead. Bash switcher tests use Bash when available; set
-`AGENTGEN_REQUIRE_BASH=1` to make missing Bash a failure.
+selected `prompt=` file, as well as, for the Codex route, the resolved model,
+effort, and sandbox, and that `ccc which` reports `agents config:` on stderr.
+Without `ccc` that test is skipped. Set `AGENTGEN_REQUIRE_CCC=1` wherever
+`ccc` is expected, and the skip becomes a failure instead. Bash switcher
+tests use Bash when available; set `AGENTGEN_REQUIRE_BASH=1` to make missing
+Bash a failure.
+
+### Hooks and checks
+
+Run `make setup-hooks` once per clone: it points git at `.githooks/`, whose
+pre-commit hook runs `brenn-scrub staged` and then `make check` (`uv run
+pytest` and `brenn-scrub init --check`). Both need
+[`brenn-scrub`](https://crates.io/crates/brenn-scrub) on `PATH` (`cargo
+install --locked brenn-scrub`) and the `gitleaks` release it pins;
+`setup-hooks` says what is missing. CI runs the tests without `ccc`, so the
+ccc-backed assertions are skipped there and listed in the run's summary.
+Locally they run wherever `ccc` is on `PATH`, the pre-commit hook included,
+and skip where it is not; `AGENTGEN_REQUIRE_CCC=1` ([Tests](#tests)) turns
+that skip into a failure.
+ccc's own [Development](https://github.com/rnortman/ccc#development)
+section has the same layout.
+
+### Changelog
+
+Entries go under `## Unreleased` in `CHANGELOG.md`, written for an operator
+who upgrades: what changed for them and what they must do, not a commit log.

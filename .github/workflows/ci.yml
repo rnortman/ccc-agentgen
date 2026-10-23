@@ -24,9 +24,11 @@ jobs:
       - run: uv sync --locked
 
       # No ccc is installed here and AGENTGEN_REQUIRE_CCC is unset, so the
-      # ccc-backed assertions in tests/test_golden.py skip. They run once this
-      # job builds ccc from its public repository. `-rs` lists every skip and
-      # its reason in the run's summary, so the gap is visible on each run.
+      # ccc-backed assertions in tests/test_golden.py skip. They run wherever
+      # `ccc` is on PATH, the pre-commit hook's `make check` included; only
+      # AGENTGEN_REQUIRE_CCC=1 turns a missing `ccc` into a failure, and
+      # nothing sets it. `-rs` lists every skip and its reason in the run's
+      # summary, so the gap is visible on each run.
       # `make check` also runs `brenn-scrub init --check`, which needs the
       # brenn-scrub binary; the scrub job below covers the tree instead.
       - run: make test

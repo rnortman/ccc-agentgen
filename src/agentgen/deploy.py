@@ -62,7 +62,7 @@ def ccc_config_dir() -> Path:
 
 # A preference file is composed into an agents config, which ccc refuses if it
 # carries a site key. CCC_SITE_KEYS mirrors SITE_KEYS in
-# ccc-harness/src/config.rs; PREFS_KEYS is AGENTS_KEYS there minus agents_dir,
+# ccc/src/config.rs; PREFS_KEYS is AGENTS_KEYS there minus agents_dir,
 # which deploy writes itself and refuses in a preference file.
 PREFS_KEYS = frozenset({"default_harness", "agents"})
 CCC_SITE_KEYS = frozenset({"claude", "codex", "mqtt", "process", "launch"})

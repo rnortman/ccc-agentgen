@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-22
+
 - **A cycle can change several repositories, and only the ones you bring
   into scope.** Name extra repositories with `in scope:`, `also in scope:`
   or `scope:` and a path, at launch or at any stop; `drop from scope:
@@ -69,6 +71,20 @@
   cycle ships — one squashed commit, or one commit per PR in a stack
   workflow — and burndown selections no longer ask for commit counts or
   layouts.
+- **`review-chain-split-auto` now pins its coder to Codex and its
+  supervisor to Claude**, as `review-chain-split` always has and as the
+  variant's description said. Before, both roles could run on either
+  harness. If you run `review-chain-split-auto` with only one CLI, those two
+  roles now refuse the other harness: you need both `claude` and `codex`,
+  as for `review-chain-split`. Settings in your preference files that route
+  `coder` to Claude or `coder-supervisor` to Codex are now ccc errors.
+- **The README now starts with what you need and a quick start.** It opens
+  with the requirements (ccc, the `claude`/`codex` CLIs, uv, Bash, and which
+  variants need which CLI), then numbered steps from clone to a first
+  `ccc launch orchestrator`: the preference file, `agentgen deploy`,
+  `ccc-use`, where your project keeps cycle artifacts (the ADR directory),
+  and the `BASH_MAX_TIMEOUT_MS` setting. A table of all fourteen variants
+  follows; the maintainer material moved under **Development**.
 - **Entries you ruled yourself can be sent back for re-triage.**
   `todo-triage retriage <slug> --note …` now works on a ruling made with
   `override` (it used to refuse, and the only way back was another
@@ -193,6 +209,12 @@
 - `todo-triage show` prints a `ruling document:` line naming the
   document of the ruling that stands, or `(ruled by the user)` when you
   ruled it with `todo-triage override`.
+- **`ccc-use` states the problem when `CCC_CONFIG` points into the
+  generated configs.** The warning now says the file is under the configs
+  directory, which holds agents configs rather than site config, and still
+  tells you to `unset CCC_CONFIG`.
+- **`make setup-hooks`** points a fresh clone at the repository's
+  pre-commit hook and says if `brenn-scrub` or `gitleaks` is missing.
 
 ## 0.1.0 — 2026-10-13
 

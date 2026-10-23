@@ -50,11 +50,9 @@ _ccc_config_files() {
 
 # Warns when CCC_CONFIG (site config) names a file under the configs dir ($1),
 # which holds only agents configs. Never changes CCC_CONFIG.
-# TODO(quality-agentgen-stale-config-warning-left-undocumented-with-private-history-text):
-# the message blames an older ccc-use; state the misconfiguration instead.
 _ccc_warn_stale_site_config() {
     if [[ -n ${CCC_CONFIG:-} && $CCC_CONFIG == "$1/"* ]]; then
-        printf 'ccc-use: CCC_CONFIG=%s was set by an older ccc-use and now names an agents config; run: unset CCC_CONFIG\n' "$CCC_CONFIG" >&2
+        printf 'ccc-use: CCC_CONFIG=%s names a file under %s, which holds agents configs, not site config; run: unset CCC_CONFIG\n' "$CCC_CONFIG" "$1" >&2
     fi
 }
 

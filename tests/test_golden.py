@@ -194,11 +194,6 @@ def lite(builds) -> Build:
 
 
 @pytest.fixture
-def split(builds) -> Build:
-    return builds[SPLIT_STEM]
-
-
-@pytest.fixture
 def dropped_roles(builds) -> list[str]:
     """Roles the shipped lite variant omits, derived from the two TOMLs."""
     dropped = sorted(
@@ -1243,24 +1238,26 @@ def test_burndown_variants_embed_the_review_chain(builds):
             assert build.bodies(role_id) == chain.bodies(role_id), f"{stem}/{role_id}"
 
 
-def test_split_harness_pinning_holds(split: Build):
-    """Codex-only coder, Claude-only supervisor able to spawn: each a decision a
-    later variant edit would otherwise undo silently.
+def test_split_harness_pinning_holds(builds):
+    """Codex-only coder, Claude-only supervisor able to spawn, in every split
+    variant: each a decision a later variant edit would otherwise undo silently.
     """
-    coder = split.by_id["coder"].frontmatter
-    assert coder["harness"] == ["codex"]
-    assert coder["codex_model"] == "gpt-6-luna"
-    assert coder["codex_effort"] == "medium"
-    assert not (set(HARNESS_KEYS["claude"]) & coder.keys())
-    supervisor = split.by_id["coder-supervisor"].frontmatter
-    assert supervisor["harness"] == ["claude"]
-    assert supervisor["model"] == "claude-opus-5-5[1M]"
-    assert supervisor["effort"] == "medium"
-    assert "Bash" in supervisor["tools"]
-    assert not (set(HARNESS_KEYS["codex"]) & supervisor.keys())
-    for role in split.roles:
-        if role.id not in {"coder", "coder-supervisor"}:
-            assert "harness" not in role.frontmatter
+    for stem in SPLIT_STEMS:
+        split = builds[stem]
+        coder = split.by_id["coder"].frontmatter
+        assert coder["harness"] == ["codex"], stem
+        assert coder["codex_model"] == "gpt-6-luna", stem
+        assert coder["codex_effort"] == "medium", stem
+        assert not (set(HARNESS_KEYS["claude"]) & coder.keys()), stem
+        supervisor = split.by_id["coder-supervisor"].frontmatter
+        assert supervisor["harness"] == ["claude"], stem
+        assert supervisor["model"] == "claude-opus-5-5[1M]", stem
+        assert supervisor["effort"] == "medium", stem
+        assert "Bash" in supervisor["tools"], stem
+        assert not (set(HARNESS_KEYS["codex"]) & supervisor.keys()), stem
+        for role in split.roles:
+            if role.id not in {"coder", "coder-supervisor"}:
+                assert "harness" not in role.frontmatter, f"{stem}/{role.id}"
 
 
 def test_planner_variant_implementer_runs_on_both_harnesses(builds):
@@ -2621,6 +2618,56 @@ def test_worker_pin_mode_matches_the_orchestrator(builds):
             for name, body in build.bodies("planner"):
                 assert "## Mode: pin" not in body, f"{stem}/{name}"
                 assert "`pinned`" not in body, f"{stem}/{name}"
+
+
+README_VARIANT_ROW_RE = re.compile(r"^\| `(?P<stem>[a-z0-9-]+)` \| [^|]+ \| (?P<clis>[^|]+?) \|$", re.MULTILINE)
+README_ALONE_RE = r"\*\*With {cli} alone\*\* you can run every variant except (?P<names>[^.]+)\."
+README_PINNED_ROLES_RE = re.compile(r"Every role in every variant runs on either harness, except (?P<body>[^.]+)\.")
+README_PINNED_GROUP_RE = re.compile(
+    r"(?P<roles>(?:`[a-z0-9-]+` \((?:Claude|Codex) only\)(?: and |, )?)+) in the `(?P<glob>[a-z0-9-]+)\*` variants"
+)
+README_PINNED_ROLE_RE = re.compile(r"`(?P<role>[a-z0-9-]+)` \((?P<cli>Claude|Codex) only\)")
+
+
+def _pinned_harnesses(build: Build) -> set[str]:
+    """The harnesses some role of `build` allows exclusively."""
+    return {role.harnesses[0] for role in build.roles if len(role.harnesses) == 1}
+
+
+def test_readme_names_every_variant_and_pin(builds):
+    """The README's variant table and its one-CLI claims match the built pins."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    rows = {m["stem"]: m["clis"] for m in README_VARIANT_ROW_RE.finditer(readme)}
+    assert sorted(rows) == VARIANT_STEMS
+    labels = {frozenset(): "Claude or Codex", frozenset({"claude"}): "Claude",
+              frozenset({"codex"}): "Codex", frozenset({"claude", "codex"}): "Claude and Codex"}
+    for stem in VARIANT_STEMS:
+        assert rows[stem] == labels[frozenset(_pinned_harnesses(builds[stem]))], stem
+    flat = " ".join(readme.split())
+    for cli, harness in (("Claude", "claude"), ("Codex", "codex")):
+        match = re.search(README_ALONE_RE.format(cli=cli), flat)
+        assert match, cli
+        claimed = set(re.findall(r"`([a-z0-9-]+)`", match["names"]))
+        needs_other = {stem for stem in VARIANT_STEMS if _pinned_harnesses(builds[stem]) - {harness}}
+        assert claimed == needs_other, cli
+
+
+def test_readme_names_every_pinned_role(builds):
+    """The README's pinned-role sentence names each single-harness role, its harness and its variants."""
+    flat = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+    sentence = README_PINNED_ROLES_RE.search(flat)
+    assert sentence
+    claimed: dict[tuple[str, str], set[str]] = {}
+    for group in README_PINNED_GROUP_RE.finditer(sentence["body"]):
+        stems = {stem for stem in VARIANT_STEMS if stem.startswith(group["glob"])}
+        for role in README_PINNED_ROLE_RE.finditer(group["roles"]):
+            claimed.setdefault((role["role"], role["cli"].lower()), set()).update(stems)
+    pinned: dict[tuple[str, str], set[str]] = {}
+    for stem in VARIANT_STEMS:
+        for role in builds[stem].roles:
+            if len(role.harnesses) == 1:
+                pinned.setdefault((role.id, role.harnesses[0]), set()).add(stem)
+    assert claimed == pinned
 
 
 def test_scope_phrase_is_the_only_widening(builds):
