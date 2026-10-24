@@ -723,10 +723,12 @@ is the same list.{% endif %}
    plan path in range{% endif %}. It audits the workflow and reports to the *user*; it
    gets no responder, no judge, and its verdict is never second-guessed. The
    range is a parameter, not a hint.
-   - `continue` → carry the report path forward{% if fg_scan %}; then **Forester
-     gate**, mode scan, id `k<K>` (the scan's `K`): + the report path{% if decide %}.
-     `noted` → continue. `notes` → **Triage** with the userproxy notes as
-     triggering document; no {{ "assembly" if stack else "squash" }} and no next round until `resume`{% endif %}{% endif %}.
+   - `continue` → carry the report path forward{% if fg_scan %}. On an intermediate
+     round, then **Forester gate**, mode scan, id `k<K>` (the scan's `K`): + the
+     report path{% if decide %}. `noted` → continue. `notes` → **Triage** with the
+     userproxy notes as triggering document; no {{ "assembly" if stack else "squash" }} and no next round
+     until `resume`{% endif %}. On a final round the step ends there: the ship gate
+     follows and reads the report as a carried path{% endif %}.
    - `ESCALATE` → **Triage** with the report as triggering document; no
      {{ "assembly" if stack else "squash" }} and no next round until `resume`.
 {% endif %}
@@ -1435,8 +1437,10 @@ the user gate proceeds as written.
 
 ### Report
 
-`ccc run forester`, mode report: + `forester-log.md`, + every scan report{% if decide %}
-and userproxy notes{% endif %} path, + target `forester-report-<K>.md`. − log path.
+`ccc run forester`, mode report: + `forester-log.md`, + every carried path, + every
+user notes path{% if not stack %}, + the recorded `next=`{% endif %}, + target `forester-report-<K>.md`.
+− log path. {% if stack %}The stack input stays{% else %}The scope stays{% endif %}: the **Forester gate**'s − applies to gates,
+not to the report, which states what shipped.
 {% endif %}
 {% if commentator %}
 
@@ -1497,8 +1501,8 @@ re-walks the effective design, as it does for any delta. Its next `done` or
 - HEAD ≠ the **reopen** HEAD → **Round review**, then the round-close scan
   and **Assembly** as usual.
 - HEAD = the **reopen** HEAD → nothing is reviewed again; round state →
-  *finished*: the scanner had not replied → the round-close scan (and its
-  gate), then **Assembly**; otherwise **Assembly** directly.
+  *finished*: the scanner had not replied → the round-close scan (and, on an
+  intermediate round, its gate), then **Assembly**; otherwise **Assembly** directly.
 {% else %}:
   finish the review, close the round as intermediate.
 {% if scanner %}

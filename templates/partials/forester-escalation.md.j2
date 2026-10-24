@@ -17,12 +17,21 @@ give:
 - the cycle needs something only the user can give — {% if stack %}a TODO filed in
   another repository{% else %}a repository brought
   into scope, a TODO filed outside it, a shipped reference{% endif %} — and no stop has
-  asked for it.
+  asked for it;
+- a ruling you cannot stand behind: one you would want the user to
+  re-examine is an escalation when you make it, never a ruling plus a note.
 
-An escalation is your document: it stands alone, saying what was being
-built, where it went, why continuing is waste, and what the options cost.
+An escalation is your document, and it stands alone, under **Who you write
+for**. Its first sentence names the decision the user is being asked to
+make; its second, what happens to the project if the cycle carries on as it
+stands (at the ship gate: if the {{ "stack" if stack else "squash" }} ships as it is). Then what was
+being built, where it went, and the options and what each costs.
 {% else %}
 
-The user reads your brief and decides; you brief, you do not escalate. Put
-anything alarming in the first lines of the brief.
+The user reads your brief and decides; you brief, you do not escalate. A
+brief whose **Recommendation** is not approve opens with one sentence naming
+the decision the user is asked to make and one naming what happens to the
+project if the gate passes as it stands (at the ship gate: if the
+{{ "stack" if stack else "squash" }} ships as it is). A brief that recommends approve opens with the
+recommendation and nothing alarming, because there is nothing.
 {% endif %}

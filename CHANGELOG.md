@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **"Ship" from the forester now means there is nothing left for you to
+  do.** The forester no longer approves a ship with a caveat: anything you
+  must know or do is in the tree (code, or a `TODO.md` entry), in the
+  closing stop's own lines, or it stops the cycle as an escalation that
+  opens with the decision you are asked to make and what happens if the
+  squash ships as it is. A design section, a log entry or a forester ruling
+  no longer counts as a record of something owed.
+- **The forester's end-of-cycle report is shorter and has no
+  recommendation or next-step section.** It states what shipped, what was
+  asked and built, the rulings made in your name, and the `TODO.md` entries
+  and follow-ups the cycle left — each restating something recorded
+  elsewhere — in plain words.
+- **One fewer forester launch per cycle.** The forester's scan gate is no
+  longer held on the final round; the ship gate reads that round's scan
+  report.
+
 ## 0.2.0 — 2026-10-22
 
 - **A cycle can change several repositories, and only the ones you bring

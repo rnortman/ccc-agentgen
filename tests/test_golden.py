@@ -2381,10 +2381,18 @@ def test_reviewers_get_one_range_per_repository(builds):
     assert seen == set(DIFF_REVIEWERS), seen
 
 
+OLD_REPORT_INSTRUCTIONS = (
+    "one recommendation: accept, or start a new cycle",
+    "the two or three they would most want to revisit",
+    "what was fishy",
+    "the decisions made on their behalf",
+)
+
+
 def test_forester_never_passes_a_gate_by_writing_it_down(builds):
-    """A need with no record but the forester's document is not handled: the
-    ship gate reads the log, cannot approve past such a need, and the report
-    names any it let through.
+    """Ship means ship: a need is handled only by a record outside the working
+    dir, the ship gate reads the log and cannot approve past a need without
+    one, and the report is facts with no recommendation or caveat.
     """
     seen = False
     for build in builds.values():
@@ -2396,13 +2404,38 @@ def test_forester_never_passes_a_gate_by_writing_it_down(builds):
             seen = True
             where = f"{build.stem}/{name}"
             flat = " ".join(body.split())
-            assert "## Your document is the end of the line" in body, where
+            assert "## Ship means ship" in body, where
+            assert "Your document is the end of the line" not in flat, where
             assert "has no record but your document is not handled; it is lost" in flat, where
+            assert "all of them may be shredded the moment the cycle ends" in flat, where
+            assert "A need has three exits and no fourth" in flat, where
+            caveat = "An `approve` with a caveat" if decide else "A recommendation of approve with a caveat"
+            assert f"{caveat} is the one thing you may not write." in flat, where
+            assert ('"decide and flag for revisit" is not an exit' in flat) == decide, where
             ship = " ".join(_raw_section(body, "## Mode: ship").split())
             assert "the implementation log" in ship, where
             assert "is there anything the user must know or do before this ships?" in ship, where
-            assert "One without: the gate is not passed." in ship, where
-            assert ("a `follow-up` **Scope** entry" in ship) == (not stack), where
+            records = (
+                "- the need itself was met in full — what was asked for, not a stand-in for it — and the log says where;",
+                "- it has a `TODO(slug)` comment and tracker entry in an in-scope repository;",
+                "- a gate ruled it not needed, and the log carries the ruling",
+                "- the user ruled on it in person at a stop: a `notes-…-user-…` file holds the user's own words",
+            )
+            for record in records:
+                assert record in ship, f"{where}: {record}"
+            assert ("- it is a `follow-up` **Scope** entry the closing stop will name;" in ship) == (not stack), where
+            assert "Not records: a design section" in ship, where
+            assert "a ruling of yours" in ship, where
+            assert "A need is handled when at least one of these holds:" in ship, where
+            assert "exactly one of these holds" not in ship, where
+            assert "A need whose only record is one of these: the gate is not passed." in ship, where
+            assert "an escalation already ruled" not in ship, where
+            user_only = "a TODO to file in another repository" if stack else (
+                "a repository to bring in, a TODO to file elsewhere, a shipped reference"
+            )
+            assert f"What only the user can give is {user_only}." in ship, where
+            assert ship.count("a TODO to file") == 1, where
+            assert "a **Request assessment** item the gate accepted" not in ship, where
             if decide:
                 assert "Approving and mentioning it is the one thing you may not do." in ship, where
                 trigger = "a TODO filed in another repository" if stack else (
@@ -2410,10 +2443,21 @@ def test_forester_never_passes_a_gate_by_writing_it_down(builds):
                 )
                 assert f"the cycle needs something only the user can give — {trigger} — and no stop has asked for it" in flat, where
             else:
-                assert "**Recommendation** cannot be \"approve\" while **Unsettled** names such a need" in ship, where
+                assert "**Unsettled** names such a need" not in ship, where
+                assert "A brief whose **Recommendation** is approve names no need" in ship, where
             report = " ".join(_raw_section(body, "## Mode: report").split())
+            squash = "stack" if stack else "squash"
+            assert (
+                'No **Recommendation**, no next cycle, no "revisit", no "fishy", no **Watch**, '
+                f"no caveat on the {squash}."
+            ) in report, where
+            assert "The report adds no fact and owes nothing" in report, where
+            for old in OLD_REPORT_INSTRUCTIONS:
+                assert old not in report, f"{where}: {old}"
             assert "An item whose only record is this report is a gate you passed wrongly" in report, where
+            assert "is the record of a ship gate that was not passable, and its first line says so" in report, where
             assert "whether or not anyone acted on them" not in report, where
+            assert ("the recorded `next=`" in report) == (not stack), where
             for mode in ("## Mode: design", "## Mode: triage"):
                 assert "the scope is never yours" in " ".join(_raw_section(body, mode).split()).lower(), f"{where}: {mode}"
             assert "never a substitute for `notes`" in flat, where
@@ -2424,6 +2468,134 @@ def test_forester_never_passes_a_gate_by_writing_it_down(builds):
             gate = flat[flat.index("**Forester gate**, mode ship"):]
             assert "+ log path" in gate[: gate.index("− diff range")], where
     assert seen, "no variant emitted the forester"
+
+
+def _forester_log_rules(body: str) -> str:
+    """The log partial's prose after its entry-shape code block."""
+    flat = " ".join(body.split())
+    start = flat.index("`Flag:` is a reminder to a later gate")
+    end = flat.find(" ## ", start)
+    return flat[start:] if end == -1 else flat[start:end]
+
+
+def test_ship_gate_document_has_no_watch_or_unsettled(builds):
+    """Nothing after a ship gate acts on a **Watch** or a flag; a need there is
+    routed, not written down.
+    """
+    seen = False
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        for name, body in build.bodies("forester"):
+            seen = True
+            where = f"{build.stem}/{name}"
+            document = " ".join(_raw_section(body, "## The gate document").split())
+            assert "At the ship gate neither **Unsettled** nor **Watch** is written" in document, where
+            assert "after the last ship point comes only the report, which takes no instructions" in document, where
+            log = _forester_log_rules(body)
+            assert "On a ship-gate entry `Flag:` is `-`" in log, where
+    assert seen, "no variant emitted the forester"
+
+
+def test_forester_log_records_user_notes_in_both_autonomies(builds):
+    seen = set()
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        decide = build.variant.vars.get("forester_autonomy") == "decide"
+        for name, body in build.bodies("forester"):
+            seen.add(decide)
+            where = f"{build.stem}/{name}"
+            log = _forester_log_rules(body)
+            assert (
+                "A user-authored notes file the log has not recorded yet gets its entry first, "
+                "`By: user`, before your own"
+            ) in log, where
+            assert ("The user decides at every gate" in log) == (not decide), where
+            assert ("The user rules only at a stop" in log) == decide, where
+    assert seen == {True, False}, seen
+
+
+def test_final_round_skips_the_forester_scan_gate(builds):
+    seen = False
+    for build in builds.values():
+        variant = build.variant
+        fg_scan = (
+            "forester" in variant.roles
+            and "workflow-scanner" in variant.roles
+            and "scan" in variant.vars.get("forester_gates", ())
+        )
+        if "orchestrator" in build.by_id and "workflow-scanner" in variant.roles:
+            for name, body in build.bodies("orchestrator"):
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                scan = flat[flat.index("**Round-close scan.**") :]
+                scan = scan[: scan.index("Round state")] if "Round state" in scan else scan
+                held = "On an intermediate round, then **Forester gate**, mode scan"
+                assert (held in scan) == fg_scan, where
+                assert ("On a final round the step ends there" in scan) == fg_scan, where
+                if fg_scan and _is_stack(build):
+                    seen = True
+                    assert "the round-close scan (and, on an intermediate round, its gate)" in flat, where
+                    assert "the round-close scan (and its gate)" not in flat, where
+        if "forester" in build.by_id:
+            for name, body in build.bodies("forester"):
+                scan = " ".join(_raw_section(body, "## Mode: scan").split())
+                assert "This gate is held after intermediate rounds only" in scan, f"{build.stem}/{name}"
+    assert seen, "no stack variant holds the forester scan gate"
+
+
+def test_user_reader_rule_is_shared(builds):
+    rule = (
+        "## Who you write for",
+        "A sentence the reader cannot follow without opening another artifact is a failed sentence",
+        "Consequence before process",
+    )
+    seen = set()
+    for build in builds.values():
+        for role_id in ("forester", "workflow-scanner"):
+            if role_id not in build.by_id:
+                continue
+            for name, body in build.bodies(role_id):
+                seen.add(role_id)
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                for phrase in rule:
+                    assert phrase in flat, f"{where}: {phrase}"
+                assert "Who reads you" not in flat, where
+                if role_id == "workflow-scanner":
+                    assert "Introduce anything you name" in flat, where
+                    assert "An escalation is read first by a designer who rules on it" in flat, where
+    assert seen == {"forester", "workflow-scanner"}, seen
+
+
+def test_report_launch_carries_next_key(builds):
+    seen = False
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        stack = _is_stack(build)
+        decide = build.variant.vars.get("forester_autonomy") == "decide"
+        if "orchestrator" in build.by_id:
+            for name, body in build.bodies("orchestrator"):
+                where = f"{build.stem}/{name}"
+                report = _section(body, "### Report")
+                assert "+ every carried path, + every user notes path" in report, where
+                assert ("+ the recorded `next=`" in report) == (not stack), where
+                assert "applies to gates, not to the report" in report, where
+        for name, body in build.bodies("forester"):
+            where = f"{build.stem}/{name}"
+            escalating = " ".join(_raw_section(body, "## Escalating to the user").split())
+            opener = "A brief whose **Recommendation** is not approve opens with one sentence naming the decision"
+            shape = "Its first sentence names the decision the user is being asked to make"
+            if decide:
+                assert shape in escalating and opener not in escalating, where
+                assert "- a ruling you cannot stand behind" in escalating, where
+            else:
+                seen = True
+                assert opener in escalating and shape not in escalating, where
+                assert "a ruling you cannot stand behind" not in escalating, where
+    assert seen, "no advise-mode forester"
 
 
 def _is_stack(build: Build) -> bool:
@@ -2773,7 +2945,7 @@ def test_forester_ship_gate_checks_the_keys_against_the_scope(builds):
             for phrase in phrases:
                 assert (phrase in mode) == (not stack), f"{where}: {phrase}"
             if not stack:
-                outcome = "`notes` naming it" if decide else "it heads **Unsettled**"
+                outcome = "`notes` naming it" if decide else "the **Recommendation** is the change request naming it"
                 assert outcome in mode, where
 
 

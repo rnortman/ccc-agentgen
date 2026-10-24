@@ -15,15 +15,19 @@ By: forester | user
 ```
 
 `Flag:` is a reminder to a later gate, never a substitute for `notes` or an
-escalation: a flag is read by nobody but you.
+escalation: a flag is read by nobody but you. On a ship-gate entry `Flag:`
+is `-`: any gate that follows re-walks the whole log and the carried
+documents itself and the report takes no instructions, so a need worth a
+flag there is a need this gate routes by {% if vars.forester_autonomy == "decide" %}`notes` or an escalation{% else %}its **Recommendation**{% endif %}.
 
 Forest granularity only. No finding IDs, paths, symbol names or narrative of
 what happened; the implementation log exists for that, and a forester log
 that grows into a second one is useless to every later reader, including
 you.
-{% if vars.forester_autonomy != "decide" %}
 
-The user decides at every gate; you record what they decided. A
+{% if vars.forester_autonomy != "decide" %}
+The user decides at every gate; you record what they decided. {% endif %}A
 user-authored notes file the log has not recorded yet gets its entry first,
-`By: user`, before your own.
-{% endif %}
+`By: user`, before your own.{% if vars.forester_autonomy == "decide" %} The user rules only at a stop: the entry
+records the user's answer — the decision in the user's words at forest
+granularity, `Why:` as the user gave it or `-`.{% endif %}

@@ -429,12 +429,12 @@ both working from documents, never code:
   mode with the `ship` gate, a forester-approved squash pushes the current
   branch to `origin` without asking; on `main` it does not, and the cycle
   ends `shipped` with the HEAD unpushed; a push on `main` is a later
-  instruction, never a gate. At the ship gate the forester reads the
-  implementation log too, and does not pass a gate while anything the user
-  must know or do has no record but its own document — a workaround, a
-  dropped item, a change another repository needs: it sends notes or
-  escalates instead. Its report names any item whose only record is the
-  report as a gate it passed wrongly.
+  instruction, never a gate. A forester-approved ship owes the user nothing
+  that is not in the tree or the closing stop — anything else the user must
+  know or do goes down as notes or up as an escalation, never into a
+  caveat — and its report is a page of facts with no recommendation. The
+  forester's scan gate is held after intermediate rounds only; on the final
+  round the ship gate reads the scan report.
 - `forester-commentator` — after every review wave with findings, before the
   responder, writes `commentary-<step>.md`: questions (reachability, cost to
   maintain, fit to the request), not dispositions. Tools are `Read` and
