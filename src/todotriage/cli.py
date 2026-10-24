@@ -89,6 +89,7 @@ def row_json(row: Row) -> dict[str, Any]:
         "unblocked": row.unblocked,
         "ruled": row.ruled_date.isoformat() if row.ruled_date else None,
         "cluster": row.cluster,
+        "path": row.entry.path if row.entry else None,
         "line": row.entry.line if row.entry else None,
     }
 
@@ -120,15 +121,15 @@ def lint_issues(ctx: Context, store: Store | None, todo: todomd.TodoFile,
     with_sites = {site.slug for site in sites}
     for entry in todo.entries:
         if entry.slug not in with_sites and entry.slug not in ignore:
-            issues.append(todomd.Issue("warning", entry.line,
+            issues.append(todomd.Issue("warning", entry.path, entry.line,
                                        f"`{entry.slug}` has no `TODO({entry.slug})` code site"))
     known = set(todo.by_slug())
     # TODO(lint-warns-on-documentation-examples): every example token in docs,
     # templates, strings and fixtures lands here; see TODO.md.
     for site in sites:
         if site.slug not in known:
-            issues.append(todomd.Issue(
-                "warning", 0, f"{site.path}:{site.line}: `TODO({site.slug})` matches no entry"))
+            issues.append(todomd.Issue("warning", site.path, site.line,
+                                       f"`TODO({site.slug})` matches no entry"))
     return todo_path, issues, sites
 
 
@@ -137,7 +138,7 @@ def cmd_lint(ctx: Context, args: argparse.Namespace) -> Output:
     todo_path, issues, _ = lint_issues(ctx, store, ctx.todo(store))
     errors = [i for i in issues if i.level == "error"]
     warnings = [i for i in issues if i.level == "warning"]
-    lines = [i.render(todo_path) for i in errors + warnings]
+    lines = [i.render() for i in errors + warnings]
     lines.append(f"{len(errors)} error(s), {len(warnings)} warning(s)")
     data = {"errors": [i.__dict__ for i in errors], "warnings": [i.__dict__ for i in warnings]}
     return Output(lines, data, EXIT_ERROR if errors else EXIT_OK)
@@ -188,14 +189,14 @@ def show_row(ctx: Context, store: Store, row: Row,
     """`show`'s text lines and JSON payload for one row."""
     todo_path = store.config.todo_path
     sites = [s for s in all_sites if s.slug == row.slug]
-    seen = todomd.first_seen(ctx.repo, todo_path, row.entry.heading) if row.entry else None
+    seen = todomd.first_seen(ctx.repo, row.entry) if row.entry else None
     triage_file = store.triage_path(row.slug)
 
     status = f"{row.status} ({row.reason})" if row.reason else row.status
     lines = [f"slug: {row.slug}", f"status: {status}", f"review: {row.review}",
              f"first seen: {seen or 'uncommitted'}"]
     if row.entry:
-        lines += [f"entry ({todo_path}:{row.entry.line}):", row.entry.text]
+        lines += [f"entry ({row.entry.where}):", row.entry.text]
     else:
         lines.append(f"entry: not in {todo_path}")
     lines.append("code sites:")
@@ -578,7 +579,6 @@ def cmd_ready(ctx: Context, args: argparse.Namespace) -> Output:
     if not chosen:
         return Output(["nothing ready"], [], EXIT_NOTHING)
     chains = ops.followers(all_rows, chosen, scope)
-    todo_path = store.config.todo_path
     # A follower under two ready entries appears in both chains; look it up once.
     shown = {row.slug: row for row in chosen}
     pending = [f for row in chosen for f in chains[row.slug]]
@@ -586,7 +586,7 @@ def cmd_ready(ctx: Context, args: argparse.Namespace) -> Output:
         follower = pending.pop()
         shown[follower.row.slug] = follower.row
         pending += follower.unlocks
-    seen = {slug: todomd.first_seen(ctx.repo, todo_path, r.entry.heading)
+    seen = {slug: todomd.first_seen(ctx.repo, r.entry)
             for slug, r in shown.items() if r.entry}
     chosen.sort(key=lambda r: (ops.priority_rank(r), seen.get(r.slug) or "9999"))
     dirs = site_dirs(ctx, store)
@@ -610,21 +610,24 @@ def cmd_attempt(ctx: Context, args: argparse.Namespace) -> Output:
     return Output([str(adr)], {"adr_dir": str(adr)})
 
 
-def still_listed(todo_path: str, slugs: list[str]) -> str:
-    """The text naming a closed or closing attempt's slugs still in the TODO file."""
-    return f"still in {todo_path}: {', '.join(slugs)}"
+def still_listed(todo: todomd.TodoFile, slugs: list[str]) -> str:
+    """`still listed: <slug> (<where>), …` for a closed or closing attempt's remaining slugs;
+    a slug no longer listed is named alone."""
+    entries = todo.by_slug()
+    return "still listed: " + ", ".join(
+        f"{slug} ({entries[slug].where})" if slug in entries else slug for slug in slugs)
 
 
 def cmd_attempt_close(ctx: Context, args: argparse.Namespace) -> Output:
     store = ctx.store()
     if args.dry_run and args.outcome:
         raise TriageError("--dry-run takes no --outcome")
-    closed = ops.close_attempt(store, ctx.todo(store), args.adr, args.outcome,
-                               dry_run=args.dry_run)
+    todo = ctx.todo(store)
+    closed = ops.close_attempt(store, todo, args.adr, args.outcome, dry_run=args.dry_run)
     prefix = "would close " if args.dry_run else ""
     lines = [f"{prefix}{closed.outcome}: {', '.join(closed.slugs)}"]
     if closed.remaining:
-        lines.append(still_listed(store.config.todo_path, closed.remaining))
+        lines.append(still_listed(todo, closed.remaining))
     return Output(lines, {"outcome": closed.outcome, "slugs": closed.slugs,
                           "remaining": closed.remaining, "dry_run": args.dry_run})
 
@@ -639,7 +642,8 @@ def cmd_prune(ctx: Context, args: argparse.Namespace) -> Output:
     doomed_slugs = {r.slug for r in doomed}
     orphaned = [s for s in sites if s.slug in doomed_slugs]
     leftover = ops.leftover_sites(all_rows, sites)
-    lines = [f"{todo_path}:{r.entry.line}: `{r.slug}`" for r in doomed if r.entry]
+    entries = [r.entry for r in doomed if r.entry]
+    lines = [f"{e.where}: `{e.slug}`" for e in entries]
     site_data = {"sites": [s.__dict__ for s in orphaned],
                  "leftover_sites": [s.__dict__ for s in leftover]}
     if args.write:
@@ -648,17 +652,14 @@ def cmd_prune(ctx: Context, args: argparse.Namespace) -> Output:
             raise TriageError("\n".join(
                 [f"{len(remaining)} code site(s) of deleted entries remain; remove them first:"]
                 + [f"  {s.render()}" for s in remaining]))
-        if any(i.level == "error" for i in todo.issues):
-            raise TriageError(f"{todo_path} has lint errors; fix them before `prune --write`")
+        todo.refuse_errors(todo_path, "`prune --write`")
         if not doomed:
-            return Output([f"nothing to remove from {todo_path}"], {"pruned": [], **site_data})
-        path = ctx.repo / todo_path
-        text = path.read_text(encoding="utf-8")
-        path.write_text(ops.prune_text(text, {r.entry.line for r in doomed if r.entry}),
-                        encoding="utf-8")
+            return Output(["nothing to remove", "changed:"],
+                          {"pruned": [], "paths": [], **site_data})
+        changed = ops.remove_entries(ctx.repo, todo_path, entries)
         ops.mark_pruned(store, [r.slug for r in doomed])
-        return Output(["removed " + line for line in lines],
-                      {"pruned": [r.slug for r in doomed], **site_data})
+        return Output(["removed " + line for line in lines] + [" ".join(["changed:", *changed])],
+                      {"pruned": [r.slug for r in doomed], "paths": changed, **site_data})
     if not doomed and not leftover:
         return Output(["nothing to prune"], {"prunable": [], **site_data}, code=EXIT_NOTHING)
     lines.append("code sites:" if orphaned else "no code sites")
@@ -693,7 +694,7 @@ def cmd_summary(ctx: Context, args: argparse.Namespace) -> Output:
     todo = ctx.todo(store)
     all_rows = rows(store, todo)
     by_slug = {r.slug: r for r in all_rows}
-    todo_path, issues, sites = lint_issues(ctx, store, todo)
+    _, issues, sites = lint_issues(ctx, store, todo)
     previous = previous_summary(store)
     since = previous[1] if previous else None
     stamp = ops.file_stamp()
@@ -733,7 +734,7 @@ def cmd_summary(ctx: Context, args: argparse.Namespace) -> Output:
                 attempts_open.append(f"{adr} ({covered}), started {attempt.get('started')}")
             elif since is None or closed >= since:
                 left = attempt.get("remaining") or []
-                suffix = f", {still_listed(todo_path, left)}" if left else ""
+                suffix = f", {still_listed(todo, left)}" if left else ""
                 attempts_closed.append(f"{adr} ({covered}): {attempt.get('outcome')}{suffix}")
     abandoned = []
     for row in all_rows:
@@ -775,7 +776,7 @@ def cmd_summary(ctx: Context, args: argparse.Namespace) -> Output:
         *bullets([f"`{r.slug}`" for r in all_rows if r.status == Status.RESOLVED]), "",
         "## Code sites with no entry", "",
         *bullets([s.render() for s in sites if s.slug not in known]), "",
-        "## Lint", "", *bullets([i.render(todo_path) for i in issues]), "",
+        "## Lint", "", *bullets([i.render() for i in issues]), "",
     ]
     path = ops.unused(store.root / "sessions", f"summary-{stamp}", ".md")
     path.parent.mkdir(exist_ok=True)

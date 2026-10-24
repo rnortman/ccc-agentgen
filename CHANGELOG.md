@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **The TODO workflows now read allthechanges-style trackers.**
+  [allthechanges](https://github.com/rnortman/allthechanges) keeps TODO
+  entries one per file in a `todo.d/` (or `.todo.d/`) directory and gathers
+  them into `TODO.md` under `## Open` with `### <slug>` headings.
+  `todo-triage` now reads both the fragment files and that `TODO.md`
+  layout, and triage rulings survive a gather. allthechanges is a soft
+  dependency: it is needed on `PATH` only in a repository that has such a
+  directory, where every command otherwise fails naming
+  `cargo install allthechanges`.
+- `prune --write` also deletes fragment files, and ends with a `changed:`
+  line (JSON: `paths`) naming the files to stage; the triage orchestrator
+  stages them.
+- `attempt-close` now refuses while lint reports errors, and its second line
+  reads `still listed: <slug> (<path>), …`. Burndown then stops with the
+  attempt open and offers `retry` once the tracker is fixed.
+- Smaller fixes: a `## ` line inside a fenced code block is no longer taken
+  as an entry heading, and an unclosed fence is a lint error. Lint issues
+  and rows in JSON output carry `path`, and a `TODO(slug)` with no matching
+  entry is reported at its own file and line.
 - **"Ship" from the forester now means there is nothing left for you to
   do.** The forester no longer approves a ship with a caveat: anything you
   must know or do is in the tree (code, or a `TODO.md` entry), in the

@@ -211,7 +211,7 @@ Decide: `approve` — the gate passes; `notes` — you wrote userproxy notes
 (answers, directions) and the designer responds.
 
 The scope is never yours. A question that asks for a repository to be
-brought into scope, or for a `TODO.md` entry filed in one outside it, is
+brought into scope, or for a tracker entry filed in one outside it, is
 escalated, not answered, at any `G`.
 {% else %}
 Recommend approval or changes; draft the notes the user would write. The
@@ -240,7 +240,7 @@ drifted, a scope that has ballooned — and answer *that* if so.
 
 Decide: `notes` — the designer asked a question and gets an answer — or
 escalate. There is nothing here to approve; at the gate-round cap, escalate.
-A call that asks for the scope — a repository brought in, a `TODO.md` entry
+A call that asks for the scope — a repository brought in, a tracker entry
 filed outside it — is escalated at any `G`: the scope is never yours.
 {% else %}
 
@@ -419,7 +419,8 @@ In order:
    the user's, so this section is usually empty{% endif %}. A pattern from **Forest,
    not trees** that produced a ruling is here; one that produced none is not
    in the report.
-4. Records outside the working dir: every `TODO.md` entry the cycle filed,
+4. Records outside the working dir: every tracker entry (`TODO.md` or
+   `todo.d/`) the cycle filed,
    by slug, one plain-language line each saying what it is and why it was
    deferred — the ship ruling's **Why** names them;{% if not stack %} every path in the
    recorded `next=`, one line each, as the closing stop will name it (a

@@ -369,7 +369,7 @@ class Row:
 
 
 def rows(store: Store, todo: TodoFile, on: dt.date | None = None) -> list[Row]:
-    """Every slug in TODO.md (file order) then every store-only slug (sorted)."""
+    """Every listed slug (TODO file order, then fragments) then every store-only slug (sorted)."""
     on = on or today()
     ignore = set(store.config.ignore)
     in_file = todo.by_slug()

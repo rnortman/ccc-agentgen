@@ -36,7 +36,7 @@ from .store import (
     today,
     user_ruled,
 )
-from .todomd import ENTRY_START_RE, Site, TodoFile
+from .todomd import Entry, Site, TodoFile, git
 
 MAX_RULING_ATTEMPTS = 3
 DOC_STEPS = ("exploration", "sketch", "contrarian")
@@ -134,7 +134,7 @@ def in_store(store: Store, path: Path) -> str:
 
 def require_entry(todo: TodoFile, store: Store, slug: str) -> None:
     if slug not in todo.by_slug():
-        raise TriageError(f"`{slug}` is not an entry in {store.config.todo_path}")
+        raise TriageError(f"`{slug}` is not listed in {todo.tracker(store.config.todo_path)}")
     if slug in store.config.ignore:
         raise TriageError(f"`{slug}` is ignored in store.yaml")
 
@@ -740,7 +740,7 @@ def start_attempt(store: Store, todo: TodoFile, selection: Path, adr_root: Path)
 
 @dataclass(frozen=True)
 class Closed:
-    """The outcome of an attempt close: the unit's slugs and those still in TODO.md."""
+    """The outcome of an attempt close: the unit's slugs and those still listed."""
 
     outcome: str
     slugs: list[str]
@@ -749,11 +749,14 @@ class Closed:
 
 def close_attempt(store: Store, todo: TodoFile, adr: Path, outcome: str | None,
                   dry_run: bool = False) -> Closed:
-    """Close the open attempt for `adr`; `outcome` None means shipped or incomplete by TODO.md.
+    """Close the open attempt for `adr`; `outcome` None means shipped, or incomplete when
+    some entry is still listed.
 
     `dry_run` computes the result without saving anything. Raises TriageError when the
+    tracker has lint errors (an entry it could not read would count as gone), or when the
     attempt is missing or already closed.
     """
+    todo.refuse_errors(store.config.todo_path, "attempt-close")
     target = str(adr.resolve())
     matches: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for slug in store.slugs():
@@ -796,17 +799,42 @@ def leftover_sites(all_rows: list[Row], sites: list[Site]) -> list[Site]:
     return [s for s in sites if s.slug in gone]
 
 
-def prune_text(text: str, headings: set[int]) -> str:
-    """Remove each block whose `## ` heading is at a 1-based line in `headings`."""
+def prune_text(text: str, entries: list[Entry]) -> str:
+    """Remove each file entry's block, lines `line`..`stop - 1`, as parsed from `text`."""
     lines = text.split("\n")
-    starts = [i for i, line in enumerate(lines) if ENTRY_START_RE.match(line)]
     drop: set[int] = set()
-    for index, start in enumerate(starts):
-        if start + 1 in headings:
-            stop = starts[index + 1] if index + 1 < len(starts) else len(lines)
-            drop.update(range(start, stop))
+    for entry in entries:
+        if not entry.fragment:
+            drop.update(range(entry.line - 1, entry.stop - 1))
     kept = [line for i, line in enumerate(lines) if i not in drop]
     return "\n".join(kept).rstrip("\n") + "\n"
+
+
+def remove_entries(repo: Path, todo_path: str, entries: list[Entry]) -> list[str]:
+    """Delete `entries`: ask git which fragments it tracks, rewrite the TODO file when one is
+    in it, then unlink each fragment; a failing `git ls-files` changes nothing on disk.
+
+    Returns the staging list: the TODO file when rewritten, then every fragment git tracks,
+    whether the unlink removed it or it was already gone. An untracked fragment is unlinked
+    and not listed, since `git add` on a path neither on disk nor in the index fails.
+    """
+    changed: list[str] = []
+    in_file = [e for e in entries if not e.fragment]
+    fragments = [e.path for e in entries if e.fragment]
+    tracked: set[str] = set()
+    if fragments:
+        result = git(repo, "ls-files", "-z", "--", *fragments)
+        if result.returncode != 0:
+            raise TriageError(f"git ls-files failed: {result.stderr.strip()}")
+        tracked = set(result.stdout.split("\0"))
+    if in_file:
+        path = repo / todo_path
+        path.write_text(prune_text(path.read_text(encoding="utf-8"), in_file), encoding="utf-8")
+        changed.append(todo_path)
+    for rel in fragments:
+        (repo / rel).unlink(missing_ok=True)
+    changed += [rel for rel in fragments if rel in tracked]
+    return changed
 
 
 def mark_pruned(store: Store, slugs: list[str]) -> None:

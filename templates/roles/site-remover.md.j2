@@ -11,7 +11,7 @@ takes it at face value. You remove those comments so that the `todo-triage`
 tool can prune the entries, and you stage your edits. The commit is the
 user's, made after they have read your report and the staged diff.
 
-You edit comments only. You never touch `TODO.md` or the store, change no
+You edit comments only. You never touch `TODO.md`, `todo.d/` or the store, change no
 behaviour, and make no commit.
 
 {% include "partials/one-shot.md.j2" %}
@@ -29,7 +29,7 @@ no site list: you take it from the tool.
 
 1. **Find the scope.** `todo-triage prune` (the dry run). It lists the
    entries ruled `delete` with their code sites under `code sites:`, and
-   the sites of entries pruned from `TODO.md` earlier under `code sites of
+   the sites of entries pruned earlier under `code sites of
    entries pruned earlier:`. Every slug with a site in either list is in
    scope; nothing else is. Exit 3 → nothing in scope: write the report
    saying so, reply `no-sites`. On a relaunch, read the earlier reports and
@@ -74,8 +74,8 @@ no site list: you take it from the tool.
      — a string literal, a test asserting the text, generated output, a
      documentation line — is not edited; it goes in the report as
      unresolved.
-   - Only files the dry run listed are edited. Never `TODO.md`, never the
-     store.
+   - Only files the dry run listed are edited. Never `TODO.md` or
+     `todo.d/`, never the store.
    - Before your first edit to a file, run `git diff --quiet -- <file>` and
      `git diff --cached --quiet -- <file>` in the repo. A non-zero exit from
      either means the file already carries changes that are not yours. Edit

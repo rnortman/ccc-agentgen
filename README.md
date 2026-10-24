@@ -69,6 +69,11 @@ specific version if you want stability.
   uses `mapfile`, `[[ -v ]]`, `complete` and `find -printf`): Linux, or macOS
   with Homebrew `bash` and `findutils`. In another shell, set
   `CCC_AGENTS_CONFIG` by hand to a file under `<ccc-dir>/configs/`.
+- **For `todo-triage` in a repository that keeps `todo.d/` fragments
+  only:** [allthechanges](https://github.com/rnortman/allthechanges) on
+  `PATH` (`cargo install allthechanges`). A repository without a `todo.d/`
+  or `.todo.d/` never runs it; in one with, every `todo-triage` command
+  fails with that install command until it is there.
 - **For `review-chain-stack-followup*` only:** the forgejo MCP server,
   [`brenn-forgejo-mcp`](https://github.com/rnortman/brenn-forgejo-mcp),
   configured in Claude Code under the server name `forgejo` (the liaison
@@ -468,11 +473,29 @@ Two workflows over a repo's `TODO.md`, and the `todo-triage` tool they run on.
    That puts `todo-triage` and `agentgen` in `~/.local/bin`, where agents can
    reach them (ccc adds nothing to `PATH`). `agentgen deploy` does not
    install them.
-2. The repository needs a `TODO.md` in the grammar the tool parses: a `# `
-   title line, then one entry per `## <slug>` heading (the slug may be
-   backticked), each entry running to the next `## `. Code points at an entry
-   with a `TODO(<slug>)` comment. `todo-triage lint --repo <repo>` checks the
-   file. `--repo` must be a git work tree.
+2. The repository needs a tracker the tool parses. `TODO.md` in either of
+   two layouts: a `# ` title line, then one entry per `## <slug>` heading
+   (the slug may be backticked), each entry running to the next `## `; or
+   [allthechanges](https://github.com/rnortman/allthechanges)' layout, a
+   `## Open` section holding one entry per `### <slug>` heading, each
+   running to the next heading of level 1-3. Headings are found outside
+   fenced blocks only, and every line starting with three backticks or three
+   tildes opens or closes a fence, whichever character opened it — the rule
+   allthechanges reads by, kept so both tools split a file the same way. A
+   fence left open at the end of the file is a lint error, as is a
+   backticked `` ## `<slug>` `` outside `## Open` in the second layout: both
+   hide entries the tool would otherwise count as gone.
+   Optionally, entries also live one per file in `todo.d/` (or `.todo.d/`)
+   as `<slug>.md` holding the entry text alone; the tool reads them by
+   running `allthechanges --json todo query`, and `TODO.md` may then be
+   absent. An entry's text is hashed without its heading or layout, so
+   `allthechanges todo gather` moving fragments into `TODO.md` keeps their
+   rulings (an entry's first-seen date becomes the gather commit's). A
+   `todo-triage` slug is lowercase, which allthechanges does not require; a
+   fragment with any problem has no row until it is fixed, and `lint` names
+   it. Code points at an entry with a `TODO(<slug>)` comment. `todo-triage
+   lint --repo <repo>` checks the tracker. `--repo` must be a git work
+   tree.
 3. Pick a **store** directory outside the code repo, e.g.
    `../<repo>-notes/todo-triage/`, and a **tag**. You need not create the
    store: when its `store.yaml` is missing, the triage orchestrator asks for
@@ -506,8 +529,10 @@ option for machine-readable output.
   `site-remover` removes every such comment, rewriting what a comment also
   said about the code where that earns its place, and stages its edits with
   a report at the path `todo-triage path --prune` prints; then `todo-triage
-  prune --write` removes the entries from `TODO.md`, refusing while any of
-  their comments remains. The orchestrator stages `TODO.md` and shows you
+  prune --write` removes the entries from `TODO.md` and deletes their
+  `todo.d/` files, refusing while any of their comments remains, and prints
+  the paths it changed. The orchestrator stages the files the tool changed
+  and shows you
   the staged diff; one commit of both is made only on your word, with your
   message or a default. Comments left behind by entries pruned in earlier
   sessions — a slug gone from `TODO.md` whose standing ruling is an approved
@@ -648,7 +673,12 @@ emitted files. When `ccc` is on `PATH` it also checks routing refusal and the
 selected `prompt=` file, as well as, for the Codex route, the resolved model,
 effort, and sandbox, and that `ccc which` reports `agents config:` on stderr.
 Without `ccc` that test is skipped. Set `AGENTGEN_REQUIRE_CCC=1` wherever
-`ccc` is expected, and the skip becomes a failure instead. Bash switcher
+`ccc` is expected, and the skip becomes a failure instead. The
+`todo-triage` contract test runs the real `allthechanges --json todo query`
+and is skipped when `allthechanges` is not on `PATH`;
+`AGENTGEN_REQUIRE_ALLTHECHANGES=1` makes that a failure. No version is
+pinned: a failure on a newer binary is the signal its report shape moved.
+Bash switcher
 tests use Bash when available; set `AGENTGEN_REQUIRE_BASH=1` to make missing
 Bash a failure.
 

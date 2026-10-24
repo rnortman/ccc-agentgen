@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
+import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -95,7 +98,7 @@ def hash_of(repo: Path, slug: str) -> str:
 
 
 def test_heading_forms() -> None:
-    todo = todomd.parse(TODO)
+    todo = todomd.parse(TODO, "TODO.md")
     assert todo.title == "TODOs"
     assert [e.slug for e in todo.entries] == ["alpha", "beta", "gamma", "example-placeholder"]
     alpha, beta, gamma, placeholder = todo.entries
@@ -109,13 +112,13 @@ def test_heading_forms() -> None:
 
 
 def test_malformed_heading_is_an_error() -> None:
-    todo = todomd.parse("# T\n\n## Not A Slug\n\nbody\n")
+    todo = todomd.parse("# T\n\n## Not A Slug\n\nbody\n", "TODO.md")
     assert todo.entries == []
     assert [(i.level, i.line) for i in todo.issues] == [("error", 3)]
 
 
 def test_missing_title_duplicate_and_empty_body_are_errors() -> None:
-    todo = todomd.parse("intro\n\n## `a`\n\nx\n\n## `a`\n\n## `b`\n\ny\n")
+    todo = todomd.parse("intro\n\n## `a`\n\nx\n\n## `a`\n\n## `b`\n\ny\n", "TODO.md")
     messages = [(i.level, i.line, i.message) for i in todo.issues]
     assert ("error", 1, "file does not start with a `# ` title") in messages
     assert any(m[0] == "error" and m[1] == 7 and "duplicate slug `a`" in m[2] for m in messages)
@@ -124,7 +127,7 @@ def test_missing_title_duplicate_and_empty_body_are_errors() -> None:
 
 
 def test_in_band_markers_are_warned_with_their_line() -> None:
-    todo = todomd.parse(TODO)
+    todo = todomd.parse(TODO, "TODO.md")
     markers = [i for i in todo.issues if "in-band" in i.message]
     assert [(i.line, i.message.split("'")[1]) for i in markers] == [(15, "triaged 20")]
 
@@ -134,9 +137,405 @@ def test_body_hash_ignores_whitespace_changes() -> None:
     assert todomd.body_hash("foo bar") != todomd.body_hash("foo baz")
 
 
+FENCE = "```"
+
+GATHERED = f"""\
+# TODO
+
+Preamble paragraph.
+
+## Open
+
+### alpha
+
+Run this:
+
+{FENCE}sh
+# install
+make
+## not a section
+{FENCE}
+
+after fence
+
+### beta
+
+Beta body.
+
+#### details
+
+More beta.
+
+### zeta
+
+Zeta body.
+
+## Done
+
+Closed things.
+"""
+
+ALPHA_FRAGMENT = f"""\
+Run this:
+
+{FENCE}sh
+# install
+make
+## not a section
+{FENCE}
+
+after fence
+"""
+
+
+def test_headings_skip_fenced_lines_and_any_fence_line_toggles() -> None:
+    lines = ["# t", "```", "## in fence", "~~~", "## after tilde", "#nope", "##", "####### x"]
+    assert todomd.headings(lines) == ([(0, 1), (4, 2), (6, 2)], None)
+    assert todomd.headings(["# t", "~~~", "## hidden"]) == ([(0, 1)], 1)
+
+
+def test_sectioned_layout_reads_level_three_entries_in_open() -> None:
+    todo = todomd.parse(GATHERED, "TODO.md")
+    assert todo.title == "TODO"
+    assert [e.slug for e in todo.entries] == ["alpha", "beta", "zeta"]
+    alpha, beta, zeta = todo.entries
+    assert alpha.body_hash == todomd.body_hash(ALPHA_FRAGMENT)
+    assert "## not a section" in alpha.body and alpha.body.endswith("after fence")
+    assert (alpha.line, alpha.stop) == (7, 19)
+    assert "#### details" in beta.body and beta.body.endswith("More beta.")
+    assert zeta.body.strip() == "Zeta body." and "Closed" not in zeta.body
+    assert not alpha.backticked and alpha.heading == "### alpha"
+    assert todo.issues == []
+
+
+def test_sectioned_layout_issues() -> None:
+    text = ("# T\n\n## `stray`\n\nold flat entry\n\n### loose\n\nx\n\n## Open\n\n"
+            "### Bad Slug\n\nx\n\n### a\n\nx\n\n### a\n\n### `b` trail\n\nTOMBSTONE\n\n"
+            "## Open\n\n### c\n\ny\n")
+    todo = todomd.parse(text, "TODO.md")
+    assert [e.slug for e in todo.entries] == ["a", "a", "b"]
+    found = [(i.level, i.line, i.message.split(":")[0]) for i in todo.issues]
+    assert found == [
+        ("error", 3, "looks like an entry heading outside `## Open`"),
+        ("warning", 7, "looks like an entry heading outside `## Open`"),
+        ("error", 13, "unparseable heading"),
+        ("error", 21, "duplicate slug `a` (first at line 17)"),
+        ("error", 21, "`a` has an empty body"),
+        ("warning", 23, "`b`"),
+        ("warning", 25, "`b`"),
+        ("error", 27, "more than one `## Open` section (first at line 11)"),
+        ("warning", 29, "looks like an entry heading outside `## Open`"),
+    ]
+    assert all(i.path == "TODO.md" for i in todo.issues)
+    assert not any("not backticked" in i.message for i in todo.issues)
+
+
+def test_flat_layout_heading_inside_a_fence_is_body() -> None:
+    text = f"# T\n\n## `a`\n\n{FENCE}\n## `b`\n# comment\n{FENCE}\n\n## `c`\n\nz\n"
+    todo = todomd.parse(text, "TODO.md")
+    assert [e.slug for e in todo.entries] == ["a", "c"]
+    assert "## `b`" in todo.entries[0].body
+
+
+def test_an_unclosed_fence_is_an_error_at_its_line() -> None:
+    text = "# TODO\n## `alpha`\nQuote a fence opener: write\n```` then text\n## `beta`\nb\n"
+    todo = todomd.parse(text, "TODO.md")
+    assert [e.slug for e in todo.entries] == ["alpha"]
+    assert [i.render() for i in todo.issues if i.level == "error"] == [
+        "error: TODO.md:4: fence line '```` then text' is never closed; "
+        "no heading after it is read"]
+    sectioned = todomd.parse(f"# T\n\n## Open\n\n### a\n\n{FENCE}sh\n### b\n\nx\n", "TODO.md")
+    assert [(i.level, i.line) for i in sectioned.issues] == [("error", 7)]
+
+
+def test_only_a_backticked_flat_entry_outside_open_is_an_error() -> None:
+    text = ("# T\n\n## `alpha`\n\na\n\n## beta\n\nb\n\n## notes\n\nn\n\n"
+            "## Open\n\n### gamma\n\ng\n\n## Done\n\n### `delta`\n\nd\n")
+    todo = todomd.parse(text, "TODO.md")
+    assert [e.slug for e in todo.entries] == ["gamma"]
+    assert [(i.level, i.line) for i in todo.issues] == [
+        ("error", 3), ("warning", 7), ("warning", 11), ("warning", 23)]
+
+
+def test_issue_renders_its_own_path() -> None:
+    assert todomd.Issue("error", "todo.d/x.md", 0, "m").render() == "error: todo.d/x.md: m"
+    assert todomd.Issue("warning", "TODO.md", 4, "m").render() == "warning: TODO.md:4: m"
+
+
+def test_body_hash_is_layout_independent() -> None:
+    flat = todomd.parse("# T\n\n## `alpha`\n\n" + ALPHA_FRAGMENT, "TODO.md").by_slug()["alpha"]
+    sectioned = todomd.parse(GATHERED, "TODO.md").by_slug()["alpha"]
+    fragment = todomd.Entry(slug="alpha", path="todo.d/alpha.md", line=1,
+                            end_line=ALPHA_FRAGMENT.count("\n"), stop=0,
+                            body=ALPHA_FRAGMENT.rstrip("\n"), heading=None,
+                            backticked=True, trail="")
+    assert flat.body_hash == sectioned.body_hash == fragment.body_hash
+    assert fragment.fragment and fragment.where == "todo.d/alpha.md"
+    assert fragment.text == fragment.body
+    assert not flat.fragment and flat.where == "TODO.md:3"
+
+
+def test_prune_text_removes_a_flat_entry_with_a_fenced_comment_whole() -> None:
+    from todotriage.ops import prune_text
+    text = f"# T\n\n## `a`\n\nkeep\n\n## `b`\n\n{FENCE}sh\n# comment\n## `x`\n{FENCE}\n\nend b\n"
+    todo = todomd.parse(text, "TODO.md")
+    before = todo.by_slug()["a"].body_hash
+    pruned = prune_text(text, [todo.by_slug()["b"]])
+    assert pruned == "# T\n\n## `a`\n\nkeep\n"
+    assert todomd.parse(pruned, "TODO.md").by_slug()["a"].body_hash == before
+
+
+def test_prune_text_sectioned_keeps_neighbours_and_sections() -> None:
+    from todotriage.ops import prune_text
+    todo = todomd.parse(GATHERED, "TODO.md")
+    pruned = prune_text(GATHERED, [todo.by_slug()["beta"]])
+    after = todomd.parse(pruned, "TODO.md")
+    assert [e.slug for e in after.entries] == ["alpha", "zeta"]
+    for slug in ("alpha", "zeta"):
+        assert after.by_slug()[slug].text == todo.by_slug()[slug].text
+    assert "Preamble paragraph." in pruned and "## Open" in pruned
+    assert pruned.endswith("## Done\n\nClosed things.\n")
+    assert "beta" not in pruned.lower()
+
+
+def test_first_seen_of_a_fragment_is_its_add_commit(repo: Path) -> None:
+    fragment = todomd.Entry(slug="delta", path="todo.d/delta.md", line=1, end_line=1, stop=0,
+                            body="Delta.", heading=None, backticked=True, trail="")
+    (repo / "todo.d").mkdir()
+    (repo / "todo.d" / "delta.md").write_text("Delta.\n", encoding="utf-8")
+    assert todomd.first_seen(repo, fragment) is None
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "frag", "--date=2026-03-04T00:00:00")
+    assert todomd.first_seen(repo, fragment) == "2026-03-04"
+
+
+# Set where the suite runs with `allthechanges` available, to turn the
+# real-binary test's skip into a failure.
+REQUIRE_ALLTHECHANGES = os.environ.get("AGENTGEN_REQUIRE_ALLTHECHANGES") == "1"
+
+
+def fragment_report(fragments: dict[str, str], problems: list[tuple[str, str, str]] = (),
+                    directory: str = "todo.d") -> dict[str, Any]:
+    """A `todo query` report for `{slug: body}` and `[(path, code, message)]`."""
+    return {
+        "dir": directory, "range": None,
+        "fragments": [{"path": f"{directory}/{slug}.md", "slug": slug,
+                       "body": body.rstrip("\n").split("\n")}
+                      for slug, body in sorted(fragments.items())],
+        "problems": [{"path": path, "code": code, "message": message}
+                     for path, code, message in problems],
+        "ok": not problems,
+    }
+
+
+@pytest.fixture
+def stub_query(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Put a stub `allthechanges` first on PATH; call with (stdout, exit, stderr)."""
+    bindir = tmp_path / "stub-bin"
+    bindir.mkdir()
+    script = bindir / "allthechanges"
+    script.write_text(
+        '#!/bin/sh\nhere=$(dirname "$0")\nprintf "%s|%s\\n" "$*" "$(pwd)" >> "$here/calls"\n'
+        'cat "$here/out"\ncat "$here/err" >&2\nexit "$(cat "$here/code")"\n',
+        encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+
+    def configure(stdout: str | dict[str, Any], code: int = 0, stderr: str = "") -> Path:
+        text = stdout if isinstance(stdout, str) else json.dumps(stdout)
+        (bindir / "out").write_text(text, encoding="utf-8")
+        (bindir / "err").write_text(stderr, encoding="utf-8")
+        (bindir / "code").write_text(str(code), encoding="utf-8")
+        return bindir / "calls"
+
+    return configure
+
+
+def add_fragment_dir(repo: Path, name: str = "todo.d", **bodies: str) -> None:
+    (repo / name).mkdir()
+    for slug, body in bodies.items():
+        (repo / name / f"{slug}.md").write_text(body, encoding="utf-8")
+
+
+def test_fragments_without_a_directory_run_nothing(
+        repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("subprocess.run called")
+
+    monkeypatch.setattr(todomd.subprocess, "run", refuse)
+    assert todomd.fragments(repo) == (None, [], [])
+
+
+@pytest.mark.parametrize("name", ["todo.d", ".todo.d"])
+def test_fragment_directory_without_the_binary_is_an_error(
+        repo: Path, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    (repo / name).mkdir()
+    monkeypatch.setattr(todomd.shutil, "which", lambda _: None)
+    with pytest.raises(TriageError, match=rf"^{re.escape(name)} exists but allthechanges is not "
+                                          r"on PATH; install it with `cargo install allthechanges`"):
+        todomd.read(repo, "TODO.md")
+
+
+def test_fragments_map_the_report(repo: Path, stub_query) -> None:
+    add_fragment_dir(repo)
+    calls = stub_query(fragment_report(
+        {"delta": "Delta body.\n\nNOT NOW, maybe later.", "Upper": "Up."}))
+    directory, entries, issues = todomd.fragments(repo)
+    assert calls.read_text(encoding="utf-8") == f"--json todo query|{repo}\n"
+    assert directory == "todo.d"
+    assert [(e.slug, e.path, e.line, e.end_line, e.body) for e in entries] == [
+        ("delta", "todo.d/delta.md", 1, 3, "Delta body.\n\nNOT NOW, maybe later.")]
+    assert entries[0].fragment and entries[0].backticked and entries[0].text == entries[0].body
+    assert [i.render() for i in issues] == [
+        "error: todo.d/Upper.md: bad-name: `Upper` is not a lowercase slug",
+        "warning: todo.d/delta.md:3: `delta`: in-band metadata marker 'NOT NOW' in body",
+    ]
+
+
+def test_fragment_problems_become_errors_and_no_entries(repo: Path, stub_query) -> None:
+    add_fragment_dir(repo)
+    stub_query(fragment_report({"good": "Good."}, [
+        ("todo.d/x.md", "not-an-entry", "line 1: an entry starts with text"),
+        ("todo.d/e.md", "empty", "no content")]), code=1)
+    _, entries, issues = todomd.fragments(repo)
+    assert [e.slug for e in entries] == ["good"]
+    assert [i.render() for i in issues] == [
+        "error: todo.d/x.md: not-an-entry: line 1: an entry starts with text",
+        "error: todo.d/e.md: empty: no content",
+    ]
+
+
+@pytest.mark.parametrize(("stdout", "code", "stderr", "said"), [
+    ("", 3, "allthechanges: both todo.d and .todo.d exist; pass --dir\n",
+     "exit 3): allthechanges: both todo.d and .todo.d exist; pass --dir"),
+    ("not json\nsecond line\n", 0, "", "exit 0): not json"),
+    (json.dumps({"dir": "todo.d", "problems": []}), 0, "", 'exit 0): {"dir": "todo.d"'),
+    (json.dumps({"dir": "todo.d", "fragments": [{"slug": "a"}], "problems": []}), 1, "",
+     "exit 1): {"),
+    (json.dumps(fragment_report({})), 2, "", "exit 2): {"),
+    (json.dumps({"dir": 3, "fragments": [], "problems": []}), 0, "", "exit 0): {"),
+    (json.dumps({"dir": "todo.d", "fragments": [], "problems": [{"path": "x"}]}), 0, "",
+     "exit 0): {"),
+    ("", 0, "", "exit 0): (no output)"),
+])
+def test_fragments_refuse_an_unreadable_report(repo: Path, stub_query, stdout: str, code: int,
+                                               stderr: str, said: str) -> None:
+    add_fragment_dir(repo)
+    stub_query(stdout, code, stderr)
+    with pytest.raises(TriageError) as raised:
+        todomd.fragments(repo)
+    assert str(raised.value).startswith(f"allthechanges todo query failed ({said}")
+
+
+def test_read_joins_file_then_fragments(repo: Path, store: Store, stub_query) -> None:
+    add_fragment_dir(repo)
+    stub_query(fragment_report({"alpha": "Shadowed.", "delta": "Delta.", "aaa": "First."}))
+    store.save("zzz-gone", ruled())
+    todo = todomd.read(repo, "TODO.md")
+    assert todo.fragment_dir == "todo.d"
+    assert [r.slug for r in rows(store, todo)] == [
+        "alpha", "beta", "gamma", "example-placeholder", "aaa", "delta", "zzz-gone"]
+    assert todo.by_slug()["alpha"].path == "TODO.md"
+    duplicates = [i.render() for i in todo.issues if "is also" in i.message]
+    assert duplicates == ["error: todo.d/alpha.md: `alpha` is also `TODO.md:3`"]
+
+
+def test_read_without_todo_md(repo: Path, stub_query) -> None:
+    (repo / "TODO.md").unlink()
+    with pytest.raises(TriageError, match="TODO.md does not exist"):
+        todomd.read(repo, "TODO.md")
+    add_fragment_dir(repo)
+    stub_query(fragment_report({"delta": "Delta."}))
+    todo = todomd.read(repo, "TODO.md")
+    assert todo.title is None and todo.issues == []
+    assert [e.where for e in todo.entries] == ["todo.d/delta.md"]
+
+
+def test_code_sites_skip_fragment_directories(repo: Path) -> None:
+    add_fragment_dir(repo, delta="Delta, see `TODO(delta)`.\n")
+    add_fragment_dir(repo, ".todo.d", eps="`TODO(eps)`\n")
+    (repo / "src" / "core" / "more.py").write_text("# TODO(delta)\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "fragments")
+    assert {(s.path, s.slug) for s in todomd.code_sites(repo, "TODO.md")
+            if s.slug in ("delta", "eps")} == {("src/core/more.py", "delta")}
+
+
+def real_fragment_dir(root: Path) -> None:
+    """One file per thing `todo query` judges; the good ones are `good` and `tilde`."""
+    files: dict[str, bytes] = {
+        "good.md": b"Good.\n\n```sh\n# heading\n```\n",
+        "tilde.md": b"Tilde.\n```\n## x\n~~~\nafter\n\n\n",
+        "Upper.md": b"Up.\n",
+        ".hidden.md": b"Dotfile.\n",
+        "notes.txt": b"Notes.\n",
+        "empty.md": b"",
+        "blank.md": b"\nblank first line\n",
+        "cr.md": b"stray\r carriage return\n",
+        "head.md": b"text\n## heading\n",
+        "fence.md": b"x\n```\nunclosed\n",
+        "nonutf.md": b"bad \xff byte\n",
+    }
+    root.mkdir()
+    for name, data in files.items():
+        (root / name).write_bytes(data)
+    (root / "link.md").symlink_to("good.md")
+    (root / "sub.md").mkdir()
+
+
+@pytest.mark.skipif(
+    shutil.which("allthechanges") is None and not REQUIRE_ALLTHECHANGES,
+    reason="allthechanges is not on PATH (set AGENTGEN_REQUIRE_ALLTHECHANGES=1 to require it)",
+)
+def test_fragments_against_the_real_binary(repo: Path) -> None:
+    """The contract check: `todo query`'s report shape and judgements, as mapped."""
+    assert shutil.which("allthechanges"), "AGENTGEN_REQUIRE_ALLTHECHANGES=1 but it is not on PATH"
+    version = subprocess.run(["allthechanges", "--version"], capture_output=True,
+                             text=True, check=False).stdout.strip()
+    real_fragment_dir(repo / "todo.d")
+    directory, entries, issues = todomd.fragments(repo)
+    assert directory == "todo.d", version
+    assert [(e.slug, e.body) for e in entries] == [
+        ("good", "Good.\n\n```sh\n# heading\n```"),
+        ("tilde", "Tilde.\n```\n## x\n~~~\nafter"),
+    ], version
+    assert sorted((i.path, i.message.split(":")[0]) for i in issues) == [
+        ("todo.d/Upper.md", "bad-name"),
+        ("todo.d/blank.md", "not-an-entry"),
+        ("todo.d/cr.md", "not-an-entry"),
+        ("todo.d/empty.md", "empty"),
+        ("todo.d/fence.md", "not-an-entry"),
+        ("todo.d/head.md", "not-an-entry"),
+        ("todo.d/link.md", "not-a-fragment"),
+        ("todo.d/nonutf.md", "not-utf8"),
+        ("todo.d/notes.txt", "not-a-fragment"),
+        ("todo.d/sub.md", "not-a-fragment"),
+    ], version
+    assert all(i.level == "error" and i.line == 0 for i in issues), version
+
+    (repo / "todo.d").rename(repo / ".todo.d")
+    assert todomd.fragments(repo)[0] == ".todo.d", version
+    (repo / "todo.d").mkdir()
+    with pytest.raises(TriageError, match="both todo.d and .todo.d exist; pass --dir"):
+        todomd.fragments(repo)
+
+
 def test_first_seen_uses_git_history(repo: Path) -> None:
-    assert todomd.first_seen(repo, "TODO.md", "## `alpha`") == "2026-01-02"
-    assert todomd.first_seen(repo, "TODO.md", "## `never`") is None
+    todo = todomd.read(repo, "TODO.md")
+    alpha = todo.by_slug()["alpha"]
+    assert todomd.first_seen(repo, alpha) == "2026-01-02"
+    never = dataclasses.replace(alpha, heading="## `never`")
+    assert todomd.first_seen(repo, never) is None
+
+
+def test_first_seen_matches_the_whole_heading_line(repo: Path) -> None:
+    write(repo / "TODO.md", "# T\n\n## Open\n\n### foo-bar\n\nx\n")
+    git(repo, "commit", "-q", "-am", "foo-bar", "--date=2026-02-01T00:00:00")
+    write(repo / "TODO.md", "# T\n\n## Open\n\n### foo-bar\n\nx\n\n### foo\n\ny\n")
+    git(repo, "commit", "-q", "-am", "foo", "--date=2026-03-01T00:00:00")
+    todo = todomd.read(repo, "TODO.md")
+    assert todomd.first_seen(repo, todo.by_slug()["foo"]) == "2026-03-01"
+    assert todomd.first_seen(repo, todo.by_slug()["foo-bar"]) == "2026-02-01"
 
 
 def test_code_sites_exclude_the_todo_file(repo: Path) -> None:
@@ -253,7 +652,7 @@ def test_lint_reports_warnings_and_orphans(repo: Path, store: Store,
     assert "warning: TODO.md:9: `beta`: slug is not backticked" in out
     assert "`gamma` has no `TODO(gamma)` code site" in out
     assert "example-placeholder` has no" not in out
-    assert "src/core/engine.py:2: `TODO(orphan)` matches no entry" in out
+    assert "warning: src/core/engine.py:2: `TODO(orphan)` matches no entry" in out
     assert out.rstrip().endswith("0 error(s), 6 warning(s)")
 
 
@@ -419,7 +818,7 @@ def test_begin_prints_targets_and_refuses_a_second_open_pass(
                        *opts(repo, store))
     assert code == 1 and "is ignored" in err
     code, _, err = run(capsys, "begin", "nope", *opts(repo, store))
-    assert code == 1 and "`nope` is not an entry in TODO.md" in err
+    assert code == 1 and "`nope` is not listed in TODO.md" in err
     code, _, err = run(capsys, "begin", "beta", "--resume", *opts(repo, store))
     assert code == 1 and "`beta` has no open pass to resume" in err
 
@@ -718,7 +1117,7 @@ def test_attempt_and_close(repo: Path, store: Store, tmp_path: Path,
 
     code, out, _ = run(capsys, "attempt-close", "--adr", str(adr), *opts(repo, store))
     assert code == 0 and out.splitlines() == ["incomplete: alpha, beta",
-                                              "still in TODO.md: alpha, beta"]
+                                              "still listed: alpha (TODO.md:3), beta (TODO.md:9)"]
     assert store.load("alpha")["attempts"][0]["outcome"] == "incomplete"
     assert store.load("alpha")["attempts"][0]["remaining"] == ["alpha", "beta"]
     code, _, err = run(capsys, "attempt-close", "--adr", str(adr), *opts(repo, store))
@@ -732,7 +1131,7 @@ def test_attempt_and_close(repo: Path, store: Store, tmp_path: Path,
     assert "beta" in todomd.read(repo, "TODO.md").by_slug()
     code, out, _ = run(capsys, "attempt-close", "--adr", out.strip(), "--outcome", "stopped",
                        *opts(repo, store))
-    assert out.splitlines() == ["stopped: alpha, beta", "still in TODO.md: beta"]
+    assert out.splitlines() == ["stopped: alpha, beta", "still listed: beta (TODO.md:3)"]
 
 
 def test_attempt_close_shipped_when_every_entry_is_gone(
@@ -764,7 +1163,7 @@ def test_attempt_close_dry_run(repo: Path, store: Store, tmp_path: Path,
         code, out, _ = run(capsys, "attempt-close", "--adr", adr, "--dry-run",
                            *opts(repo, store))
         assert code == 0 and out.splitlines() == ["would close incomplete: alpha, beta",
-                                                  "still in TODO.md: beta"]
+                                                  "still listed: beta (TODO.md:3)"]
         attempt = store.load("beta")["attempts"][0]
         assert attempt["closed"] is None and "remaining" not in attempt
     code, _, err = run(capsys, "attempt-close", "--adr", adr, "--dry-run", "--outcome",
@@ -831,7 +1230,7 @@ def test_prune_dry_run_and_write(repo: Path, store: Store,
     assert "pruned" not in store.load("beta")
     write(repo / "src" / "core" / "engine.py", "x = 1  # TODO(alpha)\ny = 2  # TODO(orphan)\n")
     code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
-    assert code == 0 and out.splitlines() == ["removed TODO.md:9: `beta`"]
+    assert code == 0 and out.splitlines() == ["removed TODO.md:9: `beta`", "changed: TODO.md"]
     text = (repo / "TODO.md").read_text(encoding="utf-8")
     assert "## beta" not in text and "Unbackticked" not in text
     assert "Code site (`TODO(alpha)`): src/core/engine.py.\n\n## `gamma`" in text
@@ -867,7 +1266,7 @@ def test_prune_lists_leftover_sites(repo: Path, store: Store,
     assert code == 1 and "2 code site(s) of deleted entries remain" in err
     write(engine, "x = 1\ny = 2  # TODO(orphan)\n")
     code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
-    assert code == 0 and out.strip() == "nothing to remove from TODO.md"
+    assert code == 0 and out.splitlines() == ["nothing to remove", "changed:"]
     assert run(capsys, "prune", *opts(repo, store))[0] == 3
 
 
@@ -896,7 +1295,7 @@ def test_prune_leftovers_skip_unknown_ignored_and_overridden_slugs(
     assert store.load("beta")["pruned"] == dt.date.today().isoformat()
     assert run(capsys, "prune", *opts(repo, store))[0] == 3
     code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
-    assert code == 0 and out.strip() == "nothing to remove from TODO.md"
+    assert code == 0 and out.splitlines() == ["nothing to remove", "changed:"]
 
 
 def test_prune_write_refuses_before_lint_check(
@@ -913,7 +1312,9 @@ def test_prune_write_refuses_before_lint_check(
 
 def test_prune_removes_the_last_entry_cleanly() -> None:
     from todotriage.ops import prune_text
-    assert prune_text("# T\n\n## `a`\n\nx\n\n## `b`\n\ny\n\n", {7}) == "# T\n\n## `a`\n\nx\n"
+    text = "# T\n\n## `a`\n\nx\n\n## `b`\n\ny\n\n"
+    doomed = [todomd.parse(text, "TODO.md").by_slug()["b"]]
+    assert prune_text(text, doomed) == "# T\n\n## `a`\n\nx\n"
 
 
 def test_summary_contents(repo: Path, store: Store, tmp_path: Path,
@@ -960,7 +1361,7 @@ def test_summary_names_entries_left_by_a_closed_attempt(
     store.save("gamma", old)
     _, out, _ = run(capsys, "summary", *opts(repo, store))
     text = Path(out.strip()).read_text(encoding="utf-8")
-    assert "(alpha, beta): incomplete, still in TODO.md: beta\n" in text
+    assert "(alpha, beta): incomplete, still listed: beta (TODO.md:3)\n" in text
     assert "- /old (gamma): incomplete\n" in text
 
 
@@ -977,14 +1378,14 @@ def test_attempt_close_names_the_configured_todo_file(
                     "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
     adr = out.strip()
     write(repo / "docs" / "TODO.md", without_alpha())
-    expected = ["incomplete: alpha, beta", "still in docs/TODO.md: beta"]
+    expected = ["incomplete: alpha, beta", "still listed: beta (docs/TODO.md:3)"]
     _, out, _ = run(capsys, "attempt-close", "--adr", adr, "--dry-run", *opts(repo, store))
     assert out.splitlines() == [f"would close {expected[0]}", expected[1]]
     _, out, _ = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
     assert out.splitlines() == expected
     _, out, _ = run(capsys, "summary", *opts(repo, store))
     text = Path(out.strip()).read_text(encoding="utf-8")
-    assert "(alpha, beta): incomplete, still in docs/TODO.md: beta\n" in text
+    assert "(alpha, beta): incomplete, still listed: beta (docs/TODO.md:3)\n" in text
 
 
 def test_slug_options_accept_commas(repo: Path, store: Store,
@@ -1147,7 +1548,7 @@ def test_json_output_of_list_and_ready(repo: Path, store: Store,
         "slug": "alpha", "status": "triaged", "review": "approved", "reason": None,
         "disposition": "do",
         "priority": 2, "unblocked": False, "ruled": dt.date.today().isoformat(), "cluster": [],
-        "line": 3}
+        "path": "TODO.md", "line": 3}
     assert listed["beta"]["status"] == "untriaged" and listed["beta"]["ruled"] is None
     code, out, _ = run(capsys, "ready", "--json", *opts(repo, store))
     assert code == 0 and json.loads(out) == [{
@@ -1924,7 +2325,7 @@ def test_retriage_needs_a_note_and_an_entry(repo: Path, store: Store,
     code, _, err = run(capsys, "retriage", "alpha", "--note", "  ", *opts(repo, store))
     assert code == 1 and "a re-triage needs a note" in err
     code, _, err = run(capsys, "retriage", "gone", "--note", "x", *opts(repo, store))
-    assert code == 1 and "`gone` is not an entry in TODO.md" in err
+    assert code == 1 and "`gone` is not listed in TODO.md" in err
     code, _, err = run(capsys, "retriage", "example-placeholder", "--note", "x",
                        *opts(repo, store))
     assert code == 1 and "is ignored in store.yaml" in err
@@ -2163,7 +2564,7 @@ def test_record_a_blocked_ruling_with_a_priority(repo: Path, store: Store,
     head = "rulings:\n  alpha:\n    disposition: do\n    priority: 2\n    summary: s\n"
     for a, blocked_on, message in (
             (1, '["a capability"]', 'every blocked_on to be an entry: '
-                                    '`a capability` is not an entry in TODO.md'),
+                                    '`a capability` is not listed in TODO.md'),
             (2, "[beta]", 'every blocked_on to be another entry; "beta" blocks on itself')):
         doc = ruling_doc(store, "alpha", a, head + (
             f"  beta:\n    disposition: blocked\n    blocked_on: {blocked_on}\n"
@@ -2197,7 +2598,7 @@ def test_override_blocked_with_a_priority(repo: Path, store: Store,
                                           capsys: pytest.CaptureFixture[str]) -> None:
     code, _, err = run(capsys, "override", "gamma", "--disposition", "blocked", "--blocked-on",
                        "alpha", "a capability", "--priority", "2", *opts(repo, store))
-    assert code == 1 and "`a capability` is not an entry in TODO.md" in err
+    assert code == 1 and "`a capability` is not listed in TODO.md" in err
     code, _, err = run(capsys, "override", "gamma", "--disposition", "blocked", "--blocked-on",
                        "alpha", "example-placeholder", "--priority", "2", *opts(repo, store))
     assert code == 1 and "`example-placeholder` is ignored in store.yaml" in err
@@ -2557,9 +2958,9 @@ def test_ready_looks_up_a_shared_follower_once(
     looked_up: list[str] = []
     real = todomd.first_seen
 
-    def counting(repo_: Path, path: str, heading: str) -> str | None:
-        looked_up.append(heading)
-        return real(repo_, path, heading)
+    def counting(repo_: Path, entry: todomd.Entry) -> str | None:
+        looked_up.append(entry.slug)
+        return real(repo_, entry)
 
     monkeypatch.setattr(todomd, "first_seen", counting)
     code, out, _ = run(capsys, "ready", *opts(repo, store))
@@ -2677,10 +3078,206 @@ def test_attempt_close_on_a_chain_unit(
     write(repo / "TODO.md", without(CHAINS, "`alpha`"))
     code, out, _ = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
     assert code == 0 and out.splitlines() == ["incomplete: alpha, beta",
-                                              "still in TODO.md: beta"]
+                                              "still listed: beta (TODO.md:3)"]
     chain_setup(repo, store, {"alpha": 2, "beta": (2, ["alpha"])})
     code, out, _ = attempt_on(capsys, repo, store, root, ["alpha", "beta"])
     assert code == 0
     write(repo / "TODO.md", without(CHAINS, "`alpha`", "beta"))
     code, out2, _ = run(capsys, "attempt-close", "--adr", out.strip(), *opts(repo, store))
     assert code == 0 and out2.splitlines() == ["shipped: alpha, beta"]
+
+
+def with_fragments(repo: Path, stub_query, bodies: dict[str, str],
+                   problems: list[tuple[str, str, str]] = ()) -> None:
+    """`todo.d/<slug>.md` for each body, and the stub reporting them (exit 1 with problems)."""
+    add_fragment_dir(repo, **{slug: body + "\n" for slug, body in bodies.items()})
+    stub_query(fragment_report(bodies, problems), 1 if problems else 0)
+
+
+def test_lint_renders_each_source_by_its_path(
+        repo: Path, store: Store, stub_query, capsys: pytest.CaptureFixture[str]) -> None:
+    with_fragments(repo, stub_query, {"delta": "Delta."},
+                   [("todo.d/x.md", "not-an-entry", "line 1: an entry starts with text")])
+    code, out, _ = run(capsys, "lint", "--repo", str(repo))
+    lines = out.splitlines()
+    assert code == 1 and lines[0] == ("error: todo.d/x.md: not-an-entry: "
+                                      "line 1: an entry starts with text")
+    assert "warning: TODO.md:9: `beta`: slug is not backticked" in lines
+    assert "warning: todo.d/delta.md:1: `delta` has no `TODO(delta)` code site" in lines
+    _, out, _ = run(capsys, "lint", "--json", "--repo", str(repo))
+    report = json.loads(out)
+    assert report["errors"] == [{"level": "error", "path": "todo.d/x.md", "line": 0,
+                                 "message": "not-an-entry: line 1: an entry starts with text"}]
+    assert {w["path"] for w in report["warnings"]} == {
+        "TODO.md", "todo.d/delta.md", "src/core/engine.py"}
+
+
+def test_refusals_name_the_fragment_dir_with_the_todo_file(
+        repo: Path, store: Store, stub_query, capsys: pytest.CaptureFixture[str]) -> None:
+    with_fragments(repo, stub_query, {"delta": "Delta."},
+                   [("todo.d/x.md", "not-an-entry", "line 1: an entry starts with text")])
+    code, _, err = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 1 and "TODO.md or todo.d has lint errors; fix them before `prune --write`" in err
+    code, _, err = run(capsys, "begin", "nope", *opts(repo, store))
+    assert code == 1 and "`nope` is not listed in TODO.md or todo.d" in err
+
+
+def test_show_a_fragment(repo: Path, store: Store, stub_query,
+                         capsys: pytest.CaptureFixture[str]) -> None:
+    with_fragments(repo, stub_query, {"delta": "Delta body."})
+    code, out, _ = run(capsys, "show", "delta", *opts(repo, store))
+    lines = out.splitlines()
+    assert code == 0 and "first seen: uncommitted" in lines
+    at = lines.index("entry (todo.d/delta.md):")
+    assert lines[at + 1:at + 3] == ["Delta body.", "code sites:"]
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "frag", "--date=2026-03-04T00:00:00")
+    _, out, _ = run(capsys, "show", "delta", *opts(repo, store))
+    assert "first seen: 2026-03-04" in out.splitlines()
+    _, out, _ = run(capsys, "show", "delta", "--json", *opts(repo, store))
+    data = json.loads(out)
+    assert (data["path"], data["line"], data["entry"]) == ("todo.d/delta.md", 1, "Delta body.")
+    _, out, _ = run(capsys, "show", "alpha", "--json", *opts(repo, store))
+    assert (json.loads(out)["path"], json.loads(out)["line"]) == ("TODO.md", 3)
+
+
+def test_prune_removes_entries_from_both_places(
+        repo: Path, store: Store, stub_query, capsys: pytest.CaptureFixture[str]) -> None:
+    with_fragments(repo, stub_query, {"delta": "Delta.", "eps": "Eps.", "keep": "Keep.",
+                                      "zed": "Zed."})
+    git(repo, "add", "TODO.md", "todo.d/delta.md", "todo.d/eps.md", "todo.d/keep.md")
+    git(repo, "commit", "-q", "-m", "fragments")
+    for slug in ("beta", "delta", "eps", "zed"):
+        store.save(slug, approved("delete", entry_hash=hash_of(repo, slug)))
+    code, out, _ = run(capsys, "prune", *opts(repo, store))
+    assert code == 0 and out.splitlines()[:5] == [
+        "TODO.md:9: `beta`", "todo.d/delta.md: `delta`", "todo.d/eps.md: `eps`",
+        "todo.d/zed.md: `zed`", "code sites:"]
+    write(repo / "src" / "core" / "engine.py", "x = 1  # TODO(alpha)\n")
+    (repo / "todo.d" / "eps.md").unlink()  # deleted by hand after the report was read
+    code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 0 and out.splitlines() == [
+        "removed TODO.md:9: `beta`", "removed todo.d/delta.md: `delta`",
+        "removed todo.d/eps.md: `eps`", "removed todo.d/zed.md: `zed`",
+        "changed: TODO.md todo.d/delta.md todo.d/eps.md"]
+    assert sorted(p.name for p in (repo / "todo.d").iterdir()) == ["keep.md"]
+    assert "## beta" not in (repo / "TODO.md").read_text(encoding="utf-8")
+    assert all(store.load(slug)["pruned"] for slug in ("beta", "delta", "eps", "zed"))
+    changed = out.splitlines()[-1].split()[1:]
+    git(repo, "add", "--", *changed)
+    assert git(repo, "diff", "--cached", "--name-status").splitlines() == [
+        "M\tTODO.md", "D\ttodo.d/delta.md", "D\ttodo.d/eps.md"]
+
+
+def test_prune_of_untracked_fragments_changes_nothing_to_stage(
+        repo: Path, store: Store, stub_query, capsys: pytest.CaptureFixture[str]) -> None:
+    (repo / "TODO.md").unlink()
+    git(repo, "commit", "-q", "-am", "no TODO.md")
+    with_fragments(repo, stub_query, {"zed": "Zed.", "keep": "Keep."})
+    store.save("zed", approved("delete", entry_hash=todomd.read(repo, "TODO.md")
+                               .by_slug()["zed"].body_hash))
+    code, out, _ = run(capsys, "prune", "--write", "--json", *opts(repo, store))
+    assert code == 0 and json.loads(out) == {"pruned": ["zed"], "paths": [], "sites": [],
+                                             "leftover_sites": []}
+    assert not (repo / "TODO.md").exists() and not (repo / "todo.d" / "zed.md").exists()
+    store.save("keep", approved("delete", entry_hash=todomd.read(repo, "TODO.md")
+                                .by_slug()["keep"].body_hash))
+    stub_query(fragment_report({"keep": "Keep."}))
+    code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 0 and out.splitlines() == ["removed todo.d/keep.md: `keep`", "changed:"]
+
+
+def test_prune_write_in_the_sectioned_layout(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    write(repo / "TODO.md", GATHERED)
+    write(repo / "src" / "core" / "engine.py", "x = 1\n")
+    store.save("beta", approved("delete", entry_hash=hash_of(repo, "beta")))
+    code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 0 and out.splitlines() == ["removed TODO.md:19: `beta`", "changed: TODO.md"]
+    text = (repo / "TODO.md").read_text(encoding="utf-8")
+    assert text.startswith("# TODO\n\nPreamble paragraph.\n\n## Open\n\n### alpha\n")
+    assert text.endswith("### zeta\n\nZeta body.\n\n## Done\n\nClosed things.\n")
+    assert "beta" not in text
+
+
+def test_attempt_close_names_where_each_entry_is_listed(
+        repo: Path, store: Store, tmp_path: Path, stub_query,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    with_fragments(repo, stub_query, {"delta": "Delta."})
+    for slug in ("beta", "delta"):
+        store.save(slug, approved(entry_hash=hash_of(repo, slug)))
+    _, out, _ = run(capsys, "attempt", "--selection", str(selection(store, ["beta", "delta"])),
+                    "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
+    adr = out.strip()
+    expected = ["incomplete: beta, delta", "still listed: beta (TODO.md:9), delta (todo.d/delta.md)"]
+    _, out, _ = run(capsys, "attempt-close", "--adr", adr, "--dry-run", *opts(repo, store))
+    assert out.splitlines() == [f"would close {expected[0]}", expected[1]]
+    _, out, _ = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
+    assert out.splitlines() == expected
+    _, out, _ = run(capsys, "summary", *opts(repo, store))
+    text = Path(out.strip()).read_text(encoding="utf-8")
+    assert f"(beta, delta): {expected[0].split(':')[0]}, {expected[1]}\n" in text
+
+
+@pytest.mark.parametrize("broken", ["todo", "fragment"])
+def test_attempt_close_refuses_on_lint_errors(
+        repo: Path, store: Store, tmp_path: Path, stub_query, broken: str,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    with_fragments(repo, stub_query, {})
+    store.save("alpha", approved(entry_hash=hash_of(repo, "alpha")))
+    _, out, _ = run(capsys, "attempt", "--selection", str(selection(store, ["alpha"])),
+                    "--adr-root", str(tmp_path / "adr"), *opts(repo, store))
+    adr = out.strip()
+    write(repo / "TODO.md", without_alpha())
+    if broken == "todo":
+        write(repo / "TODO.md", without_alpha() + "\n## Not A Slug\n\nx\n")
+    else:
+        stub_query(fragment_report({"Upper": "Up."}))
+    for dry in (["--dry-run"], []):
+        code, out, err = run(capsys, "attempt-close", "--adr", adr, *dry, *opts(repo, store))
+        assert code == 1 and out == ""
+        assert err.strip() == ("todo-triage: TODO.md or todo.d has lint errors; "
+                               "fix them before attempt-close")
+    assert store.load("alpha")["attempts"][0]["closed"] is None
+
+
+def test_prune_write_changes_nothing_when_git_ls_files_fails(
+        repo: Path, store: Store, stub_query, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    with_fragments(repo, stub_query, {"delta": "Delta."})
+    write(repo / "src" / "core" / "engine.py", "x = 1  # TODO(alpha)\n")
+    for slug in ("beta", "delta"):
+        store.save(slug, approved("delete", entry_hash=hash_of(repo, slug)))
+    before = (repo / "TODO.md").read_text(encoding="utf-8")
+    real = ops.git
+
+    def failing(where: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        if args[0] == "ls-files":
+            return subprocess.CompletedProcess(args, 128, "", "fatal: broken index\n")
+        return real(where, *args)
+
+    monkeypatch.setattr(ops, "git", failing)
+    code, out, err = run(capsys, "prune", "--write", *opts(repo, store))
+    assert code == 1 and out == "" and "git ls-files failed: fatal: broken index" in err
+    assert (repo / "TODO.md").read_text(encoding="utf-8") == before
+    assert (repo / "todo.d" / "delta.md").exists()
+    assert not any(store.load(slug).get("pruned") for slug in ("beta", "delta"))
+
+
+@pytest.mark.parametrize("broken", ["unclosed fence", "flat entry outside open"])
+def test_attempt_close_refuses_when_an_entry_is_hidden(
+        repo: Path, store: Store, tmp_path: Path, broken: str,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("alpha", approved(entry_hash=hash_of(repo, "alpha")))
+    _, out, _ = attempt_on(capsys, repo, store, tmp_path / "adr", ["alpha"])
+    adr = out.strip()
+    if broken == "unclosed fence":
+        write(repo / "TODO.md", "# TODOs\n\n## `zeta`\n\nwrite\n```` then text\n\n" + TODO[9:])
+    else:
+        write(repo / "TODO.md", TODO + "\n## Open\n\n### new\n\nNew.\n")
+    assert "alpha" not in todomd.read(repo, "TODO.md").by_slug()
+    code, _, _ = run(capsys, "lint", "--repo", str(repo))
+    assert code == 1
+    code, _, err = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
+    assert code == 1 and "TODO.md has lint errors; fix them before attempt-close" in err
+    assert store.load("alpha")["attempts"][0]["closed"] is None

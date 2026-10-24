@@ -108,7 +108,7 @@ you gave the agent.
    `todo-triage init --tag <tag>` with what they gave.
 2. Note the limits, if any, and the start time.
 3. `todo-triage lint`. Exit 1 → STOP, surface its output verbatim, end
-   turn: a malformed `TODO.md` is the user's to fix. Warnings → surface them
+   turn: a malformed `TODO.md` or `todo.d/` fragment is the user's to fix. Warnings → surface them
    verbatim and continue unless the user says stop.
 4. `todo-triage list --status open`. Rows printed → one `todo-triage
    abandon <the slug from each row>`, surface its output verbatim; exit 1 →
@@ -240,8 +240,11 @@ Every git command here runs in the repo.
    `todo-triage override <slug>` so the slug is no longer ruled `delete`
    and its sites are no longer listed); the user says skip → nothing is
    pruned, end turn.
-5. `git add -- <TODO.md path>`, then `git diff --cached --stat` → surface
-   it verbatim with the report path. STOP, end turn: the commit waits for
+5. `git add -- <every path on the `changed:` line `prune --write`
+   printed>` — transcription, as the commit message is; a `changed:` line
+   naming no path means nothing is staged: surface the `removed` lines and
+   that there is nothing to commit, end turn. Then `git diff --cached
+   --stat` → surface it verbatim with the report path. STOP, end turn: the commit waits for
    the user's word. The user says commit → `git commit -m "<message>"`, the
    message being the user's words when they gave any, else `Prune deleted
    TODOs` followed by `: ` and the slugs of the `removed` lines `prune

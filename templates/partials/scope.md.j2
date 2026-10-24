@@ -32,8 +32,9 @@ the sandbox refuses is the operator's to open, not yours to route around.
 {%- endmacro %}
 {% set four_things %}four things: the repository; the change,
   concretely; why no in-scope alternative is acceptable; and a paste-ready
-  `TODO.md` entry for that repository in its own convention, so "file a TODO
-  and move on" costs the user a paste{% endset %}
+  tracker entry (`TODO.md`, or `todo.d/<slug>.md` where that repository
+  keeps one) in its own convention, so "file a TODO and move on" costs the
+  user a paste{% endset %}
 {% macro channel() %}
 {% if role.id == "designer" and stack %}
 **Your channel** is one **No default** open question per repository,
@@ -104,7 +105,7 @@ working dir is the one exception, for artifacts.
 - **A change needed in another owned repository** — a defect in an owned
   dependency, a missing feature in an owned sibling — is never worked around
   and never silently dropped. It has two outcomes, and the user picks: a
-  `TODO.md` entry the user files there, or the cycle stops. Put it to the
+  tracker entry the user files there, or the cycle stops. Put it to the
   user through your channel (below) with
   {{ four_things }}.
 {{ ownership() }}
@@ -133,7 +134,7 @@ takes the cycle's documents and nothing else.
   missing feature in an owned sibling, anything whose honest fix lives in
   another owned repository — is never worked around and never silently
   dropped. Three outcomes exist, and the user picks: the repository is
-  brought into scope; a `TODO.md` entry is filed there, by the user or once
+  brought into scope; a tracker entry is filed there, by the user or once
   the repository is in scope; or the cycle stops. Put the need to the user
   through your channel (below) with
   {{ four_things }}.

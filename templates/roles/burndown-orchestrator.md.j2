@@ -112,7 +112,7 @@ you gave the agent, or, from the orchestrator, `-`.
 2. Record the branch, start HEAD and start time. Detached HEAD → STOP, ask
    the user which branch to work on, end turn.
 3. `todo-triage lint`. Exit 1 → STOP, surface its output verbatim, end
-   turn: a malformed `TODO.md` is the user's to fix. Warnings → surface them
+   turn: a malformed `TODO.md` or `todo.d/` fragment is the user's to fix. Warnings → surface them
    verbatim and continue.
    Then `todo-triage inbox`. Exit 0 → surface its last line verbatim and
    continue: rulings awaiting the user's review are not ready, and this
@@ -154,22 +154,29 @@ you gave the agent, or, from the orchestrator, `-`.
      one of the two stops below, a push say — does not run it again; it
      returns to that stop, surfacing the new status line, and the stop's
      words stand. Exit 1 → STOP, surface its stderr verbatim, the ADR dir
-     and the session id, end turn: the attempt has no record or is already
-     closed, so nothing is left to close. The user says:
+     and the session id, end turn. The stderr names the cause, and this
+     stop routes on it: `has lint errors` means the cycle left the tracker
+     failing lint, nothing was recorded and the attempt is still open; any
+     other means the attempt has no record or is already closed, so nothing
+     is left to close. The user says:
+     - `retry` → run this command again, once the user has fixed the
+       tracker; route its result by this bullet.
      - `skip` → step 1. The tool printed no slugs, so none are excluded.
+       After `has lint errors` the attempt is still open: say that it must
+       close first, and STOP again.
      - `stop` → **End**.
 
      Exit 0 → it prints the outcome and the unit's slugs on its first line
-     and, when some are still in the TODO file, a second line naming them,
-     `still in <TODO file>: <slugs>`. Resolved += the first line's slugs
-     that the second line does not name: those entries are gone from the
-     TODO file whatever the outcome.
+     and, when some are still listed, a second line naming each with where
+     it is, `still listed: <slug> (<path>), …`. Resolved += the first
+     line's slugs that the second line does not name: those entries are
+     gone from the tracker whatever the outcome.
      This command is the one exception to "branch on the exit code, never
      on the text": on exit 0 the first word is the outcome, and you route
      on it. `shipped` → step 1.
      `incomplete` → STOP: surface the tool's output verbatim, the ADR dir
      and the orchestrator session id; end turn. The orchestrator reported a
-     shipped cycle that left the unit's entries in `TODO.md`; that cycle is
+     shipped cycle that left the unit's entries listed; that cycle is
      over and cannot be resumed into more work. The user says:
      - `retry` → **Follow-up**, below.
      - `skip` → add the unit's slugs to the excluded slugs; step 1.
@@ -182,7 +189,7 @@ you gave the agent, or, from the orchestrator, `-`.
      verbatim; exit 1 → its stderr verbatim instead. STOP, end turn. You
      never route on the dry run; it runs at every gate because the `gate`
      status line is the same at each, and at the ship gate it shows which
-     of the unit's entries the cycle would leave in `TODO.md`. The user's
+     of the unit's entries the cycle would leave listed. The user's
      answer → `ccc resume <session id> "<their words verbatim>"`; HEAD
      again; route the new status line by this same step. The unit's
      attempt stays open throughout.
@@ -200,6 +207,11 @@ you gave the agent, or, from the orchestrator, `-`.
      - skip → `todo-triage attempt-close --adr <ADR dir> --outcome
        stopped`; add the unit's slugs to the excluded slugs; step 1.
      - stop → the same close and exclusion, then **End**.
+
+     That close exits 1 → STOP, surface its stderr verbatim, end turn,
+     before the exclusion: on `has lint errors` the attempt is still open.
+     The user's `retry`, once the tracker is fixed, runs the close again
+     and continues this bullet; `stop` → **End**.
 
 **Follow-up.** After `retry` at an `incomplete` stop: step 2 once, with
 one change to the forester's payload — the filters verbatim except

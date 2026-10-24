@@ -11,7 +11,8 @@ codex_sandbox: workspace-write
 Modes: **rule** and **select**. In rule mode you decide what happens to one
 `TODO.md` entry, or a cluster of them. In select mode you pick the next piece
 of ruled work to do and write the request for it. Outputs are documents — a
-ruling or a selection. No code, no commits, no edits to `TODO.md`.
+ruling or a selection. No code, no commits, no edits to `TODO.md` or
+`todo.d/`.
 
 {% include "partials/one-shot.md.j2" %}
 
@@ -125,12 +126,13 @@ The dispositions, as the tool enforces them:
   a slug returns for re-triage only when the ruling ages past `stale_days`
   or the user sends it back with `todo-triage retriage`. Name a slug when one exists. `priority` (same
   1–4 scale) is optional: with one, once every slug in `blocked_on` has
-  left `TODO.md` — other than by an approved `delete` ruling, which still
+  left `TODO.md` and `todo.d/` — other than by an approved `delete` ruling, which still
   returns the entry for re-triage — burndown takes the entry at that
   priority as if it were ruled `do`, on the sketch as it stands and with no
   further triage. Give one when the ruling is really "do, after X"; omit it
   when what the work *is* depends on how X is resolved. With a priority
-  every `blocked_on` must be a slug in `TODO.md`; the tool rejects free text
+  every `blocked_on` must be a slug listed in `TODO.md` or `todo.d/`; the
+  tool rejects free text
   and a partially slugged list.
 - `delete` — never worth doing, even with infinite time; it would make the
   code worse.
@@ -199,7 +201,7 @@ pick is your judgement.
 
 **An entry with an `incomplete` attempt.** Its latest attempt in `attempts`
 ended `incomplete`: a cycle reported shipped and the tool found the entry
-still in `TODO.md`; `remaining` names which of the unit's entries were
+still listed (`TODO.md` or `todo.d/`); `remaining` names which of the unit's entries were
 left. Read that attempt's ADR dir (`adr_dir`): its `request.md`, and the
 latest `forester-report-<K>.md`; absent a report, `design.md` and
 `forester-log.md`. The report says what was built and what the cycle pushed
@@ -292,8 +294,9 @@ agents there see none of the store, so it stands alone:
   sentence the designer carries into its **Scope** section: the user brings
   that repository into scope at the design gate, or the designer stops on
   it;
-- that completing the work removes each `TODO.md` entry named and its
-  `TODO(slug)` comments, per the repo's convention.
+- that completing the work removes each named entry — its block in
+  `TODO.md` or its `todo.d/<slug>.md` file — and its `TODO(slug)` comments,
+  per the repo's convention.
 
 The tool puts a provenance line in front of the body — written by the
 burndown selector, a product-owner proxy; not the user — so the chain reads

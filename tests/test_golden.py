@@ -796,6 +796,11 @@ def test_burndown_stops_on_an_incomplete_close(builds):
             exit1 = before[before.index("Exit 1 → STOP") : before.index("Exit 0 →")]
             assert "- `skip` → step 1." in exit1, name
             assert "- `stop` → **End**." in exit1, name
+            assert "`has lint errors` means" in exit1, name
+            assert "nothing was recorded and the attempt is still open" in exit1, name
+            assert "- `retry` → run this command again" in exit1, name
+            assert "the attempt is still open: say that it must close first, and STOP again" \
+                in exit1, name
             assert "closes or clears" not in flat, name
             assert "It runs once per unit" in before, name
             assert "does not run it again; it returns to that stop" in before, name
@@ -803,13 +808,16 @@ def test_burndown_stops_on_an_incomplete_close(builds):
                     in before), name
             assert ('the one exception to "branch on the exit code, never on the text"'
                     in step), name
+            escalated = step[step.index("- `ESCALATE` → STOP") : step.index("**Follow-up.**")]
+            assert ("That close exits 1 → STOP, surface its stderr verbatim, end turn, before "
+                    "the exclusion: on `has lint errors` the attempt is still open.") in escalated, name
             stop = step[incomplete : step.index("- `gate` →")]
             for word in ("- `retry` →", "- `skip` →", "- `stop` →"):
                 assert word in stop, f"{name}: {word}"
             assert "`incomplete` → add them to the excluded slugs" not in flat, name
             follow = step[step.index("**Follow-up.**") :]
             assert "--slugs <the slugs on the close's second line>" in follow, name
-            assert "a second line naming them, `still in <TODO file>: <slugs>`" in step, name
+            assert "`still listed: <slug> (<path>), …`" in step, name
             assert "transcribed from the tool's output" in follow, name
             escalate = follow[follow.index("- `ESCALATE` or a missing status line") :]
             escalate = escalate[: escalate.index("- A cut-off")]
@@ -2255,7 +2263,7 @@ def test_code_facing_roles_carry_the_scope_rule(builds):
                 else:
                     assert SCOPE_WIDENING_RULE in section_flat, where
                     assert SCOPE_STACK_RULE not in flat, where
-                    assert "a paste-ready `TODO.md` entry" in section_flat, where
+                    assert "a paste-ready tracker entry (`TODO.md`, or `todo.d/<slug>.md`" in section_flat, where
 
 
 def test_scope_channels_route_to_someone_who_can_act(builds):
