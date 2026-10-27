@@ -4,10 +4,13 @@
 
 - **The TODO workflows now read allthechanges-style trackers.**
   [allthechanges](https://github.com/rnortman/allthechanges) keeps TODO
-  entries one per file in a `todo.d/` (or `.todo.d/`) directory and gathers
-  them into `TODO.md` under `## Open` with `### <slug>` headings.
-  `todo-triage` now reads both the fragment files and that `TODO.md`
-  layout, and triage rulings survive a gather. allthechanges is a soft
+  entries one per file in a `todo.d/` (or `.todo.d/`) directory and, from
+  0.3.0, gathers them into `TODO.md` as `` ## `<slug>` `` entries — the
+  layout `todo-triage` always read. `todo-triage` now reads the fragment
+  files, and triage rulings survive a gather. A `## Open` section or a
+  `### ` heading in `TODO.md` is now a lint error naming the line, and
+  every command but `lint` refuses a file with a `## Open` section.
+  allthechanges is a soft
   dependency: it is needed on `PATH` only in a repository that has such a
   directory, where every command otherwise fails naming
   `cargo install allthechanges`.

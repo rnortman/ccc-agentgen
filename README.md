@@ -473,18 +473,19 @@ Two workflows over a repo's `TODO.md`, and the `todo-triage` tool they run on.
    That puts `todo-triage` and `agentgen` in `~/.local/bin`, where agents can
    reach them (ccc adds nothing to `PATH`). `agentgen deploy` does not
    install them.
-2. The repository needs a tracker the tool parses. `TODO.md` in either of
-   two layouts: a `# ` title line, then one entry per `## <slug>` heading
-   (the slug may be backticked), each entry running to the next `## `; or
-   [allthechanges](https://github.com/rnortman/allthechanges)' layout, a
-   `## Open` section holding one entry per `### <slug>` heading, each
-   running to the next heading of level 1-3. Headings are found outside
-   fenced blocks only, and every line starting with three backticks or three
-   tildes opens or closes a fence, whichever character opened it — the rule
-   allthechanges reads by, kept so both tools split a file the same way. A
-   fence left open at the end of the file is a lint error, as is a
-   backticked `` ## `<slug>` `` outside `## Open` in the second layout: both
-   hide entries the tool would otherwise count as gone.
+2. The repository needs a tracker the tool parses. `TODO.md` is a `# `
+   title line, then one entry per `` ## `<slug>` `` heading (a bare slug is
+   accepted with a warning), each entry running to the next `## `; there
+   are no sections. Headings are found outside fenced blocks only, and
+   every line starting with three backticks or three tildes opens or closes
+   a fence, whichever character opened it — the rule
+   [allthechanges](https://github.com/rnortman/allthechanges) reads by, kept
+   so both tools split a file the same way. A fence left open at the end of
+   the file is a lint error, since it hides entries the tool would
+   otherwise count as gone; so are a `## Open` section, a heading deeper
+   than `## ` and a `# ` heading after the first entry. A file with a
+   `## Open` section reads as no entries, so every command but `lint`
+   refuses it.
    Optionally, entries also live one per file in `todo.d/` (or `.todo.d/`)
    as `<slug>.md` holding the entry text alone; the tool reads them by
    running `allthechanges --json todo query`, and `TODO.md` may then be

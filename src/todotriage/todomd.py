@@ -1,9 +1,8 @@
-"""The TODO.md grammar, in either layout.
+"""The TODO.md grammar.
 
-Flat: a `# ` title, then `## `-headed entries, each to the next `## `.
-Sectioned (what `allthechanges todo gather` writes): a `# ` title and a
-`## Open` section whose `### `-headed entries each run to the next heading of
-level 1-3. Headings are found outside fenced blocks only.
+A `# ` title, then `## `-headed entries, each to the next `## `. Headings are
+found outside fenced blocks only; a `## Open` section, a heading of level 3 or
+deeper and a `# ` heading after the first entry are errors.
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from . import TriageError
 
 SLUG_PATTERN = r"`?(?P<slug>[a-z0-9][a-z0-9_-]*)`?(?P<trail>.*)$"
 HEADING_RE = re.compile(r"^## " + SLUG_PATTERN)
-SUBHEADING_RE = re.compile(r"^### " + SLUG_PATTERN)
 TITLE_RE = re.compile(r"^# \S")
 ATX_HEADING_RE = re.compile(r"^(#{1,6})( |$)")
 FENCE_PREFIXES = ("```", "~~~")
@@ -91,6 +89,7 @@ class TodoFile:
     fragment_dir: str | None = None
     entries: list[Entry] = field(default_factory=list)
     issues: list[Issue] = field(default_factory=list)
+    sectioned: int | None = None  # 1-based line of a `## Open` heading, or None
 
     def by_slug(self) -> dict[str, Entry]:
         """First entry per slug; duplicates are a lint error, so later ones lose."""
@@ -107,6 +106,13 @@ class TodoFile:
         """Raise TriageError when the tracker has an error-level issue."""
         if any(issue.level == "error" for issue in self.issues):
             raise TriageError(f"{self.tracker(todo_path)} has lint errors; fix them before {action}")
+
+    def refuse_sectioned(self, todo_path: str) -> None:
+        """Raise TriageError when the file is in the sectioned layout, which parses to no entries."""
+        if self.sectioned is not None:
+            raise TriageError(f"{todo_path}:{self.sectioned}: `## {OPEN_SECTION}` section: the "
+                              "sectioned layout is not read; move its entries directly under "
+                              "the title as ## `<slug>` (see `lint`)")
 
 
 def body_hash(body: str) -> str:
@@ -154,47 +160,29 @@ def parse(text: str, path: str) -> TodoFile:
         todo.issues.append(Issue("error", path, open_fence + 1,
                                  f"fence line {lines[open_fence]!r} is never closed; "
                                  "no heading after it is read"))
-    opens = [i for i, level in found if level == 2 and heading_text(lines[i], 2) == OPEN_SECTION]
-    if not opens:
-        starts = [i for i, level in found if level == 2]
-        bounds = [(start, (starts[n + 1] if n + 1 < len(starts) else len(lines)))
-                  for n, start in enumerate(starts)]
-        add_entries(todo, path, lines, bounds, HEADING_RE, warn_unticked=True)
-        todo.issues.sort(key=lambda i: i.line)
-        return todo
-
-    for extra in opens[1:]:
-        todo.issues.append(Issue("error", path, extra + 1,
-                                 f"more than one `## {OPEN_SECTION}` section "
-                                 f"(first at line {opens[0] + 1})"))
-    open_at = opens[0]
-    section_end = next((i for i, level in found if i > open_at and level <= 2), len(lines))
-    starts = [i for i, level in found if open_at < i < section_end and level == 3]
-    bounds = []
-    for start in starts:
-        stop = next((i for i, level in found if i > start and level <= 3), len(lines))
-        bounds.append((start, stop))
-    add_entries(todo, path, lines, bounds, SUBHEADING_RE, warn_unticked=False)
-
+    level_two = [i for i, level in found if level == 2]
+    starts = [i for i in level_two if heading_text(lines[i], 2) != OPEN_SECTION]
     for index, level in found:
-        if level not in (2, 3) or open_at <= index < section_end:
-            continue
         if level == 2 and heading_text(lines[index], 2) == OPEN_SECTION:
+            message = (f"`## {OPEN_SECTION}` section: the sectioned layout is not read; "
+                       "entries go directly under the title as ## `<slug>`")
+            if todo.sectioned is None:
+                todo.sectioned = index + 1
+        elif level >= 3:
+            message = "heading below the entry level; entries have no sub-headings"
+        elif level == 1 and starts and index > starts[0]:
+            message = "`# ` heading after the first entry"
+        else:
             continue
-        pattern = HEADING_RE if level == 2 else SUBHEADING_RE
-        if match := pattern.match(lines[index]):
-            # A backticked `## ` slug is a flat-layout entry left behind: nothing reads it,
-            # and a ruled slug that silently drops out would be recorded resolved.
-            leftover = level == 2 and lines[index].startswith(f"## `{match['slug']}`")
-            todo.issues.append(Issue("error" if leftover else "warning", path, index + 1,
-                                     f"looks like an entry heading outside `## {OPEN_SECTION}`: "
-                                     f"{lines[index]!r}"))
+        todo.issues.append(Issue("error", path, index + 1, f"{message}: {lines[index]!r}"))
+    bounds = [(start, next((i for i in level_two if i > start), len(lines))) for start in starts]
+    add_entries(todo, path, lines, bounds)
     todo.issues.sort(key=lambda i: i.line)
     return todo
 
 
-def add_entries(todo: TodoFile, path: str, lines: list[str], bounds: list[tuple[int, int]],
-                pattern: re.Pattern[str], *, warn_unticked: bool) -> None:
+def add_entries(todo: TodoFile, path: str, lines: list[str],
+                bounds: list[tuple[int, int]]) -> None:
     """Append one entry per 0-based `(heading, stop)` block, with its issues."""
     seen: dict[str, int] = {}
     for start, stop in bounds:
@@ -204,7 +192,7 @@ def add_entries(todo: TodoFile, path: str, lines: list[str], bounds: list[tuple[
             body_lines.pop()
         body = "\n".join(body_lines)
         line_no = start + 1
-        match = pattern.match(heading)
+        match = HEADING_RE.match(heading)
         if match is None:
             todo.issues.append(Issue("error", path, line_no, f"unparseable heading: {heading!r}"))
             continue
@@ -230,7 +218,7 @@ def add_entries(todo: TodoFile, path: str, lines: list[str], bounds: list[tuple[
             seen[slug] = line_no
         if not body.strip():
             todo.issues.append(Issue("error", path, line_no, f"`{slug}` has an empty body"))
-        if warn_unticked and not backticked:
+        if not backticked:
             todo.issues.append(Issue("warning", path, line_no,
                                      f"`{slug}`: slug is not backticked"))
         if trail.strip():
@@ -312,7 +300,7 @@ def query_report(result: subprocess.CompletedProcess[str]) -> dict[str, Any] | N
 
 
 def read(repo: Path, todo_path: str) -> TodoFile:
-    """`todo_path` in either layout, then the fragment directory's entries."""
+    """`todo_path`, then the fragment directory's entries."""
     path = repo / todo_path
     try:
         text = path.read_text(encoding="utf-8")
@@ -349,7 +337,7 @@ def first_seen(repo: Path, entry: Entry) -> str | None:
     if entry.heading is None:
         result = git(repo, "log", "--format=%ad", "--date=short", "--", entry.path)
     else:
-        # The whole line, newlines included, so `### foo` does not match `### foo-bar`.
+        # The whole line, newlines included, so `## foo` does not match `## foo-bar`.
         result = git(repo, "log", "--format=%ad", "--date=short", f"-S\n{entry.heading}\n",
                      "--", entry.path)
     dates = result.stdout.split()

@@ -44,3 +44,16 @@ code site); the site scan never consults it, even when `lint` is given
 site scan — a path exclude, a rule on the token's form, or scanning comment
 syntax only — and which one is the user's decision on how the tool should
 read a tree.
+
+## `triage-commands-read-past-lint-errors`
+
+Only `attempt-close` and `prune --write` refuse a tracker with error-level
+lint issues. Every other command that reads it (`override`, `record`,
+`begin`, `summary`, `ready`, `list`) runs on what did parse, so an entry
+dropped by an error such as an unparseable heading counts as gone: an
+`override` stores its ruling with `entry_hash: null` and empty
+`blocked_on_entries`, and `summary` writes it into the store as resolved.
+A sectioned `## Open` file is already refused by every command but `lint`.
+The fix is deciding which commands refuse on which errors — the read-only
+status views may be worth keeping usable on a broken file — and that is
+the user's call on how the tool should behave.

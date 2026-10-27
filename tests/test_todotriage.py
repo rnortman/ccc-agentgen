@@ -144,9 +144,7 @@ GATHERED = f"""\
 
 Preamble paragraph.
 
-## Open
-
-### alpha
+## `alpha`
 
 Run this:
 
@@ -158,21 +156,15 @@ make
 
 after fence
 
-### beta
+## `beta`
 
 Beta body.
 
-#### details
-
 More beta.
 
-### zeta
+## `zeta`
 
 Zeta body.
-
-## Done
-
-Closed things.
 """
 
 ALPHA_FRAGMENT = f"""\
@@ -194,40 +186,39 @@ def test_headings_skip_fenced_lines_and_any_fence_line_toggles() -> None:
     assert todomd.headings(["# t", "~~~", "## hidden"]) == ([(0, 1)], 1)
 
 
-def test_sectioned_layout_reads_level_three_entries_in_open() -> None:
+def test_gathered_layout_reads_entries_under_the_title() -> None:
     todo = todomd.parse(GATHERED, "TODO.md")
     assert todo.title == "TODO"
     assert [e.slug for e in todo.entries] == ["alpha", "beta", "zeta"]
     alpha, beta, zeta = todo.entries
     assert alpha.body_hash == todomd.body_hash(ALPHA_FRAGMENT)
     assert "## not a section" in alpha.body and alpha.body.endswith("after fence")
-    assert (alpha.line, alpha.stop) == (7, 19)
-    assert "#### details" in beta.body and beta.body.endswith("More beta.")
-    assert zeta.body.strip() == "Zeta body." and "Closed" not in zeta.body
-    assert not alpha.backticked and alpha.heading == "### alpha"
+    assert (alpha.line, alpha.stop) == (5, 17)
+    assert beta.body.strip() == "Beta body.\n\nMore beta."
+    assert zeta.body.strip() == "Zeta body."
+    assert alpha.backticked and alpha.heading == "## `alpha`"
     assert todo.issues == []
 
 
-def test_sectioned_layout_issues() -> None:
-    text = ("# T\n\n## `stray`\n\nold flat entry\n\n### loose\n\nx\n\n## Open\n\n"
-            "### Bad Slug\n\nx\n\n### a\n\nx\n\n### a\n\n### `b` trail\n\nTOMBSTONE\n\n"
-            "## Open\n\n### c\n\ny\n")
+def test_sectioned_layout_is_a_lint_error() -> None:
+    text = "# TODO\n\n## Open\n\n### alpha\n\na\n\n### beta\n\nb\n"
     todo = todomd.parse(text, "TODO.md")
-    assert [e.slug for e in todo.entries] == ["a", "a", "b"]
-    found = [(i.level, i.line, i.message.split(":")[0]) for i in todo.issues]
-    assert found == [
-        ("error", 3, "looks like an entry heading outside `## Open`"),
-        ("warning", 7, "looks like an entry heading outside `## Open`"),
-        ("error", 13, "unparseable heading"),
-        ("error", 21, "duplicate slug `a` (first at line 17)"),
-        ("error", 21, "`a` has an empty body"),
-        ("warning", 23, "`b`"),
-        ("warning", 25, "`b`"),
-        ("error", 27, "more than one `## Open` section (first at line 11)"),
-        ("warning", 29, "looks like an entry heading outside `## Open`"),
+    assert todo.entries == []
+    assert [i.render() for i in todo.issues] == [
+        "error: TODO.md:3: `## Open` section: the sectioned layout is not read; "
+        "entries go directly under the title as ## `<slug>`: '## Open'",
+        "error: TODO.md:5: heading below the entry level; entries have no sub-headings: "
+        "'### alpha'",
+        "error: TODO.md:9: heading below the entry level; entries have no sub-headings: "
+        "'### beta'",
     ]
-    assert all(i.path == "TODO.md" for i in todo.issues)
-    assert not any("not backticked" in i.message for i in todo.issues)
+    todo = todomd.parse("# T\n\n# Also title\n\n## `a`\n\nx\n\n# Archive\n\n#### deep\n",
+                        "TODO.md")
+    assert [e.slug for e in todo.entries] == ["a"]
+    assert [(i.level, i.line, i.message.split(":")[0]) for i in todo.issues] == [
+        ("error", 9, "`# ` heading after the first entry"),
+        ("error", 11, "heading below the entry level; entries have no sub-headings"),
+    ]
 
 
 def test_flat_layout_heading_inside_a_fence_is_body() -> None:
@@ -244,17 +235,8 @@ def test_an_unclosed_fence_is_an_error_at_its_line() -> None:
     assert [i.render() for i in todo.issues if i.level == "error"] == [
         "error: TODO.md:4: fence line '```` then text' is never closed; "
         "no heading after it is read"]
-    sectioned = todomd.parse(f"# T\n\n## Open\n\n### a\n\n{FENCE}sh\n### b\n\nx\n", "TODO.md")
-    assert [(i.level, i.line) for i in sectioned.issues] == [("error", 7)]
-
-
-def test_only_a_backticked_flat_entry_outside_open_is_an_error() -> None:
-    text = ("# T\n\n## `alpha`\n\na\n\n## beta\n\nb\n\n## notes\n\nn\n\n"
-            "## Open\n\n### gamma\n\ng\n\n## Done\n\n### `delta`\n\nd\n")
-    todo = todomd.parse(text, "TODO.md")
-    assert [e.slug for e in todo.entries] == ["gamma"]
-    assert [(i.level, i.line) for i in todo.issues] == [
-        ("error", 3), ("warning", 7), ("warning", 11), ("warning", 23)]
+    spaced = todomd.parse(f"# T\n\n## `a`\n\n{FENCE}sh\n## `b`\n\nx\n", "TODO.md")
+    assert [(i.level, i.line) for i in spaced.issues] == [("error", 5)]
 
 
 def test_issue_renders_its_own_path() -> None:
@@ -264,12 +246,12 @@ def test_issue_renders_its_own_path() -> None:
 
 def test_body_hash_is_layout_independent() -> None:
     flat = todomd.parse("# T\n\n## `alpha`\n\n" + ALPHA_FRAGMENT, "TODO.md").by_slug()["alpha"]
-    sectioned = todomd.parse(GATHERED, "TODO.md").by_slug()["alpha"]
+    gathered = todomd.parse(GATHERED, "TODO.md").by_slug()["alpha"]
     fragment = todomd.Entry(slug="alpha", path="todo.d/alpha.md", line=1,
                             end_line=ALPHA_FRAGMENT.count("\n"), stop=0,
                             body=ALPHA_FRAGMENT.rstrip("\n"), heading=None,
                             backticked=True, trail="")
-    assert flat.body_hash == sectioned.body_hash == fragment.body_hash
+    assert flat.body_hash == gathered.body_hash == fragment.body_hash
     assert fragment.fragment and fragment.where == "todo.d/alpha.md"
     assert fragment.text == fragment.body
     assert not flat.fragment and flat.where == "TODO.md:3"
@@ -285,7 +267,7 @@ def test_prune_text_removes_a_flat_entry_with_a_fenced_comment_whole() -> None:
     assert todomd.parse(pruned, "TODO.md").by_slug()["a"].body_hash == before
 
 
-def test_prune_text_sectioned_keeps_neighbours_and_sections() -> None:
+def test_prune_text_keeps_the_preamble_and_neighbours() -> None:
     from todotriage.ops import prune_text
     todo = todomd.parse(GATHERED, "TODO.md")
     pruned = prune_text(GATHERED, [todo.by_slug()["beta"]])
@@ -293,8 +275,8 @@ def test_prune_text_sectioned_keeps_neighbours_and_sections() -> None:
     assert [e.slug for e in after.entries] == ["alpha", "zeta"]
     for slug in ("alpha", "zeta"):
         assert after.by_slug()[slug].text == todo.by_slug()[slug].text
-    assert "Preamble paragraph." in pruned and "## Open" in pruned
-    assert pruned.endswith("## Done\n\nClosed things.\n")
+    assert pruned.startswith("# TODO\n\nPreamble paragraph.\n\n## `alpha`\n")
+    assert pruned.endswith("## `zeta`\n\nZeta body.\n")
     assert "beta" not in pruned.lower()
 
 
@@ -529,9 +511,9 @@ def test_first_seen_uses_git_history(repo: Path) -> None:
 
 
 def test_first_seen_matches_the_whole_heading_line(repo: Path) -> None:
-    write(repo / "TODO.md", "# T\n\n## Open\n\n### foo-bar\n\nx\n")
+    write(repo / "TODO.md", "# T\n\n## `foo-bar`\n\nx\n")
     git(repo, "commit", "-q", "-am", "foo-bar", "--date=2026-02-01T00:00:00")
-    write(repo / "TODO.md", "# T\n\n## Open\n\n### foo-bar\n\nx\n\n### foo\n\ny\n")
+    write(repo / "TODO.md", "# T\n\n## `foo-bar`\n\nx\n\n## `foo`\n\ny\n")
     git(repo, "commit", "-q", "-am", "foo", "--date=2026-03-01T00:00:00")
     todo = todomd.read(repo, "TODO.md")
     assert todomd.first_seen(repo, todo.by_slug()["foo"]) == "2026-03-01"
@@ -3187,16 +3169,16 @@ def test_prune_of_untracked_fragments_changes_nothing_to_stage(
     assert code == 0 and out.splitlines() == ["removed todo.d/keep.md: `keep`", "changed:"]
 
 
-def test_prune_write_in_the_sectioned_layout(
+def test_prune_write_keeps_the_preamble_and_neighbours(
         repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
     write(repo / "TODO.md", GATHERED)
     write(repo / "src" / "core" / "engine.py", "x = 1\n")
     store.save("beta", approved("delete", entry_hash=hash_of(repo, "beta")))
     code, out, _ = run(capsys, "prune", "--write", *opts(repo, store))
-    assert code == 0 and out.splitlines() == ["removed TODO.md:19: `beta`", "changed: TODO.md"]
+    assert code == 0 and out.splitlines() == ["removed TODO.md:17: `beta`", "changed: TODO.md"]
     text = (repo / "TODO.md").read_text(encoding="utf-8")
-    assert text.startswith("# TODO\n\nPreamble paragraph.\n\n## Open\n\n### alpha\n")
-    assert text.endswith("### zeta\n\nZeta body.\n\n## Done\n\nClosed things.\n")
+    assert text.startswith("# TODO\n\nPreamble paragraph.\n\n## `alpha`\n")
+    assert text.endswith("after fence\n\n## `zeta`\n\nZeta body.\n")
     assert "beta" not in text
 
 
@@ -3264,20 +3246,48 @@ def test_prune_write_changes_nothing_when_git_ls_files_fails(
     assert not any(store.load(slug).get("pruned") for slug in ("beta", "delta"))
 
 
-@pytest.mark.parametrize("broken", ["unclosed fence", "flat entry outside open"])
+SECTIONED_REFUSAL = ("todo-triage: TODO.md:3: `## Open` section: the sectioned layout is not "
+                     "read; move its entries directly under the title as ## `<slug>` (see `lint`)")
+
+
+def sectioned(text: str) -> str:
+    """`text`, a `# TODOs` file, in the 0.2.0 sectioned layout."""
+    return "# TODOs\n\n## Open\n\n" + text[9:].replace("## ", "### ")
+
+
+@pytest.mark.parametrize("broken", ["unclosed fence", "sectioned layout"])
 def test_attempt_close_refuses_when_an_entry_is_hidden(
-        repo: Path, store: Store, tmp_path: Path, broken: str,
-        capsys: pytest.CaptureFixture[str]) -> None:
+        repo: Path, store: Store, tmp_path: Path,
+        capsys: pytest.CaptureFixture[str], broken: str) -> None:
     store.save("alpha", approved(entry_hash=hash_of(repo, "alpha")))
     _, out, _ = attempt_on(capsys, repo, store, tmp_path / "adr", ["alpha"])
     adr = out.strip()
     if broken == "unclosed fence":
         write(repo / "TODO.md", "# TODOs\n\n## `zeta`\n\nwrite\n```` then text\n\n" + TODO[9:])
+        refusal = "todo-triage: TODO.md has lint errors; fix them before attempt-close"
     else:
-        write(repo / "TODO.md", TODO + "\n## Open\n\n### new\n\nNew.\n")
+        write(repo / "TODO.md", sectioned(TODO))
+        refusal = SECTIONED_REFUSAL
     assert "alpha" not in todomd.read(repo, "TODO.md").by_slug()
     code, _, _ = run(capsys, "lint", "--repo", str(repo))
     assert code == 1
     code, _, err = run(capsys, "attempt-close", "--adr", adr, *opts(repo, store))
-    assert code == 1 and "TODO.md has lint errors; fix them before attempt-close" in err
+    assert code == 1 and err.strip() == refusal
     assert store.load("alpha")["attempts"][0]["closed"] is None
+
+
+def test_a_sectioned_file_is_refused_by_every_command_but_lint(
+        repo: Path, store: Store, capsys: pytest.CaptureFixture[str]) -> None:
+    store.save("alpha", approved(entry_hash=hash_of(repo, "alpha")))
+    before = store.load("alpha")
+    write(repo / "TODO.md", sectioned(TODO))
+    code, out, err = run(capsys, "lint", *opts(repo, store))
+    assert code == 1 and err == ""
+    assert out.startswith("error: TODO.md:3: `## Open` section: the sectioned layout is not read")
+    for argv in (["override", "alpha", "--disposition", "delete"], ["summary"], ["list"],
+                 ["begin", "alpha"]):
+        code, out, err = run(capsys, *argv, *opts(repo, store))
+        assert code == 1 and out == "", argv
+        assert err.strip() == SECTIONED_REFUSAL, argv
+    assert store.load("alpha") == before
+    assert not list((store.root / "sessions").glob("summary-*.md"))

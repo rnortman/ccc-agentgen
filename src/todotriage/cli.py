@@ -60,8 +60,14 @@ class Context:
             raise TriageError("--store is required for this command")
         return Store.open(self.store_path)
 
-    def todo(self, store: Store | None) -> todomd.TodoFile:
-        return todomd.read(self.repo, self.todo_path(store))
+    def todo(self, store: Store | None, *, sectioned: bool = False) -> todomd.TodoFile:
+        """The tracker; a file in the sectioned layout is refused unless `sectioned`."""
+        # TODO(triage-commands-read-past-lint-errors): other error-level issues
+        # are not refused here.
+        todo = todomd.read(self.repo, self.todo_path(store))
+        if not sectioned:
+            todo.refuse_sectioned(self.todo_path(store))
+        return todo
 
     def todo_path(self, store: Store | None) -> str:
         return store.config.todo_path if store else DEFAULT_TODO_PATH
@@ -135,7 +141,7 @@ def lint_issues(ctx: Context, store: Store | None, todo: todomd.TodoFile,
 
 def cmd_lint(ctx: Context, args: argparse.Namespace) -> Output:
     store = ctx.store() if ctx.store_path is not None else None
-    todo_path, issues, _ = lint_issues(ctx, store, ctx.todo(store))
+    todo_path, issues, _ = lint_issues(ctx, store, ctx.todo(store, sectioned=True))
     errors = [i for i in issues if i.level == "error"]
     warnings = [i for i in issues if i.level == "warning"]
     lines = [i.render() for i in errors + warnings]

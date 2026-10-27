@@ -6,7 +6,9 @@ project keeps — the tracker of the repository the comment is in, never one in
 a repository outside the scope. In a repository with a `todo.d/` (or
 `.todo.d/`) directory the entry is the file `todo.d/<slug>.md` — the entry's
 text alone, no heading, first line not blank — and `TODO.md` is not edited;
-otherwise it is a `TODO.md` entry in that file's own layout. The entry
+otherwise it is a `TODO.md` entry: a `` ## `<slug>` `` heading directly
+under the title, at the slug's alphabetical place, then the entry's text;
+`TODO.md` has no sections, and the entry's text has no headings. The entry
 describes the work and never carries status, dates, blocking or triage
 annotations — you are deferring, not triaging. The slug
 links comment, notes file and dispositions file; never invent a second name
