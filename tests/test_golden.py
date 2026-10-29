@@ -48,7 +48,9 @@ STACK_AUTO_STEM = "review-chain-stack-auto"
 FOLLOWUP_STEM = "review-chain-stack-followup"
 FOLLOWUP_AUTO_STEM = "review-chain-stack-followup-auto"
 FOLLOWUP_STEMS = (FOLLOWUP_STEM, FOLLOWUP_AUTO_STEM)
-STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM) + FOLLOWUP_STEMS
+PROJECT_STEM = "project-burndown"
+PROJECT_AUTO_STEM = "project-burndown-auto"
+STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM) + FOLLOWUP_STEMS + (PROJECT_STEM, PROJECT_AUTO_STEM)
 TRIAGE_STEM = "todo-triage"
 BURNDOWN_STEM = "todo-burndown"
 BURNDOWN_AUTO_STEM = "todo-burndown-auto"
@@ -59,6 +61,9 @@ REVIEW_CHAIN_STEMS = [stem for stem in VARIANT_STEMS if stem.startswith("review-
 # The drivers a burndown variant adds on top of the review chain it embeds.
 BURNDOWN_EMBEDS = {BURNDOWN_STEM: FULL_STEM, BURNDOWN_AUTO_STEM: FULL_AUTO_STEM}
 BURNDOWN_ROLES = {"burndown-orchestrator", "triage-forester"}
+# The roles a project variant adds on top of the stack chain it embeds.
+PROJECT_EMBEDS = {PROJECT_STEM: STACK_STEM, PROJECT_AUTO_STEM: STACK_AUTO_STEM}
+PROJECT_ROLES = {"project-orchestrator", "project-forester", "experimenter", "publisher"}
 
 # Set where the suite runs with `ccc` available, to turn the integration test's
 # skip into a failure.
@@ -138,6 +143,9 @@ RESULTS = {
     "sketcher": {"written"},
     "contrarian": {"written"},
     "triage-forester": {"ruled", "selected", "nothing"},
+    "project-forester": {"build", "spike", "done", "written"},
+    "experimenter": {"written"},
+    "publisher": {"published", "pushed", "unpushed"},
     # Interactive: the user reads the turn, the line only keeps the grammar closed.
     "triage-clerk": {"pending", "done"},
     "site-remover": {"removed", "no-sites"},
@@ -226,6 +234,8 @@ def test_shipped_variants_are_committed():
             TRIAGE_STEM,
             BURNDOWN_STEM,
             BURNDOWN_AUTO_STEM,
+            PROJECT_STEM,
+            PROJECT_AUTO_STEM,
         ]
     )
 
@@ -678,6 +688,16 @@ def test_push_is_never_a_gate(builds):
             post_cycle = _section(body, "### Post-cycle turns")
             assert "the same `shipped` status line" in post_cycle, where
             assert "No turn after the shipped end reopens the cycle" in post_cycle, where
+    for stem in PROJECT_EMBEDS:
+        for name, body in builds[stem].bodies("project-orchestrator"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            for phrase in PUSH_GATE_PHRASES:
+                assert phrase not in flat, f"{where}: {phrase}"
+            publish = flat[flat.index("5. **Publish**") : flat.index("6. **Project commit**")]
+            unpushed = publish[publish.index("- `unpushed` → STOP") : publish.index("- `ESCALATE`")]
+            assert "`continue` →" in unpushed, where
+            assert "Publishing is never a question you put to the user" in publish, where
 
 
 def test_non_stack_orchestrator_keeps_the_checked_out_branch(builds):
@@ -1233,14 +1253,17 @@ def test_site_remover_never_commits(builds):
         assert spawn_references(body) == set(), filename
 
 
-def test_burndown_variants_embed_the_review_chain(builds):
-    """The inner orchestrator resolves its roles from the burndown variant's
+@pytest.mark.parametrize(
+    ("embeds", "added"), [(BURNDOWN_EMBEDS, BURNDOWN_ROLES), (PROJECT_EMBEDS, PROJECT_ROLES)]
+)
+def test_two_level_variants_embed_their_chain(builds, embeds, added):
+    """The inner orchestrator resolves its roles from the two-level variant's
     `agents_dir`, so that variant must carry the whole chain, unchanged.
     """
-    for stem, chain_stem in BURNDOWN_EMBEDS.items():
+    for stem, chain_stem in embeds.items():
         build, chain = builds[stem], builds[chain_stem]
-        assert set(build.by_id) - BURNDOWN_ROLES == set(chain.by_id), stem
-        assert BURNDOWN_ROLES <= set(build.by_id), stem
+        assert set(build.by_id) - added == set(chain.by_id), stem
+        assert added <= set(build.by_id), stem
         for role_id, role in chain.by_id.items():
             assert build.by_id[role_id].frontmatter == role.frontmatter, f"{stem}/{role_id}"
             assert build.bodies(role_id) == chain.bodies(role_id), f"{stem}/{role_id}"
@@ -1417,6 +1440,8 @@ def test_followup_liaison_frontmatter_pins(builds):
         if "pr-liaison" in build.by_id:
             continue
         for role in build.roles:
+            if role.id == "publisher":
+                continue
             tools = role.frontmatter.get("tools", [])
             assert not any(tool.startswith("mcp__") for tool in tools), f"{build.stem}/{role.id}"
 
@@ -2044,6 +2069,385 @@ def test_followup_designer_and_reviewer_carry_responses(builds):
                 assert ("every `pr-posted-<K>.md`" in design) == followup, where
 
 
+def test_branch_prefix_is_plain_stack_only(builds):
+    """A plain stack chain takes an optional branch prefix in its launch
+    words: the orchestrator validates it, names its work branch under it and
+    hands it on; the designer names PR branches under it and the reviewer
+    checks that. The follow-up chains keep their inherited names, and no
+    other variant has stack branches, so none of them mentions a prefix.
+    """
+    for build in builds.values():
+        stack = "pr-assembler" in build.variant.roles
+        plain = stack and "pr-liaison" not in build.variant.roles
+        if "orchestrator" in build.by_id:
+            for name, body in build.bodies("orchestrator"):
+                flat = " ".join(body.split())
+                where = f"{build.stem}/{name}"
+                setup = " ".join(_section(body, "### Setup").split())
+                for phrase in (
+                    "`branch prefix: <prefix>`: recorded verbatim, never asked for",
+                    'git check-ref-format --branch "<prefix>/x"` must succeed',
+                    "for every leading path of the prefix — `p1`, `p1/p2`, … through `<prefix>` itself —",
+                    "`git show-ref --verify --quiet refs/heads/<that path>` must fail",
+                    "**Work branch** `<prefix>/<request slug>-stack-work` when a branch prefix is recorded,"
+                    " `<request slug>-stack-work` otherwise",
+                ):
+                    assert (phrase in setup) == plain, f"{where}: {phrase}"
+                assert ("| **branch prefix** |" in flat) == plain, where
+                payload = " ".join(_section(body, "## Standard payload").split())
+                assert ("the branch prefix when one is recorded" in payload) == plain, where
+                assert "branch prefix" not in flat or plain, where
+        if "designer" in build.by_id:
+            for name, body in build.bodies("designer"):
+                flat = " ".join(body.split())
+                where = f"{build.stem}/{name}"
+                assert (
+                    "under the branch prefix when the prompt carries one, `<prefix>/<slug>`" in flat
+                ) == plain, where
+                assert "branch prefix" not in flat or plain, where
+        if "design-reviewer" in build.by_id:
+            for name, body in build.bodies("design-reviewer"):
+                flat = " ".join(body.split())
+                where = f"{build.stem}/{name}"
+                assert (
+                    "a branch name that does not start with `<prefix>/` is a finding" in flat
+                ) == plain, where
+                assert "branch prefix" not in flat or plain, where
+
+
+def _project_driver_bodies(builds):
+    for stem in PROJECT_EMBEDS:
+        for name, body in builds[stem].bodies("project-orchestrator"):
+            yield f"{stem}/{name}", " ".join(body.split()), builds[stem].variant
+
+
+def _between(flat: str, start: str, end: str) -> str:
+    route = flat[flat.index(start) :]
+    return route[: route.index(end)]
+
+
+def test_project_driver_launches_the_chain_with_its_prefix(builds):
+    """The inner orchestrator gets its request path and the prefix words and
+    nothing else; the driver resumes that orchestrator, never a grandchild,
+    and narrows no scope: the stack chain runs in one repository.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        assert '`ccc run orchestrator --cwd <repo> "<cycle dir>/request.md branch prefix: <prefix>"`' in flat, where
+        assert "Nothing else in the prompt." in flat, where
+        assert "never one of the orchestrator's own subagents" in flat, where
+        assert "drop from scope" not in flat, where
+
+
+def test_project_driver_never_list(builds):
+    """The Never list binds the driver alone, and its one unliftable item is
+    the user's own rule that nothing is merged.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        never = _between(flat, "### Never", "### End")
+        assert "binds you, not the user" in never, where
+        assert "**Destructive git**" in never, where
+        assert "Merge anything, anywhere, ever. No directive lifts this one" in never, where
+        assert "Launch a cycle while one is open." in never, where
+        assert "relay anything at a gate but the user's words" in never, where
+        for command in ("`symbolic-ref`", "`rev-parse`", "`rev-list`", "`merge-base`",
+                        "`for-each-ref`", "`check-ref-format`", "`show-ref`", "`status`"):
+            assert command in never, f"{where}: {command}"
+        assert "delete a branch, a leftover included" in never, where
+
+
+PROJECT_CUT_OFF_ROUTES = (
+    ("b. **Launch the plan.**", "3. **Run the cycle.**"),
+    ("**build:** `ccc run orchestrator", "**spike:**"),
+    ("**spike:** `ccc run experimenter`", "4. **Digest.**"),
+    ("4. **Digest.**", "5. **Publish**"),
+    ("5. **Publish**", "6. **Project commit**"),
+)
+
+
+def test_project_driver_recovers_before_every_stop(builds):
+    """Every launch the driver makes points at recovery before its first
+    stop, routes an unrecovered launch, and relays an `ESCALATE` verbatim.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        for start, end in PROJECT_CUT_OFF_ROUTES:
+            route = _between(flat, start, end)
+            pointer = "A cut-off launch → **Cut-off launch**"
+            assert pointer in route, f"{where}: {start}"
+            assert route.index(pointer) < route.index("STOP"), f"{where}: {start}"
+            assert "nrecovered launch" in route, f"{where}: {start}"
+            assert "surface the lines it wrote above its status line, verbatim" in route, f"{where}: {start}"
+            missing = "a missing line surfaces `-` and the session id, its prose not relayed"
+            assert missing in route, f"{where}: {start}"
+
+
+def test_project_driver_routes_a_directive_as_the_named_result(builds):
+    for where, flat, _ in _project_driver_bodies(builds):
+        build = _between(flat, "**build:** `ccc run orchestrator", "**spike:**")
+        routes = build.index("- `gate` →")
+        assert build.count("as if the status line had read so") == 1, where
+        assert build.index("as if the status line had read so") < routes, where
+
+
+def test_project_driver_checks_the_stack_from_git(builds):
+    """A shipped build is checked on its work branch and its stack is read off
+    the refs commit by commit; spike and stopped cycles are fenced by the
+    recorded refs, never by a name pattern alone.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        build = _between(flat, "**build:** `ccc run orchestrator", "**spike:**")
+        for phrase in (
+            "`<prefix>/<cycle dir basename>-stack-work`",
+            "`git merge-base --is-ancestor <pre-cycle HEAD> HEAD`",
+            "`git rev-list --first-parent --reverse <pre-cycle HEAD>..HEAD`",
+            "--points-at <commit> refs/heads/<prefix>/`, minus the work branch, prints exactly one ref",
+            "minus the recorded refs, plus the cycle's work branch if it exists",
+            "you delete nothing",
+        ):
+            assert phrase in build, f"{where}: {phrase}"
+        run = _between(flat, "3. **Run the cycle.**", "**build:** `ccc run orchestrator")
+        head = run.index("First the **HEAD check (record)**")
+        clean = run.index("A spike then needs a clean tree: `git status --porcelain`, untracked files included, prints nothing → else STOP")
+        assert head < clean < run.index("append `cycle <C> started:"), where
+        spike = _between(flat, "**spike:** `ccc run experimenter`", "4. **Digest.**")
+        assert "spike namespace `<prefix>/spike-<cycle dir basename>/`" in spike, where
+        assert "not among the recorded refs is under the spike namespace" in spike, where
+        assert "`git status --porcelain --untracked-files=no` prints nothing" in spike, where
+        assert "The **recorded refs** are every ref on any `stack`, `branches` or `leftover` list" in flat, where
+
+
+def test_project_driver_reads_only_its_record(builds):
+    """The driver's one read-back file is its own append-only record, and the
+    project commit leaves a started build's dir to the orchestrator.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        assert "**One file you read back:** `driver-record.md`, and only it." in flat, where
+        assert "You never read `out`; you pass it on." in flat, where
+        assert ">> <project dir>/driver-record.md`, never edited" in flat, where
+        commit = _between(flat, "### Project commit", "### Never")
+        assert "that no `cycle <C> started: build` line names" in commit, where
+        assert "add -- . " in commit and "diff --cached --quiet -- . " in commit, where
+        assert "reset -q -- ." in commit, where
+        assert "in one Bash call, `;`-separated, so a directory that fails never blocks the others" in commit, where
+
+
+RECORD_LINE_KINDS = (
+    "plan", "plan escalated", "plan done", "planned", "started", "session", "ended",
+    "digested", "publish", "published", "publish skipped",
+)
+
+
+def test_project_driver_resumes_from_every_record_state(builds):
+    """Every line the record can end on has a resume route, after the HEAD
+    check; a plan the session lost is never renumbered over.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        resume = _between(flat, "3. **Resume.**", "4. **Project commit**")
+        for kind in RECORD_LINE_KINDS:
+            assert f"`{kind}`" in resume, f"{where}: {kind}"
+            assert f"cycle <C> {kind}:" in flat, f"{where}: {kind}"
+        assert "Every other state first passes the **HEAD check (record)**." in resume, where
+        assert "`G` += 1, Loop step 2b" in resume, where
+        assert "One driver per project at a time" in resume, where
+
+
+def test_project_driver_cycle_gate_only_where_the_user_holds_it(builds):
+    for where, flat, variant in _project_driver_bodies(builds):
+        gate = variant.vars.get("forester_autonomy") != "decide"
+        assert ("**Cycle gate:** STOP" in flat) == gate, where
+        assert ("Step 3 at once." in flat) == (not gate), where
+
+
+def test_project_driver_setup_guards_the_prefix_and_sidecar(builds):
+    for where, flat, _ in _project_driver_bodies(builds):
+        setup = _between(flat, "2. **New project.**", "3. **Resume.**")
+        for phrase in (
+            '`git check-ref-format --branch "<prefix>/x"` succeeds',
+            "for every leading path of the prefix — `p1`, `p1/p2`, … through `<prefix>` itself —",
+            "`git show-ref --verify --quiet refs/heads/<that path>` fails",
+            "the slug holds no `--`, and Glob `<ADR root>/*/*/??-<slug>` and `<ADR root>/*/*/??-<slug>--*` match nothing",
+            "`git for-each-ref refs/heads/<prefix>/` prints nothing",
+            "`git -C <ADR root> rev-parse --show-toplevel` succeeds and differs",
+            "detached HEAD) → STOP",
+        ):
+            assert phrase in setup, f"{where}: {phrase}"
+
+
+def test_project_driver_head_check_is_one_rule_at_resume_and_launch(builds):
+    """The user owns the repo at every stop, so the check that HEAD is where
+    the record left it runs before every cycle launch, not only on resume;
+    both places name the one definition.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        check = _between(flat, "### HEAD check (record)", "### Never")
+        for phrase in (
+            "HEAD equals the last recorded `head` — on the latest `ended` line of any cycle, or `start head`",
+            "It runs on resume and before every cycle launch",
+        ):
+            assert phrase in check, f"{where}: {phrase}"
+        assert flat.count("HEAD equals the last recorded `head`") == 1, where
+
+
+def test_project_driver_checks_the_cycle_dir_it_records(builds):
+    """A plan's `out` becomes a cycle dir only under the parent and basename
+    prefix the launch handed, so no project commit runs in a dir elsewhere.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        plan = _between(flat, "b. **Launch the plan.**", "- `done` → append")
+        check = plan.index("`out` must be `<cycle dir parent><basename prefix><cycle slug>/request.md`")
+        assert check < plan.index("Append `cycle <C> planned:"), where
+        assert "the file must exist (`test -f`) → else route as `ESCALATE` below" in plan, where
+
+
+def test_project_driver_publish_now_returns_to_its_stop(builds):
+    """"publish now" is a one-shot outside the loop: its own target, a mode
+    even when publishing is off, no record line, and the stop it was given
+    at surfaced again.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        now = _between(flat, '- "publish now"', "### Project commit")
+        for phrase in (
+            "else `push` when the setting is `off`",
+            "`<project dir>/publish-now-<n>.md`, `n` the first number with no such file on disk",
+            "append no record line",
+            "STOP again at the stop it was given at",
+        ):
+            assert phrase in now, f"{where}: {phrase}"
+        assert "every `publish-*` record path" in _between(flat, "4. **Digest.**", "5. **Publish**"), where
+        assert "every `publish-*` record path" in _between(flat, "5. **Publish**", '- "publish now"'), where
+
+
+def test_project_driver_end_lists_orphans_of_any_date(builds):
+    for where, flat, _ in _project_driver_bodies(builds):
+        end = flat[flat.index("### End"):]
+        assert "Glob `<ADR root>/*/*/??-<project slug>--*` matches, any date" in end, where
+
+
+def test_project_forester_plans_and_digests(builds):
+    """The project forester names its cycle dir only where the branches it
+    would produce are free, writes a self-contained request under its own
+    provenance, and digests the stack from its prompt, never from the refs.
+    """
+    for stem in PROJECT_EMBEDS:
+        for name, body in builds[stem].bodies("project-forester"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            for phrase in (
+                "`git show-ref --verify --quiet refs/heads/<prefix>/<basename>-stack-work` fails",
+                "`git for-each-ref refs/heads/<prefix>/spike-<basename>/` prints nothing",
+                "> *Provenance: written by the project forester, a product-owner proxy; not the user.*",
+                "The stack is the list your prompt hands, never a scan of the refs.",
+                "**Next, probably**",
+                "around 4000 added lines",
+                "no merging",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            for section in ("Goal", "Branches", "Cycles", "Learned", "Remaining", "For the user"):
+                assert f"**{section}** —" in flat, f"{where}: {section}"
+
+
+PUBLISHER_FORGEJO_TOOLS = {f"mcp__forgejo__forgejo_{name}" for name in ("list_prs", "get_pr", "open_pr")}
+
+
+def test_publisher_frontmatter(builds):
+    """The publisher carries exactly the three forgejo tools it opens PRs
+    with, and runs on either harness: the tool list is dropped from the Codex
+    render, where `gh` or a push alone remains.
+    """
+    for stem in PROJECT_EMBEDS:
+        publisher = builds[stem].by_id["publisher"]
+        tools = set(publisher.frontmatter["tools"])
+        assert {tool for tool in tools if tool.startswith("mcp__")} == PUBLISHER_FORGEJO_TOOLS, stem
+        assert "Edit" not in tools, stem
+        assert publisher.harnesses == ["claude", "codex"], stem
+
+
+REMOTE_URL_FORMS = (
+    "`[user@]host:owner/repo[.git]` (scp-like), `ssh://[user@]host[:port]/owner/repo[.git]` or "
+    "`https://[user@]host/owner/repo[.git]` — the user part is anything"
+)
+REMOTE_URL_REDACTION = (
+    "Every URL you quote anywhere has its user part (`user[:password]@`) removed: it may hold a token."
+)
+
+
+def test_code_host_roles_share_remote_url_rules(builds):
+    """The publisher and the liaison parse remotes by the same URL forms and
+    redact credentials by the same rule: a change to one copy fails here until
+    the other matches.
+    """
+    for stems, role in ((PROJECT_EMBEDS, "publisher"), (FOLLOWUP_STEMS, "pr-liaison")):
+        for stem in stems:
+            for name, body in builds[stem].bodies(role):
+                flat = " ".join(body.split())
+                assert REMOTE_URL_FORMS in flat, f"{stem}/{name}"
+                assert REMOTE_URL_REDACTION in flat, f"{stem}/{name}"
+
+
+def test_publisher_pushes_the_prompted_stack_create_only(builds):
+    """The publisher's stack is the list its prompt hands, never a scan of the
+    refs: no work-branch or spike pattern appears in it. Its one push is
+    atomic and create-only, and nothing is ever merged or forced.
+    """
+    for stem in PROJECT_EMBEDS:
+        for name, body in builds[stem].bodies("publisher"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            assert "-stack-work" not in body, where
+            assert "spike-" not in body, where
+            for phrase in (
+                "The list your prompt hands, bottom first, is the stack. The refs are never scanned for it",
+                "git push --atomic <remote> --force-with-lease=refs/heads/<b>: … <b> …",
+                "create-only push",
+                "Never a merge, never a force-push, never a close, never an edit of an existing PR",
+                "git rev-list --merges <start HEAD>..<bn>",
+                "git fetch <remote> refs/heads/<base branch>",
+                "**To push by hand**",
+                "prs: not opened — no tool reaches <host>",
+                "gh pr create -R <host>/<owner>/<repo> --head <b>",
+                "gh pr list -R <host>/<owner>/<repo> --head <b>",
+                "Regular PRs, not drafts.",
+                "an earlier record shows it there → **gone**",
+                "It is never pushed again",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            pick = _between(flat, "4. **PRs**", "Then, bottom first")
+            assert pick.index("`gh auth status --hostname <host>`") < pick.index("`forgejo_list_prs` on `owner/repo`"), where
+
+
+def test_experimenter_never_bypasses_hooks(builds):
+    """A spike commits under hooks like every committing role: `--no-verify`
+    is banned, and a secret-scan rejection is cleared before anything reaches
+    the unscanned sidecar — only the project's checks open the patch route.
+    """
+    for stem in PROJECT_EMBEDS:
+        for name, body in builds[stem].bodies("experimenter"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            assert "never `--no-verify`" in flat, where
+            holds = _between(flat, "## What the cycle dir may hold", "## The spike")
+            for phrase in (
+                "no secret scan ever sees it",
+                "comes from the environment, never from a file you write",
+                "replaced by `<redacted>` first",
+            ):
+                assert phrase in holds, f"{where}: {phrase}"
+            scan = flat.index("**The secret scan's.**")
+            checks = flat.index("**The project's checks'**")
+            patch = flat.index("spike-uncommitted-<N>.patch")
+            assert scan < checks < patch, where
+            clean = flat.index("**Check the tree.** `git status --porcelain` — untracked files included — prints anything → escalate")
+            assert clean < flat.index("git checkout --no-track -b") < patch, where
+            for phrase in (
+                "git checkout --no-track -b <namespace><name>",
+                "Never touch a branch outside the spike namespace, never push, never merge",
+                "`git status --porcelain --untracked-files=no` prints nothing",
+                "every subject prefixed `spike:`",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            for section in ("Question", "Method", "What was built", "Findings", "Implications", "Open"):
+                assert f"**{section}** —" in flat, f"{where}: {section}"
+
+
 def test_followup_recreated_stack(builds):
     """A follow-up launched with a base re-creates the stack on it: the
     designer writes every entry in full and may drop an inherited one, the
@@ -2193,13 +2597,18 @@ def test_designer_assesses_the_request(builds):
 
 def test_provenance_line_is_uniform(builds):
     """Every provenance line a writer is told to write has the one grammar; only
-    the orchestrator's transcription and the deciding forester's proxy notes
-    carry one.
+    the orchestrator's transcription, the deciding forester's proxy notes and
+    the project forester's cycle request carry one.
     """
     for build in builds.values():
         autonomy = build.variant.vars.get("forester_autonomy")
         for role in build.roles:
-            expected = {"orchestrator": 1, "forester": 1 if autonomy == "decide" else 0}.get(role.id, 0)
+            expected = {
+                "orchestrator": 1,
+                "forester": 1 if autonomy == "decide" else 0,
+                "project-forester": 1,
+                "project-orchestrator": 1,
+            }.get(role.id, 0)
             for name, body in build.bodies(role.id):
                 where = f"{build.stem}/{name}"
                 lines = [
@@ -2215,7 +2624,7 @@ def test_provenance_line_is_uniform(builds):
 SCOPE_ROLES = {
     "designer", "design-reviewer", "implementer", "planner", "coder-supervisor", "coder",
     "prepass-reviewer", "citizen-reviewer", "tracer-reviewer", "test-reviewer", "judge",
-    "workflow-scanner", "comment-rewriter", "changelog-author", "forester",
+    "workflow-scanner", "comment-rewriter", "changelog-author", "forester", "experimenter",
 }
 SCOPE_SHORT_FORM_ROLES = {"comment-rewriter", "changelog-author"}
 NO_SCOPE_ROLES = {

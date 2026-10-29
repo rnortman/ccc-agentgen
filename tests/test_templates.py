@@ -46,6 +46,7 @@ ALL_VARS = {
     "forester_autonomy": "decide",
     "forester_gates": ["design", "triage", "scan", "ship"],
     "forester_gate_rounds": 2,
+    "cycle_target_lines": 4000,
 }
 
 # Roles the lite shape drops, exercising the `{% if "<id>" in roles %}` pruning
@@ -146,7 +147,8 @@ def test_stack_orchestrator_works_on_its_own_branch(stack):
     stacked = _body(stack, "orchestrator")
     flat = " ".join(stacked.split())
     for phrase in (
-        "the work branch `<request slug>-stack-work`, created at setup",
+        "the work branch `<prefix>/<request slug>-stack-work` with a branch prefix,"
+        " `<request slug>-stack-work` without, created at setup",
         "The **request slug** is the working dir's basename",
         "A detached HEAD is no stop",
         "a rebase in progress at setup",
@@ -251,6 +253,8 @@ PROVENANCE_READERS = {
     "forester",
     "forester-commentator",
     "triage-forester",
+    "project-forester",
+    "experimenter",
     "sketcher",
     "contrarian",
     "judge",
@@ -295,7 +299,9 @@ def test_provenance_partial_renders_once_in_every_reader(rendered):
 
 
 # Roles that write or judge a request or a design, and so must know what ships.
-SHIP_SHAPE_READERS = ("designer", "design-reviewer", "forester", "triage-forester", "sketcher")
+SHIP_SHAPE_READERS = (
+    "designer", "design-reviewer", "forester", "triage-forester", "project-forester", "sketcher",
+)
 
 
 @pytest.mark.parametrize("shape", ["full", "lite", "advise", "stack"])

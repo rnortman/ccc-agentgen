@@ -78,6 +78,11 @@ specific version if you want stability.
   [`brenn-forgejo-mcp`](https://github.com/rnortman/brenn-forgejo-mcp),
   configured in Claude Code under the server name `forgejo` (the liaison
   calls its tools as `mcp__forgejo__forgejo_*`).
+- **For `project-burndown*` with `publish: prs` only, and optional there:**
+  on a GitHub remote, [`gh`](https://cli.github.com/) on `PATH` and logged
+  in; on a Forgejo remote, the same forgejo MCP server, which the publisher
+  reaches only on Claude. With neither, the branches are pushed and no PR is
+  opened.
 
 ## Quick start
 
@@ -203,7 +208,8 @@ have their own quick start in [TODO triage and burndown](#todo-triage-and-burndo
 
 ## Choosing a variant
 
-Fourteen variants ship: eleven review chains and three TODO workflows.
+Sixteen variants ship: eleven review chains, three TODO workflows and two
+project workflows.
 
 | Variant | What it is | CLIs |
 | --- | --- | --- |
@@ -221,6 +227,8 @@ Fourteen variants ship: eleven review chains and three TODO workflows.
 | `todo-triage` | Rules on every unruled `TODO.md` entry | Claude or Codex |
 | `todo-burndown` | Works ruled entries down through `review-chain` | Claude or Codex |
 | `todo-burndown-auto` | Works ruled entries down through `review-chain-auto` | Claude or Codex |
+| `project-burndown` | Works a multi-cycle project into one stack of branches through `review-chain-stack` | Claude or Codex |
+| `project-burndown-auto` | `project-burndown` with the forester deciding, through `review-chain-stack-auto` | Claude or Codex |
 
 "Claude or Codex" means either CLI alone runs it; "Claude and Codex" means
 it needs both.
@@ -271,6 +279,15 @@ repository. The stack orchestrator creates a dedicated work branch,
 `<request slug>-stack-work`, at setup and never moves the branch it was
 launched on; the stack branches are the product.
 
+Launch words that name an existing `request.md` may also carry `branch
+prefix: <p>`. Every branch the cycle creates then sits under `<p>/`: the
+work branch is `<p>/<request slug>-stack-work`, the designer names each PR
+branch `<p>/<slug>`, and the design reviewer flags one that is not. The
+orchestrator stops at setup when `<p>/x` is not a valid branch name or a
+branch named `<p>`, or any leading part of it (`team` for `team/proj`),
+exists, since git then refuses every `<p>/…` branch. Without the words, branch names are as above. The follow-up
+variants take no prefix: their inherited branches keep their names.
+
 `review-chain-stack-followup` and `review-chain-stack-followup-auto` run a
 second cycle over a stack whose PRs are open and reviewed on the code host.
 They are the stack variants plus a `pr-liaison` role, the only role that
@@ -320,7 +337,8 @@ design, and the forester's ship approval force-pushes the stack with a lease,
 re-targets and closes PRs as the stack says, and opens the new PRs.
 
 The TODO workflows are described in
-[TODO triage and burndown](#todo-triage-and-burndown).
+[TODO triage and burndown](#todo-triage-and-burndown), the project workflows
+in [Project burndown](#project-burndown).
 
 ## Deploy and `ccc-use` in detail
 
@@ -594,13 +612,126 @@ The review-chain `orchestrator` ends every stop with a status line —
 `shipped` when the cycle is over, `gate` when it awaits the user — which is
 what the burndown driver routes on and a human operator can ignore.
 
-The three drivers — `orchestrator`, `burndown-orchestrator`,
-`triage-orchestrator` — each carry **User directives**: the user's chat words
+The four drivers — `orchestrator`, `burndown-orchestrator`,
+`triage-orchestrator` and `project-orchestrator` — each carry **User directives**: the user's chat words
 can tweak its workflow; nothing else can.
 
 `TODO.md` entries describe work and nothing else; `todo-triage lint` flags
 in-band status markers (`NOT NOW`, `Triaged`, `[blocked-on …]` and the like)
 so they can be removed by hand before an entry is ruled.
+
+## Project burndown
+
+`project-burndown` and `project-burndown-auto` carry a goal or a spec too
+large for one cycle through as many cycles as it takes, and end with one
+stack of branches, never merged. They embed `review-chain-stack` and
+`review-chain-stack-auto` whole, and add four roles: the driver
+`project-orchestrator`, which knows nothing about what is being built; the
+`project-forester`, a product-owner proxy that plans each cycle and digests
+it; the `experimenter`, which runs spikes; and the `publisher`, which pushes
+the stack and opens its PRs.
+
+**Quick start.**
+
+1. `ccc-use project-burndown` (or `-auto`).
+2. `ccc launch project-orchestrator --cwd <repo>`, then name the ADR root
+   (a directory in a sidecar repository, never the code's), a **project
+   slug**, and the goal: a brief in chat, a path to a spec document, or
+   both. Options: `branch prefix: <p>` (default: the slug), `remote:
+   <name>` (default `origin`), `publish: off|push|prs` (default `off`),
+   `--count N` (cycles), `--until HH:MM`.
+3. Check out the branch the stack should start from before launching: the
+   checked-out branch is the base, and the driver never moves HEAD.
+
+The driver makes the **project dir** `<ADR root>/YYYY/MM/DD-<slug>/` and
+writes your words to `project.md`. The slug must be new to the ADR root:
+setup stops when a project or cycle dir there already carries it, so every
+dir named for the slug is this project's. The prefix must be free: setup
+stops when a branch named `<p>`, any leading part of it, or any branch
+under `<p>/` exists.
+
+**Cycles.** Each cycle starts with a plan: the project forester reads the
+goal, the latest state and the code, writes `plan-c<C>-g<G>.md`, and picks
+one of:
+
+- a **build** — one coherent slice sized near `cycle_target_lines` (4000
+  added lines, a few PRs). The forester writes the cycle's `request.md` in
+  a new cycle dir `<ADR root>/YYYY/MM/DD-<slug>--<cycle slug>/`, and the
+  stack chain's `orchestrator` runs it there with the branch prefix, as any
+  stack cycle runs, gates and all;
+- a **spike** — one question the next build turns on that reading cannot
+  settle. The `experimenter` answers it with the smallest experiment,
+  on throwaway branches under `<p>/spike-<cycle dir basename>/`, and writes
+  `spike-report.md`. Nothing it builds ships;
+- **done** — the goal is met, and the plan says why;
+- or a question for you, as an escalation.
+
+In `project-burndown` you hold a **cycle gate** after every plan: `go`
+runs the cycle; anything else is written to `notes-plan-user-c<C>-g<G>.md`
+and the forester plans again. In `-auto` the forester's plan stands, and
+the embedded chain's forester holds its gates as in
+`review-chain-stack-auto`.
+
+**The state document.** After every cycle the forester digests it into
+`state-c<C>.md`: the goal, the branches, one short block per cycle, what
+was learned, what remains, and decisions for you. It is rewritten whole
+each time and kept to a page or two, every line pointing at where the fact
+is recorded, so the next plan orients on it without reading every cycle's
+documents.
+
+**Branches.**
+
+```
+main ──●
+        \
+         ●──●──●   <p>/<b1> <p>/<b2> <p>/<b3>         cycle 1's PRs
+                \
+                 ●──●   <p>/<b4> <p>/<b5>               cycle 2's PRs
+         ●  <p>/spike-<cycle-3 dir>/<name>              a spike's branches
+```
+
+Every branch the project creates is under the prefix. A build cycle leaves
+HEAD on its work branch, `<p>/<cycle dir basename>-stack-work`, at the top
+of its stack, so the next build stacks on it. After a shipped build the
+driver reads the cycle's PR branches off the refs, commit by commit, and
+records them; the **project stack** is those lists in cycle order. A
+branch is never moved once its cycle assembled it: a correction to an
+earlier PR lands as a new PR on top.
+
+**Publishing.** `publish: off` pushes nothing. `publish: push` pushes,
+after every shipped build, the stack branches the remote lacks, in one
+atomic push that only creates refs: a branch already on the remote at
+another commit stops the publisher, and nothing is ever force-pushed.
+`publish: prs` also opens one PR per branch, each based on the branch below
+it and the bottom one on the base branch, with `gh` when it is logged in to
+the remote's host and reaches its repository, else with the forgejo MCP
+tools when the publisher runs on Claude and they reach the remote, else not
+at all: the branches are pushed and the record says no tool reached the
+host. A stack branch once published and since deleted on the host — a PR
+you merged with its branch deleted — is recorded as gone and never pushed
+again. To open PRs on Forgejo, set `[agents.publisher] harness =
+"claude"` in your preference file. Work branches and spike branches are
+never pushed. Nothing is merged, by any role, ever. A push the harness
+denies or the remote rejects stops the driver with the command to run by
+hand; `continue` goes on without it. At any stop, "publish now" (or
+"publish now prs") publishes the stack once, whatever the setting, and
+returns to the same stop; "publish: prs from now on" changes the
+setting.
+
+**Resuming.** `driver-record.md` in the project dir is the driver's
+append-only record, and the only file it reads back. Launch the driver
+again naming the project dir: it re-enters where the record ends — the
+plan, the cycle gate, a plan escalation, the digest or the publish — once
+HEAD is where the last cycle left it; it stops naming the commit and
+branch otherwise. An open cycle is resumed with `resume: <words>`, or
+closed as stopped with `close`. Run one driver per project at a time.
+
+**What it leaves.** The driver never deletes a branch. Delete by hand, when
+you are done with them: the work branches (`git branch -d`, once the stack
+is pushed), the spike branches, and a stopped cycle's leftover PR and work
+branches, which the stop names. The driver commits the project dir in the
+sidecar at every stop, and every cycle dir a build's orchestrator does not
+commit itself.
 
 ## Development
 

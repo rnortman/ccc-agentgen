@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **New variants `project-burndown` and `project-burndown-auto`** carry a
+  goal or a spec too large for one cycle through as many cycles as it
+  takes. A planning agent, the project forester, scopes each cycle — a build through the
+  embedded `review-chain-stack[-auto]`, or a spike that answers one
+  question on throwaway branches — and digests it into a rolling state
+  document the next plan orients on. Build cycles stack on one another
+  into one stack of branches under a branch prefix; with `publish: push`
+  or `publish: prs` the stack is pushed after every shipped build, never
+  forced, and PRs are opened through the forgejo MCP tools or `gh`.
+  Nothing is merged.
+- **The stack chains take an optional branch prefix.** Launch
+  `review-chain-stack` or `review-chain-stack-auto` with `branch prefix:
+  <p>` beside the `request.md` path and every branch the cycle creates —
+  the work branch and each PR branch — is named under `<p>/`. The
+  orchestrator stops at setup when the prefix cannot head a branch name, or
+  when a branch named `<p>` or any leading part of it exists. Without the
+  words nothing changes; the follow-up variants take no prefix.
 - **The TODO workflows now read allthechanges-style trackers.**
   [allthechanges](https://github.com/rnortman/allthechanges) keeps TODO
   entries one per file in a `todo.d/` (or `.todo.d/`) directory and, from

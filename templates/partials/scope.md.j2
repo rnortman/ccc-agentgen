@@ -3,7 +3,7 @@
     neighbours a paragraph may name; `role.id` selects the closing channel. #}
 {% from "partials/shape.md.j2" import stack with context %}
 {% set reviewers = ("prepass-reviewer", "citizen-reviewer", "tracer-reviewer", "test-reviewer") %}
-{% set escalators = ("implementer", "planner", "coder-supervisor") %}
+{% set escalators = ("implementer", "planner", "coder-supervisor", "experimenter") %}
 {% set scope_key_grammar = "order=<repos|-> pins=<pairs|-> next=<paths|->" %}
 {% macro sandbox() %}
 {% set where = "the repository you run in" if stack else "an in-scope repository" %}

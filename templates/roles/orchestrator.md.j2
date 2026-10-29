@@ -131,11 +131,12 @@ Three places, kept apart throughout:
 | **original base** | per **Setup** step 5 | never |
 {% elif stack %}
 | **original base** | HEAD at setup | never |
+| **branch prefix** | from the launch words (**Setup** step 1), or none | never |
 {% else %}
 | **original base** ° | HEAD at setup, or when the repository joins the scope | never; the ship squash resets to it |
 {% endif %}
 {% if stack %}
-| **branch** | the work branch `<request slug>-stack-work`, created at setup{% if followup %} per **Setup** step 6{% endif %} | never; **HEAD check** re-attaches to it |
+| **branch** | the work branch {% if followup %}`<request slug>-stack-work`, created at setup per **Setup** step 6{% else %}`<prefix>/<request slug>-stack-work` with a branch prefix, `<request slug>-stack-work` without, created at setup{% endif %} | never; **HEAD check** re-attaches to it |
 {% else %}
 | **branch** ° | `git symbolic-ref --short HEAD` at setup, or when the repository joins the scope | never; **HEAD check** re-attaches to it |
 | **shipped** ° | `-` | its ship squash → that HEAD, the repository's work over and **HEAD check** no longer run there; a pin stop's answer → the reference the user gave (**Ship gate** step 3) |
@@ -180,7 +181,7 @@ Every prompt carries what exists of: working dir, request path, design path
 and **every** delta path, log path, {% if stack %}round base, current HEAD{% else %}the scope — each repository's path,
 branch, round base, current HEAD and shipped reference, primary first{% endif %}, the relevant
 `R`, the mode (for roles with modes), the target output path, {% if stack %}{{ stack_input() }} —
-{% endif %}{% if followup %}the prior working dir, the base when recorded, {% endif %}and one
+{% endif %}{% if followup %}the prior working dir, the base when recorded, {% elif stack %}the branch prefix when one is recorded, {% endif %}and one
 instruction: "Write to file. Reply with the status line only."
 
 Each launch below lists only additions (+) and deliberate omissions (−).
@@ -266,6 +267,13 @@ retries mid-work often omits the commit it already made.
 {% if stack %}
    The **request slug** is the working dir's basename (e.g.
    `12-fix-login-timeout`).
+{% if not followup %}
+   Words naming an existing `request.md` may also name a **branch
+   prefix**, as `branch prefix: <prefix>`: recorded verbatim, never asked
+   for, never interpreted; absent → none. Every branch of the cycle then
+   sits under `<prefix>/`: the work branch here, the PR branches through
+   the design.
+{% endif %}
 {% if followup %}
    The user's words must also name the **prior working dir**, the shipped
    cycle's working dir — the directory holding its `design.md`, whatever
@@ -328,8 +336,17 @@ retries mid-work often omits the commit it already made.
    <name> <start>`, so no `branch.autoSetupMerge` setting ties it to an
    upstream.
 {% else %}
-4. **Work branch** `<request slug>-stack-work`: `git checkout --no-track
-   -b <name>`, so no `branch.autoSetupMerge` setting ties it to an upstream.
+4. **Work branch** `<prefix>/<request slug>-stack-work` when a branch
+   prefix is recorded, `<request slug>-stack-work` otherwise. With a
+   prefix, first: `git check-ref-format --branch "<prefix>/x"` must
+   succeed, and for every leading path of the prefix — `p1`, `p1/p2`, …
+   through `<prefix>` itself — `git show-ref --verify --quiet
+   refs/heads/<that path>` must fail: a branch named any of them blocks
+   every `<prefix>/…` ref, and no existing-ref check on a PR branch's full
+   name sees it. Any failing → STOP, quote the command, its output and the
+   prefix, end turn.
+   Then `git checkout --no-track -b <name>`, so no `branch.autoSetupMerge`
+   setting ties it to an upstream.
 {% endif %}
    It fails — the name is not a valid branch name, or it or a ref it
    conflicts with already exists; git writes nothing then — → STOP, quote

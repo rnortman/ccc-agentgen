@@ -321,9 +321,15 @@ stacked on the previous entry's. Implementers build the current entry's
 scope and nothing from a later one, so this section is where PR scope is
 decided. Per PR, in order:
 
+{% if followup %}
 - `branch` — kebab-case, following the project's branch convention if its
   instructions file states one, otherwise a bare slug such as
-  `add-retry-config`; never the current branch name, never an existing ref
+  `add-retry-config`; never{% else %}
+- `branch` — under the branch prefix when the prompt carries one,
+  `<prefix>/<slug>` with the slug kebab-case; otherwise kebab-case,
+  following the project's branch convention if its instructions file states
+  one, otherwise a bare slug such as `add-retry-config`;
+  never{% endif %} the current branch name, never an existing ref
   (`git branch --list <name>`, `git branch -r --list '*/<name>'`){% if followup %}
   — for a new entry; an inherited entry of a re-created stack keeps its
   existing branch (**Inherited-entry rule**){% endif %}.

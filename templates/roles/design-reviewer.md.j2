@@ -117,6 +117,10 @@ same line beside a question that has been answered — closed, or absent from
   characters; branch names are distinct, well-formed, not the current branch
   and not existing refs (`git branch --list <name>` and `git branch -r
   --list '*/<name>'`: local and remote-tracking refs, no network).
+{% if not followup %}
+  When the prompt carries a branch prefix, a branch name that does not
+  start with `<prefix>/` is a finding.
+{% endif %}
 {% endif %}
 {% if followup %}
 - **Responses** — every thread item not marked **ours** has exactly one
