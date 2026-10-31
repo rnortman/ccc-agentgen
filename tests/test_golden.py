@@ -50,7 +50,7 @@ FOLLOWUP_AUTO_STEM = "review-chain-stack-followup-auto"
 FOLLOWUP_STEMS = (FOLLOWUP_STEM, FOLLOWUP_AUTO_STEM)
 PROJECT_STEM = "project-burndown"
 PROJECT_AUTO_STEM = "project-burndown-auto"
-STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM) + FOLLOWUP_STEMS + (PROJECT_STEM, PROJECT_AUTO_STEM)
+STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM) + FOLLOWUP_STEMS
 TRIAGE_STEM = "todo-triage"
 BURNDOWN_STEM = "todo-burndown"
 BURNDOWN_AUTO_STEM = "todo-burndown-auto"
@@ -61,8 +61,36 @@ REVIEW_CHAIN_STEMS = [stem for stem in VARIANT_STEMS if stem.startswith("review-
 # The drivers a burndown variant adds on top of the review chain it embeds.
 BURNDOWN_EMBEDS = {BURNDOWN_STEM: FULL_STEM, BURNDOWN_AUTO_STEM: FULL_AUTO_STEM}
 BURNDOWN_ROLES = {"burndown-orchestrator", "triage-forester"}
-# The roles a project variant adds on top of the stack chain it embeds.
-PROJECT_EMBEDS = {PROJECT_STEM: STACK_STEM, PROJECT_AUTO_STEM: STACK_AUTO_STEM}
+# The roles a project variant adds on top of the plain chain it embeds.
+PROJECT_EMBEDS = {PROJECT_STEM: FULL_STEM, PROJECT_AUTO_STEM: FULL_AUTO_STEM}
+# The chain roles a project variant renders differently from its chain: only
+# in `-auto`, and only in the push wording, since the project's publisher
+# alone pushes.
+PROJECT_PUSH_ROLES = {PROJECT_AUTO_STEM: {"orchestrator", "forester"}}
+# Every difference, as (chain wording, project wording) pairs: substituting
+# each pair into the chain role's flattened body yields the project's.
+PROJECT_PUSH_WORDING = {
+    "orchestrator": (
+        ("→ changelog → push.", "→ changelog."),
+        (
+            "Then the push: after a forester-approved squash on a branch other than `main`,"
+            " push X to `origin` without asking. Otherwise you never push on your own",
+            "Then the push: you never push on your own",
+        ),
+        (
+            "push without that `approve` on a branch other than `main`, or the user's explicit word",
+            "push without the user's explicit word",
+        ),
+    ),
+    "forester": (
+        (
+            "the squash proceeds (pushing is the orchestrator's rule, not yours: `approve` squashes"
+            " and, off `main`, pushes before anyone reads another word of yours)",
+            "the squash proceeds; nothing is pushed — the project's publisher pushes, under the"
+            " project's setting",
+        ),
+    ),
+}
 PROJECT_ROLES = {"project-orchestrator", "project-forester", "experimenter", "publisher"}
 
 # Set where the suite runs with `ccc` available, to turn the integration test's
@@ -305,11 +333,13 @@ def test_shipped_variants_together_cover_every_role_template(builds):
     assert shipped == set(role_template_ids(TEMPLATES))
 
 
-def _assert_no_vocabulary(build: Build, forbidden) -> None:
-    """No role of `build` carries a `forbidden` word, lower-cased, in its
-    description or any rendered body.
+def _assert_no_vocabulary(build: Build, forbidden, role_ids=None) -> None:
+    """No role of `build` — or of `role_ids`, when given — carries a
+    `forbidden` word, lower-cased, in its description or any rendered body.
     """
     for role in build.roles:
+        if role_ids is not None and role.id not in role_ids:
+            continue
         description = role.frontmatter.get("description", "").lower()
         for word in forbidden:
             assert word not in description, f"{build.stem}/{role.id}: description: {word}"
@@ -713,10 +743,9 @@ def test_non_stack_orchestrator_keeps_the_checked_out_branch(builds):
             assert "`git symbolic-ref --short HEAD` at setup" in flat, where
             assert "that branch is now **branch**" in flat, where
             assert "a detached HEAD at setup" in flat, where
-            assert "a branch HEAD was found on stays where it is" not in flat, where
 
 
-def _autopush(variant: Variant) -> bool:
+def _autoship(variant: Variant) -> bool:
     return (
         _forester_gate(variant, "ship")
         and _decide(variant)
@@ -724,9 +753,15 @@ def _autopush(variant: Variant) -> bool:
     )
 
 
+def _autopush(variant: Variant) -> bool:
+    return _autoship(variant) and "project-orchestrator" not in variant.roles
+
+
 def test_autopush_pushes_only_off_main(builds):
-    """Only a forester-decided ship gate pushes without asking, and never on `main`."""
-    for stem in REVIEW_CHAIN_STEMS:
+    """Only a forester-decided ship gate pushes without asking, and never on
+    `main`; a chain embedded in a project never pushes.
+    """
+    for stem in REVIEW_CHAIN_STEMS + list(PROJECT_EMBEDS):
         autopush = _autopush(builds[stem].variant)
         for name, body in builds[stem].bodies("orchestrator"):
             where = f"{stem}/{name}"
@@ -1267,8 +1302,21 @@ def test_two_level_variants_embed_their_chain(builds, embeds, added):
         assert set(build.by_id) - added == set(chain.by_id), stem
         assert added <= set(build.by_id), stem
         for role_id, role in chain.by_id.items():
-            assert build.by_id[role_id].frontmatter == role.frontmatter, f"{stem}/{role_id}"
-            assert build.bodies(role_id) == chain.bodies(role_id), f"{stem}/{role_id}"
+            where = f"{stem}/{role_id}"
+            assert build.by_id[role_id].frontmatter == role.frontmatter, where
+            if role_id not in PROJECT_PUSH_ROLES.get(stem, set()):
+                assert build.bodies(role_id) == chain.bodies(role_id), where
+                continue
+            assert build.bodies(role_id) != chain.bodies(role_id), where
+            for (name, body), (_, chain_body) in zip(
+                build.bodies(role_id), chain.bodies(role_id), strict=True
+            ):
+                flat, chain_flat = " ".join(body.split()), " ".join(chain_body.split())
+                for chain_phrase, project_phrase in PROJECT_PUSH_WORDING[role_id]:
+                    assert chain_flat.count(chain_phrase) == 1, f"{stem}/{name}: {chain_phrase}"
+                    assert chain_phrase not in flat, f"{stem}/{name}: {chain_phrase}"
+                    chain_flat = chain_flat.replace(chain_phrase, project_phrase)
+                assert flat == chain_flat, f"{stem}/{name}"
 
 
 def test_split_harness_pinning_holds(builds):
@@ -1395,7 +1443,13 @@ def test_stack_vocabulary_is_absent_elsewhere(builds):
     for build in builds.values():
         if "pr-assembler" in build.variant.roles:
             continue
-        _assert_no_vocabulary(build, forbidden)
+        if build.stem not in PROJECT_EMBEDS:
+            _assert_no_vocabulary(build, forbidden)
+            continue
+        # A project's own roles keep "stack" for its stack of cycle branches.
+        _assert_no_vocabulary(build, forbidden, set(build.by_id) - PROJECT_ROLES)
+        project_forbidden = [word for word in forbidden if word != "stack"] + ["-stack-work"]
+        _assert_no_vocabulary(build, project_forbidden, PROJECT_ROLES)
 
 
 def test_followup_vocabulary_is_absent_elsewhere(builds):
@@ -2071,50 +2125,101 @@ def test_followup_designer_and_reviewer_carry_responses(builds):
                 assert ("every `pr-posted-<K>.md`" in design) == followup, where
 
 
-def test_branch_prefix_is_plain_stack_only(builds):
-    """A plain stack chain takes an optional branch prefix in its launch
-    words: the orchestrator validates it, names its work branch under it and
-    hands it on; the designer names PR branches under it and the reviewer
-    checks that. The follow-up chains keep their inherited names, and no
-    other variant has stack branches, so none of them mentions a prefix.
+PREFIX_SETUP_PHRASES = (
+    "`branch prefix: <prefix>`: recorded verbatim, never asked for",
+    'git check-ref-format --branch "<prefix>/x"` must succeed',
+    "for every leading path of the prefix — `p1`, `p1/p2`, … through `<prefix>` itself —",
+    "`git show-ref --verify --quiet refs/heads/<that path>` must fail",
+)
+PLAIN_PREFIX_PHRASES = (
+    "**Cycle branch**, only with a branch prefix recorded: `<prefix>/<request slug>`, in the primary.",
+    "except the primary with a branch prefix recorded: its branch is created from HEAD either way",
+)
+# The plain ship-shape text every chain role renders names the prefix only
+# as where the primary's commit lands.
+PLAIN_SHIP_BRANCH = "for the primary under a branch prefix, the branch the cycle creates at setup"
+# The plain orchestrator's setup stops a status routes on, and the scope
+# limit on the cycle branch.
+PLAIN_SETUP_STOPS = (
+    "a detached HEAD at setup without a branch prefix, a cycle branch that could not be created at setup",
+    "Another repository of the scope keeps the branch recorded at step 2.",
+)
+PLAIN_PREFIX_ADOPT = (
+    "with a branch prefix recorded, `git checkout -B <branch>` here",
+    "a branch HEAD was found on stays where it is",
+    "With a branch prefix recorded, neither repair",
+)
+
+
+def test_branch_prefix_is_taken_by_every_non_followup_chain(builds):
+    """Every chain but the follow-ups takes an optional branch prefix in its
+    launch words, and its orchestrator validates it. A stack chain names its
+    work branch under it and hands it on; the designer names PR branches
+    under it and the reviewer checks that. A plain chain creates one cycle
+    branch under it in the primary and protects that branch on `adopt`. The
+    follow-up chains keep their inherited names and never mention a prefix.
     """
     for build in builds.values():
-        stack = "pr-assembler" in build.variant.roles
-        plain = stack and "pr-liaison" not in build.variant.roles
+        stack = "pr-assembler" in build.variant.roles and "planner" not in build.variant.roles
+        followup = "pr-liaison" in build.variant.roles
+        prefixed = not followup
+        stack_prefixed = stack and not followup
         if "orchestrator" in build.by_id:
             for name, body in build.bodies("orchestrator"):
                 flat = " ".join(body.split())
                 where = f"{build.stem}/{name}"
                 setup = " ".join(_section(body, "### Setup").split())
-                for phrase in (
-                    "`branch prefix: <prefix>`: recorded verbatim, never asked for",
-                    'git check-ref-format --branch "<prefix>/x"` must succeed',
-                    "for every leading path of the prefix — `p1`, `p1/p2`, … through `<prefix>` itself —",
-                    "`git show-ref --verify --quiet refs/heads/<that path>` must fail",
+                for phrase in PREFIX_SETUP_PHRASES:
+                    assert (phrase in setup) == prefixed, f"{where}: {phrase}"
+                work = (
                     "**Work branch** `<prefix>/<request slug>-stack-work` when a branch prefix is recorded,"
-                    " `<request slug>-stack-work` otherwise",
-                ):
-                    assert (phrase in setup) == plain, f"{where}: {phrase}"
-                assert ("| **branch prefix** |" in flat) == plain, where
+                    " `<request slug>-stack-work` otherwise"
+                )
+                assert (work in setup) == stack_prefixed, where
+                for phrase in PLAIN_PREFIX_PHRASES:
+                    assert (phrase in setup) == (not stack), f"{where}: {phrase}"
+                anomaly = " ".join(_section(body, "### Repo anomaly").split())
+                for phrase in PLAIN_PREFIX_ADOPT:
+                    if stack:
+                        continue
+                    assert phrase in anomaly, f"{where}: {phrase}"
+                assert ("| **branch prefix** |" in flat) == prefixed, where
+                if not stack:
+                    assert "`<prefix>/<request slug>`, created at setup, when a branch prefix is recorded" in flat, where
+                    assert "compare against.\n4. **Cycle branch**" in body, where
+                for phrase in PLAIN_SETUP_STOPS:
+                    assert (phrase in flat) == (not stack), f"{where}: {phrase}"
+                assert "a rebase in progress at setup" in flat, where
+                rebase = (
+                    "A rebase or `git am` is in progress in the primary — `git rev-parse --git-path"
+                    " rebase-merge` or `--git-path rebase-apply` names an existing directory — → STOP"
+                )
+                assert (rebase in setup) == (not stack), where
+                if not stack:
+                    assert setup.index(rebase) < setup.index("Already detached at setup → STOP"), where
                 payload = " ".join(_section(body, "## Standard payload").split())
-                assert ("the branch prefix when one is recorded" in payload) == plain, where
-                assert "branch prefix" not in flat or plain, where
+                assert ("the branch prefix when one is recorded" in payload) == stack_prefixed, where
+                assert "branch prefix" not in flat or prefixed, where
         if "designer" in build.by_id:
             for name, body in build.bodies("designer"):
                 flat = " ".join(body.split())
                 where = f"{build.stem}/{name}"
+                assert (PLAIN_SHIP_BRANCH in flat) == (not stack), where
+                flat = flat.replace(PLAIN_SHIP_BRANCH, "")
                 assert (
                     "under the branch prefix when the prompt carries one, `<prefix>/<slug>`" in flat
-                ) == plain, where
-                assert "branch prefix" not in flat or plain, where
+                ) == stack_prefixed, where
+                assert "branch prefix" not in flat or stack_prefixed, where
         if "design-reviewer" in build.by_id:
             for name, body in build.bodies("design-reviewer"):
                 flat = " ".join(body.split())
                 where = f"{build.stem}/{name}"
+                assert (PLAIN_SHIP_BRANCH in flat) == (not stack), where
+                flat = flat.replace(PLAIN_SHIP_BRANCH, "")
                 assert (
                     "a branch name that does not start with `<prefix>/` is a finding" in flat
-                ) == plain, where
-                assert "branch prefix" not in flat or plain, where
+                ) == stack_prefixed, where
+                assert "branch prefix" not in flat or stack_prefixed, where
 
 
 def _project_driver_bodies(builds):
@@ -2131,7 +2236,7 @@ def _between(flat: str, start: str, end: str) -> str:
 def test_project_driver_launches_the_chain_with_its_prefix(builds):
     """The inner orchestrator gets its request path and the prefix words and
     nothing else; the driver resumes that orchestrator, never a grandchild,
-    and narrows no scope: the stack chain runs in one repository.
+    and narrows no scope.
     """
     for where, flat, _ in _project_driver_bodies(builds):
         assert '`ccc run orchestrator --cwd <repo> "<cycle dir>/request.md branch prefix: <prefix>"`' in flat, where
@@ -2191,26 +2296,36 @@ def test_project_driver_routes_a_directive_as_the_named_result(builds):
 
 
 def test_project_driver_checks_the_stack_from_git(builds):
-    """A shipped build is checked on its work branch and its stack is read off
-    the refs commit by commit; spike and stopped cycles are fenced by the
+    """A shipped build is checked on its cycle branch, one squash above the
+    pre-cycle HEAD or none; spike and stopped cycles are fenced by the
     recorded refs, never by a name pattern alone.
     """
     for where, flat, _ in _project_driver_bodies(builds):
         build = _between(flat, "**build:** `ccc run orchestrator", "**spike:**")
         for phrase in (
-            "`<prefix>/<cycle dir basename>-stack-work`",
-            "`git merge-base --is-ancestor <pre-cycle HEAD> HEAD`",
-            "`git rev-list --first-parent --reverse <pre-cycle HEAD>..HEAD`",
-            "--points-at <commit> refs/heads/<prefix>/`, minus the work branch, prints exactly one ref",
-            "minus the recorded refs, plus the cycle's work branch if it exists",
+            "`git symbolic-ref --short HEAD` prints the cycle branch, `<prefix>/<cycle dir basename>`",
+            "HEAD equals the pre-cycle HEAD — the cycle shipped nothing — and the cycle's `stack` is `none`",
+            "`git rev-parse HEAD^` equals the pre-cycle HEAD",
+            "`git rev-list --count <pre-cycle HEAD>..HEAD` prints `1`",
+            "the cycle's `stack` is the cycle branch",
+            "Anything else → STOP, name the branch, HEAD and the pre-cycle HEAD",
+            "minus the recorded refs, plus the cycle's branch, `<prefix>/<cycle dir basename>`, if it exists",
             "you delete nothing",
         ):
             assert phrase in build, f"{where}: {phrase}"
+        for gone in ("-stack-work", "--first-parent --reverse", "--points-at"):
+            assert gone not in build, f"{where}: {gone}"
         run = _between(flat, "3. **Run the cycle.**", "**build:** `ccc run orchestrator")
         head = run.index("First the **HEAD check (record)**")
         clean = run.index("A spike then needs a clean tree: `git status --porcelain`, untracked files included, prints nothing → else STOP")
-        assert head < clean < run.index("append `cycle <C> started:"), where
-        spike = _between(flat, "**spike:** `ccc run experimenter`", "4. **Digest.**")
+        free = run.index(
+            "A build then needs its cycle branch's name free: `git show-ref --verify --quiet"
+            " refs/heads/<prefix>/<cycle dir basename>` fails and `git for-each-ref"
+            " refs/heads/<prefix>/<cycle dir basename>/` prints nothing → else STOP, name the ref"
+        )
+        assert head < clean < free < run.index("append `cycle <C> started:"), where
+        assert "its name was free at launch, so the cycle created it" in build, where
+        spike =_between(flat, "**spike:** `ccc run experimenter`", "4. **Digest.**")
         assert "spike namespace `<prefix>/spike-<cycle dir basename>/`" in spike, where
         assert "not among the recorded refs is under the spike namespace" in spike, where
         assert "`git status --porcelain --untracked-files=no` prints nothing" in spike, where
@@ -2334,8 +2449,13 @@ def test_project_forester_plans_and_digests(builds):
             flat = " ".join(body.split())
             where = f"{stem}/{name}"
             for phrase in (
-                "`git show-ref --verify --quiet refs/heads/<prefix>/<basename>-stack-work` fails",
+                "`git show-ref --verify --quiet refs/heads/<prefix>/<basename>` fails",
+                "`git for-each-ref refs/heads/<prefix>/<basename>/` prints nothing",
                 "`git for-each-ref refs/heads/<prefix>/spike-<basename>/` prints nothing",
+                "**Request assessment**, **Scope**, **Open questions**",
+                "`git log -1 --format=%B <cycle branch>`",
+                "whose branch is not in that stack shipped nothing and has no squash to read",
+                "that is neither in the stack nor a stopped cycle's leftover",
                 "> *Provenance: written by the project forester, a product-owner proxy; not the user.*",
                 "The stack is the list your prompt hands, never a scan of the refs.",
                 "**Next, probably**",
@@ -2343,6 +2463,7 @@ def test_project_forester_plans_and_digests(builds):
                 "no merging",
             ):
                 assert phrase in flat, f"{where}: {phrase}"
+            assert "pr-r<R>.md" not in flat, where
             for section in ("Goal", "Branches", "Cycles", "Learned", "Remaining", "For the user"):
                 assert f"**{section}** —" in flat, f"{where}: {section}"
 
@@ -3167,10 +3288,11 @@ def test_auto_ship_loop_keeps_the_autonomy_branches(builds):
     forester-decided gate surfaces nothing, every other surfaces X and waits,
     and the pin stop ends the turn in every autonomy.
     """
-    for stem in REVIEW_CHAIN_STEMS:
+    for stem in REVIEW_CHAIN_STEMS + list(PROJECT_EMBEDS):
         build = builds[stem]
         if _is_stack(build):
             continue
+        autoship = _autoship(build.variant)
         autopush = _autopush(build.variant)
         for name, body in build.bodies("orchestrator"):
             where = f"{stem}/{name}"
@@ -3178,10 +3300,11 @@ def test_auto_ship_loop_keeps_the_autonomy_branches(builds):
             step1 = ship[ship.index(" 1. ") : ship.index(" 2. ")]
             step2 = ship[ship.index(" 2. ") : ship.index(" 3. ")]
             step3 = ship[ship.index(" 3. ") : ship.index(" 4. ")]
-            if autopush:
+            if autoship:
                 assert "Nothing is surfaced" in step1, where
                 assert step2.startswith(" 2. Approval in hand"), where
-                assert "push X to `origin` without asking" in step2, where
+                assert ("push X to `origin` without asking" in step2) == autopush, where
+                assert ("Then the push: you never push on your own" in step2) == (not autopush), where
             else:
                 assert step1.startswith(" 1. Surface X"), where
                 assert "`ship 1 of 2: <X>`" in step1, where

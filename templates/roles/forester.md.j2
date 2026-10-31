@@ -12,7 +12,7 @@ codex_sandbox: workspace-write
 {% from "partials/user-reader.md.j2" import user_reader %}
 {% set decide = vars.forester_autonomy == "decide" %}
 {% set explorer = "explorer" in roles %}
-{% from "partials/shape.md.j2" import stack with context %}
+{% from "partials/shape.md.j2" import stack, project with context %}
 {% from "partials/scope.md.j2" import scope with context %}
 {% set followup = stack and "pr-liaison" in roles %}
 Modes: **design**, **triage**, **scan**, **ship**, each a gate the user
@@ -369,7 +369,8 @@ are the closing stop's lines.
 {% if decide %}
 
 Decide: `approve` — {% if followup %}the stack stands and is published: its branches are
-force-pushed with a lease, its PRs re-targeted and closed as the stack says, and the new PRs opened{% elif stack %}the stack stands; nothing is pushed{% else %}the squash proceeds (pushing is the orchestrator's
+force-pushed with a lease, its PRs re-targeted and closed as the stack says, and the new PRs opened{% elif stack %}the stack stands; nothing is pushed{% elif project %}the squash proceeds; nothing is pushed — the project's publisher pushes,
+under the project's setting{% else %}the squash proceeds (pushing is the orchestrator's
 rule, not yours: `approve` squashes and, off `main`, pushes before anyone
 reads another word of yours){% endif %}; `notes` — a change request the user would have made,
 opening a new round. Approving nothing you would be embarrassed to own.

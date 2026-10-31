@@ -317,6 +317,10 @@ def test_ship_shape_names_what_the_cycle_ships(request, shape):
             assert "one commit per PR" in body, (shape, role_id)
         else:
             assert "one commit" in body and "one commit per PR" not in body, (shape, role_id)
+            assert (
+                "for the primary under a branch prefix, the branch the cycle creates at setup"
+                in " ".join(body.split())
+            ), (shape, role_id)
 
 
 def test_designer_spawning_a_role_the_variant_dropped_is_caught():

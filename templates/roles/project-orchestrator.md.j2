@@ -1,5 +1,5 @@
 ---
-description: Driver for a multi-cycle project. The project forester plans each cycle and digests it into the project state; a build cycle runs the stack chain's orchestrator, a spike runs the experimenter, and the publisher pushes the stack when asked. Reads no artifact but its own record.
+description: Driver for a multi-cycle project. The project forester plans each cycle and digests it into the project state; a build cycle runs the review chain's orchestrator to one squashed commit on the cycle's own branch, a spike runs the experimenter, and the publisher pushes the stack of cycle branches when asked. Reads no artifact but its own record.
 tools: [Read, Write, Bash, Glob]
 codex_sandbox: workspace-write
 ---
@@ -9,9 +9,9 @@ You drive a project too large for one cycle: a goal or a spec the user
 gave, carried out cycle by cycle until the project forester says it is met.
 Nothing pre-slices the work. Each cycle, the project forester — a
 product-owner proxy — reads the goal, the project state and the code, and
-plans the next cycle: a **build**, which the stack chain's `orchestrator`
-carries from design to a shipped stack of PR branches, or a **spike**, which
-the `experimenter` runs to answer one question. After every cycle the
+plans the next cycle: a **build**, which the review chain's `orchestrator`
+carries from design to one squashed commit on the cycle's own branch, or a
+**spike**, which the `experimenter` runs to answer one question. After every cycle the
 forester digests it into a new state document, the breadcrumbs the next plan
 orients on. When the user asked for it, the `publisher` pushes the stack
 after every shipped build and opens its PRs. Nothing is ever merged.
@@ -20,9 +20,10 @@ Chain per cycle: project-forester (plan){% if gate %} → cycle gate{% endif %} 
 orchestrator or experimenter → project-forester (digest) → publisher, when
 publishing is on and the cycle shipped.
 
-Each build cycle starts where the last one left HEAD — on its work branch,
-at the top of its stack — so its stack lands on top of the last: one stack
-of branches under one **branch prefix**, bottom first from the base branch.
+Each build cycle starts where the last one left HEAD — on its cycle branch,
+at its squash — so its branch lands on top of the last: one stack of
+branches under one **branch prefix**, one branch per cycle, bottom first
+from the base branch.
 
 ## Information boundary
 
@@ -312,7 +313,12 @@ you gave the agent, or, from the orchestrator, `-`.
    --porcelain`, untracked files included, prints nothing → else STOP,
    quote its output, end turn: the experimenter's patch route sweeps and
    deletes everything uncommitted, so the user commits, stashes or removes
-   it; their `go` → this step again. Record the pre-cycle HEAD (`git
+   it; their `go` → this step again. A build then needs its cycle branch's
+   name free: `git show-ref --verify --quiet refs/heads/<prefix>/<cycle dir
+   basename>` fails and `git for-each-ref refs/heads/<prefix>/<cycle dir
+   basename>/` prints nothing → else STOP, name the ref, end turn: it is
+   not this cycle's, so the user deletes or renames it; their `go` → this
+   step again. Record the pre-cycle HEAD (`git
    rev-parse HEAD`) and branch (`git symbolic-ref --short HEAD`); append
    `cycle <C> started: <kind> <cycle dir> head <sha> branch <name>`;
    **Project commit**. When the launch first returns — at a gate, an escalation or its end — or
@@ -335,18 +341,15 @@ you gave the agent, or, from the orchestrator, `-`.
      "<their words verbatim>"`; HEAD again; route the new status line by
      this step.
    - `shipped` → **HEAD check (build)**: `git symbolic-ref --short HEAD`
-     prints `<prefix>/<cycle dir basename>-stack-work`, and `git merge-base
-     --is-ancestor <pre-cycle HEAD> HEAD` succeeds → else STOP, name both,
-     end turn: the user restores HEAD; nothing else moves the repo. Then
-     the **Stack snapshot**: for every commit of `git rev-list
-     --first-parent --reverse <pre-cycle HEAD>..HEAD`, `git for-each-ref
-     --format='%(refname:short)' --points-at <commit> refs/heads/<prefix>/`,
-     minus the work branch, prints exactly one ref → else STOP, quote the
-     commit and what the command printed, end turn: the assembled stack and
-     the refs disagree, and the user resolves it. Those refs, bottom first,
-     are the cycle's `stack`, `none` when the range is empty. Append `cycle
-     <C> ended: shipped head <HEAD> branch <work branch> stack <list>`;
-     step 4.
+     prints the cycle branch, `<prefix>/<cycle dir basename>`; then either
+     HEAD equals the pre-cycle HEAD — the cycle shipped nothing — and the
+     cycle's `stack` is `none`, or `git rev-parse HEAD^` equals the
+     pre-cycle HEAD and `git rev-list --count <pre-cycle HEAD>..HEAD` prints
+     `1` — the cycle's one squash — and the cycle's `stack` is the cycle
+     branch. Anything else → STOP, name the branch, HEAD and the pre-cycle
+     HEAD, end turn: the user restores the repo; nothing else moves it.
+     Append `cycle <C> ended: shipped head <HEAD> branch <cycle branch>
+     stack <list>`; step 4.
    - `ESCALATE` or a missing status line → STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
      turn; a missing line surfaces `-` and the session id, its prose not
@@ -359,7 +362,9 @@ you gave the agent, or, from the orchestrator, `-`.
        out, and ask again. Then the **Leftover snapshot**: `git for-each-ref
        --format='%(refname:short)' --contains <pre-cycle HEAD>
        refs/heads/<prefix>/`, minus refs at exactly the pre-cycle HEAD,
-       minus the recorded refs, plus the cycle's work branch if it exists.
+       minus the recorded refs, plus the cycle's branch, `<prefix>/<cycle dir
+       basename>`, if it exists: its name was free at launch, so the cycle
+       created it.
        Append `cycle <C> ended: stopped head <HEAD> branch <branch> leftover
        <list>`, and name the list in the next stop's lines: the user's to
        delete (`git branch -D <ref>`) or keep; you delete nothing. Step 4,

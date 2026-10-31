@@ -103,12 +103,11 @@ Decide what the next cycle is, by these questions in order:
    area": that is an explorer's job inside a plan.
 3. **Otherwise, a build.** One coherent slice with a crisp done criterion,
    sized for one design: around {{ vars.cycle_target_lines }} added lines,
-   a few PRs of around {{ vars.pr_target_lines }} — never a slice the
-   designer would have to split into a dozen PRs. Prefer the slice that
-   unblocks the most, that retires the biggest risk, or that the previous
-   cycle left as the natural next thing. A slice that corrects an earlier
-   cycle's PR is a new PR on top: an assembled PR of an earlier cycle never
-   changes, and the request says the change is a correction.
+   shipped as one squash on one branch. Prefer the slice that unblocks the
+   most, that retires the biggest risk, or that the previous cycle left as
+   the natural next thing. A slice that corrects an earlier cycle's work is
+   a new cycle on top: an earlier cycle's branch never changes, and the
+   request says the change is a correction.
 4. **Or the user's call.** A product decision nobody has made, a brief the
    code contradicts, a goal that turns out to need another repository:
    write the question into the plan — what is undecided, the options, what
@@ -138,12 +137,13 @@ branch-name segment (`git check-ref-format --branch "<cycle slug>"`). The
 basename must not exist, and the branches it would produce must not be
 taken:
 
-- `git show-ref --verify --quiet refs/heads/<prefix>/<basename>-stack-work`
-  fails, and
+- `git show-ref --verify --quiet refs/heads/<prefix>/<basename>` fails,
+- `git for-each-ref refs/heads/<prefix>/<basename>/` prints nothing (a ref
+  under that path blocks the branch), and
 - `git for-each-ref refs/heads/<prefix>/spike-<basename>/` prints nothing.
 
 The basename carries only the day of the month, so a slug reused on the same
-day of a later month would collide with a work branch the workflow never
+day of a later month would collide with a cycle branch the workflow never
 deletes; pick another slug when any check fails. A replan writes a new
 cycle dir; a rejected cycle's dir stays as it is, a record.
 
@@ -163,14 +163,14 @@ other cycle's documents unless the request names them:
 - constraints the explorations surfaced, with file citations;
 - non-goals, including what later cycles take;
 - the user's notes that bear on it, quoted and marked as the user's;
-- for a build: every branch the cycle creates sits under `<prefix>/` — the
-  orchestrator enforces it, and the request says it so the design reads
-  right;
+- for a build: the cycle ships one commit on its own branch,
+  `<prefix>/<basename>`, which the orchestrator creates — the request says
+  it so the design reads right;
 - for a spike: the spike branch namespace, `<prefix>/spike-<basename>/`,
   and that nothing the spike builds ships.
 
-Nothing the chain cannot ship: no PR layout and no commit counts (the
-designer decides the split), no work in another repository, no merging.
+Nothing the chain cannot ship: no PR layout and no commit counts (the cycle
+ships one squash), no work in another repository, no merging.
 
 Write it as a proposal from the owner's proxy, in the third person about the
 owner, never in the user's voice.
@@ -190,15 +190,18 @@ Read, in order:
 2. the cycle's plan — its **Next, probably** in particular;
 3. the cycle's `request.md`;
 4. for a build: `design.md` and every `design-delta-*.md` — **Context**,
-   **Request assessment**, **Stack**, **Open questions**, any **Not
+   **Request assessment**, **Scope**, **Open questions**, any **Not
    written** marker; for a shipped build, the `forester-ship-k<K>.md`
    with the highest `K`, compared as a number — its **Report** section:
    first line what shipped, third item the rulings made in the user's
    name, fourth the tracker entries filed; when it has no **Report**, its
    **Why**, which names the needs the cycle raised and the record each
    has, if any — a need with none is unfiled — and the forester log, whose
-   entries are the rulings made in the user's name; every `pr-r<R>.md` (branch, size,
-   message); every `dispositions-triage-*.md`; the user's `notes-*` files;
+   entries are the rulings made in the user's name; for a shipped build
+   whose cycle branch is in the stack your prompt hands, the squash's
+   message (`git log -1 --format=%B <cycle branch>`) — a shipped build
+   whose branch is not in that stack shipped nothing and has no squash to
+   read; every `dispositions-triage-*.md`; the user's `notes-*` files;
 5. for a spike: `spike-report.md`;
 6. for a `stopped` cycle: the escalation its last stop named, the forester
    log — the rulings made in the user's name are its entries — and the
@@ -211,8 +214,12 @@ Then git, read-only. The stack is the list your prompt hands, never a scan
 of the refs. Per stack branch, `git rev-parse refs/heads/<b>` and `git log
 -1 --format=%s <b>` give its commit and title. `git for-each-ref
 refs/heads/<prefix>/` lists every other ref under the prefix: name each as
-a spike branch, a work branch or a leftover of a stopped cycle, by your
-prompt's lists and the name — never as part of the stack.
+a spike branch, a leftover of a stopped cycle, an empty cycle branch or a
+work branch, by your prompt's lists and the name — never as part of the
+stack. An empty cycle branch is a cycle's branch, `<prefix>/<cycle dir
+basename>`, that is neither in the stack nor a stopped cycle's leftover: its
+cycle shipped nothing. A work branch ends `-work`: an earlier version of
+this workflow left it on a cycle's top.
 
 ### The state
 

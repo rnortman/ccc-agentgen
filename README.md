@@ -228,8 +228,8 @@ project workflows.
 | `todo-triage` | Rules on every unruled `TODO.md` entry | Claude or Codex |
 | `todo-burndown` | Works ruled entries down through `review-chain` | Claude or Codex |
 | `todo-burndown-auto` | Works ruled entries down through `review-chain-auto` | Claude or Codex |
-| `project-burndown` | Works a multi-cycle project into one stack of branches through `review-chain-stack` | Claude or Codex |
-| `project-burndown-auto` | `project-burndown` with the forester deciding, through `review-chain-stack-auto` | Claude or Codex |
+| `project-burndown` | Works a multi-cycle project into one stack of branches, one per cycle, through `review-chain` | Claude or Codex |
+| `project-burndown-auto` | `project-burndown` with the forester deciding, through `review-chain-auto` | Claude or Codex |
 
 "Claude or Codex" means either CLI alone runs it; "Claude and Codex" means
 it needs both.
@@ -288,6 +288,15 @@ orchestrator stops at setup when `<p>/x` is not a valid branch name or a
 branch named `<p>`, or any leading part of it (`team` for `team/proj`),
 exists, since git then refuses every `<p>/…` branch. Without the words, branch names are as above. The follow-up
 variants take no prefix: their inherited branches keep their names.
+
+The plain chains — `review-chain`, `-auto`, `-lite`, `-planner*` and
+`-split*` — take the same `branch prefix: <p>` words. With them the
+orchestrator creates one branch, `<p>/<request slug>`, in the primary
+repository at setup, after the same prefix checks, and the ship squash
+lands on it; the branch checked out at launch is never touched, and a
+detached HEAD at launch is no stop. A repository added by a scope phrase
+keeps its own launch branch. Without the words the cycle lands on the
+checked-out branch, as before.
 
 `review-chain-stack-followup` and `review-chain-stack-followup-auto` run a
 second cycle over a stack whose PRs are open and reviewed on the code host.
@@ -629,8 +638,9 @@ so they can be removed by hand before an entry is ruled.
 
 `project-burndown` and `project-burndown-auto` carry a goal or a spec too
 large for one cycle through as many cycles as it takes, and end with one
-stack of branches, never merged. They embed `review-chain-stack` and
-`review-chain-stack-auto` whole, and add four roles: the driver
+stack of branches, one per cycle, never merged. They embed `review-chain`
+and `review-chain-auto` whole — except that in `-auto` the embedded chain
+never pushes — and add four roles: the driver
 `project-orchestrator`, which knows nothing about what is being built; the
 `project-forester`, a product-owner proxy that plans each cycle and digests
 it; the `experimenter`, which runs spikes; and the `publisher`, which pushes
@@ -660,10 +670,11 @@ goal, the latest state and the code, writes `plan-c<C>-g<G>.md`, and picks
 one of:
 
 - a **build** — one coherent slice sized near `cycle_target_lines` (4000
-  added lines, a few PRs). The forester writes the cycle's `request.md` in
-  a new cycle dir `<ADR root>/YYYY/MM/DD-<slug>--<cycle slug>/`, and the
-  stack chain's `orchestrator` runs it there with the branch prefix, as any
-  stack cycle runs, gates and all;
+  added lines), shipped as one squashed commit with no PR size limit. The
+  forester writes the cycle's `request.md` in a new cycle dir `<ADR
+  root>/YYYY/MM/DD-<slug>--<cycle slug>/`, and the review chain's
+  `orchestrator` runs it there with the branch prefix, as any cycle runs,
+  gates and all, creating the cycle's branch `<p>/<cycle dir basename>`;
 - a **spike** — one question the next build turns on that reading cannot
   settle. The `experimenter` answers it with the smallest experiment,
   on throwaway branches under `<p>/spike-<cycle dir basename>/`, and writes
@@ -675,7 +686,7 @@ In `project-burndown` you hold a **cycle gate** after every plan: `go`
 runs the cycle; anything else is written to `notes-plan-user-c<C>-g<G>.md`
 and the forester plans again. In `-auto` the forester's plan stands, and
 the embedded chain's forester holds its gates as in
-`review-chain-stack-auto`.
+`review-chain-auto`.
 
 **The state document.** After every cycle the forester digests it into
 `state-c<C>.md`: the goal, the branches, one short block per cycle, what
@@ -689,19 +700,22 @@ documents.
 ```
 main ──●
         \
-         ●──●──●   <p>/<b1> <p>/<b2> <p>/<b3>         cycle 1's PRs
-                \
-                 ●──●   <p>/<b4> <p>/<b5>               cycle 2's PRs
+         ●   <p>/<cycle-1 dir>                        cycle 1's squash
+          \
+           ●   <p>/<cycle-2 dir>                      cycle 2's squash
          ●  <p>/spike-<cycle-3 dir>/<name>              a spike's branches
 ```
 
 Every branch the project creates is under the prefix. A build cycle leaves
-HEAD on its work branch, `<p>/<cycle dir basename>-stack-work`, at the top
-of its stack, so the next build stacks on it. After a shipped build the
-driver reads the cycle's PR branches off the refs, commit by commit, and
-records them; the **project stack** is those lists in cycle order. A
-branch is never moved once its cycle assembled it: a correction to an
-earlier PR lands as a new PR on top.
+HEAD on its own branch, `<p>/<cycle dir basename>`, at its squash, so the
+next build branches from it; this workflow creates no work branches. After a shipped
+build the driver checks that the branch holds exactly one commit above the
+pre-cycle HEAD and records it; the **project stack** is those branches in
+cycle order. A branch is never moved once its cycle shipped it: a
+correction to an earlier cycle lands as a new cycle on top.
+
+The embedded chain never pushes, `-auto` included: a forester-approved
+squash ships unpushed, and only the publisher pushes, under `publish:`.
 
 **Publishing.** `publish: off` pushes nothing. `publish: push` pushes,
 after every shipped build, the stack branches the remote lacks, in one
@@ -715,8 +729,8 @@ at all: the branches are pushed and the record says no tool reached the
 host. A stack branch once published and since deleted on the host — a PR
 you merged with its branch deleted — is recorded as gone and never pushed
 again. To open PRs on Forgejo, set `[agents.publisher] harness =
-"claude"` in your preference file. Work branches and spike branches are
-never pushed. Nothing is merged, by any role, ever. A push the harness
+"claude"` in your preference file. Spike branches and a cycle branch that
+shipped nothing are never pushed. Nothing is merged, by any role, ever. A push the harness
 denies or the remote rejects stops the driver with the command to run by
 hand; `continue` goes on without it. At any stop, "publish now" (or
 "publish now prs") publishes the stack once, whatever the setting, and
@@ -732,9 +746,9 @@ branch otherwise. An open cycle is resumed with `resume: <words>`, or
 closed as stopped with `close`. Run one driver per project at a time.
 
 **What it leaves.** The driver never deletes a branch. Delete by hand, when
-you are done with them: the work branches (`git branch -d`, once the stack
-is pushed), the spike branches, and a stopped cycle's leftover PR and work
-branches, which the stop names. The driver commits the project dir in the
+you are done with them: the spike branches, a cycle branch that shipped
+nothing, and a stopped cycle's leftover branches — its cycle branch among
+them — which the stop names. This workflow creates no work branches. The driver commits the project dir in the
 sidecar at every stop, and every cycle dir a build's orchestrator does not
 commit itself.
 

@@ -1,13 +1,13 @@
 ---
-description: Publishes a multi-cycle project's stack of branches after a build cycle ships — pushes the stack branches not yet on the remote, never forcing, and opens one PR per branch when asked and a host tool reaches the remote. Never merges, never rewrites.
+description: Publishes a multi-cycle project's stack of branches, one per shipped build cycle, after a build cycle ships — pushes the stack branches not yet on the remote, never forcing, and opens one PR per branch when asked and a host tool reaches the remote. Never merges, never rewrites.
 tools: [Read, Write, Bash, Glob, Grep,
         mcp__forgejo__forgejo_list_prs, mcp__forgejo__forgejo_get_pr,
         mcp__forgejo__forgejo_open_pr]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
-A project builds one stack of branches, cycle on cycle; every cycle adds
-branches on top and never moves one it already assembled. You publish that
+A project builds one stack of branches, cycle on cycle; every shipped build
+cycle adds one branch on top and never moves one it already shipped. You publish that
 stack: push the branches the remote lacks, and in mode `prs` open a PR per
 branch, each based on the branch below it. You never commit, never edit
 code, never check anything out.

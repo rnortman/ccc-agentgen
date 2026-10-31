@@ -10,7 +10,7 @@ codex_sandbox: workspace-write
 {% set prepass = "prepass-reviewer" in roles %}
 {% set scanner = "workflow-scanner" in roles %}
 {% set changelog = "changelog-author" in roles %}
-{% from "partials/shape.md.j2" import split, stack with context %}
+{% from "partials/shape.md.j2" import split, stack, project with context %}
 {% set worker = "coder-supervisor" if "coder" in roles else "implementer" %}
 {% set wshort = "supervisor" if "coder" in roles else "implementer" %}
 {% set forester = "forester" in roles %}
@@ -23,7 +23,8 @@ codex_sandbox: workspace-write
 {% set fg_triage = forester and "triage" in vars.forester_gates %}
 {% set fg_scan = forester and scanner and "scan" in vars.forester_gates %}
 {% set fg_ship = forester and "ship" in vars.forester_gates %}
-{% set autopush = decide and fg_ship and not stack %}
+{% set autoship = decide and fg_ship and not stack %}
+{% set autopush = autoship and not project %}
 {% set followup = stack and "pr-liaison" in roles %}
 {% set gate_posts = followup and not (decide and fg_design) %}
 You drive the workflow. All work is done by subagents you launch, one task at
@@ -131,14 +132,16 @@ Three places, kept apart throughout:
 | **original base** | per **Setup** step 5 | never |
 {% elif stack %}
 | **original base** | HEAD at setup | never |
-| **branch prefix** | from the launch words (**Setup** step 1), or none | never |
 {% else %}
 | **original base** ° | HEAD at setup, or when the repository joins the scope | never; the ship squash resets to it |
+{% endif %}
+{% if not followup %}
+| **branch prefix** | from the launch words (**Setup** step 1), or none | never |
 {% endif %}
 {% if stack %}
 | **branch** | the work branch {% if followup %}`<request slug>-stack-work`, created at setup per **Setup** step 6{% else %}`<prefix>/<request slug>-stack-work` with a branch prefix, `<request slug>-stack-work` without, created at setup{% endif %} | never; **HEAD check** re-attaches to it |
 {% else %}
-| **branch** ° | `git symbolic-ref --short HEAD` at setup, or when the repository joins the scope | never; **HEAD check** re-attaches to it |
+| **branch** ° | the primary's: `<prefix>/<request slug>`, created at setup, when a branch prefix is recorded; otherwise `git symbolic-ref --short HEAD` at setup, or when the repository joins the scope | never; **HEAD check** re-attaches to it |
 | **shipped** ° | `-` | its ship squash → that HEAD, the repository's work over and **HEAD check** no longer run there; a pin stop's answer → the reference the user gave (**Ship gate** step 3) |
 {% endif %}
 | **freeze** | commit locking the spec set | re-recorded when an approved delta is committed |
@@ -264,16 +267,17 @@ retries mid-work often omits the commit it already made.
 
    > *Provenance: the user's own words, transcribed from chat by the orchestrator.*
 
-{% if stack %}
    The **request slug** is the working dir's basename (e.g.
    `12-fix-login-timeout`).
 {% if not followup %}
    Words naming an existing `request.md` may also name a **branch
    prefix**, as `branch prefix: <prefix>`: recorded verbatim, never asked
-   for, never interpreted; absent → none. Every branch of the cycle then
+   for, never interpreted; absent → none. {% if stack %}Every branch of the cycle then
    sits under `<prefix>/`: the work branch here, the PR branches through
-   the design.
+   the design.{% else %}The primary then works on its own
+   branch, `<prefix>/<request slug>`, created at **Setup** step 4.{% endif +%}
 {% endif %}
+{% if stack %}
 {% if followup %}
    The user's words must also name the **prior working dir**, the shipped
    cycle's working dir — the directory holding its `design.md`, whatever
@@ -301,10 +305,14 @@ retries mid-work often omits the commit it already made.
    the original base (`git rev-parse HEAD`). A detached HEAD is no
    stop: the work branch is created from HEAD either way.{% endif +%}
 {% else %}
-2. In every repository of the scope — the primary, and each the launch
+2. A rebase or `git am` is in progress in the primary — `git rev-parse
+   --git-path rebase-merge` or `--git-path rebase-apply` names an existing
+   directory — → STOP, say so, end turn: it is the user's to finish or
+   abort. Then in every repository of the scope — the primary, and each the launch
    words add (**Scope phrase**, below) — record the original base and the
    branch. Already detached at setup → STOP, ask the user which branch to
-   work on, end turn.
+   work on, end turn — except the primary with a branch prefix recorded:
+   its branch is created from HEAD either way (step 4).
 {% endif %}
 3. Record the repo, the working dir and the artifact repo (`git -C <working
    dir> rev-parse --show-toplevel`). A working dir under no git repository →
@@ -335,15 +343,24 @@ retries mid-work often omits the commit it already made.
    without a base, `refs/heads/<base>` with one: `git checkout --no-track -b
    <name> <start>`, so no `branch.autoSetupMerge` setting ties it to an
    upstream.
-{% else %}
+{% endif %}
+{# The plain arm is empty on purpose: its `+%}` emits the newline that ends step 3's line. #}
+{% else +%}
+{% endif %}
+{% if not followup %}
+{% if stack %}
 4. **Work branch** `<prefix>/<request slug>-stack-work` when a branch
    prefix is recorded, `<request slug>-stack-work` otherwise. With a
    prefix, first: `git check-ref-format --branch "<prefix>/x"` must
+{% else %}
+4. **Cycle branch**, only with a branch prefix recorded: `<prefix>/<request
+   slug>`, in the primary. First: `git check-ref-format --branch "<prefix>/x"` must
+{% endif %}
    succeed, and for every leading path of the prefix — `p1`, `p1/p2`, …
    through `<prefix>` itself — `git show-ref --verify --quiet
    refs/heads/<that path>` must fail: a branch named any of them blocks
-   every `<prefix>/…` ref, and no existing-ref check on a PR branch's full
-   name sees it. Any failing → STOP, quote the command, its output and the
+   every `<prefix>/…` ref{% if stack %}, and no existing-ref check on a PR branch's full
+   name sees it{% endif %}. Any failing → STOP, quote the command, its output and the
    prefix, end turn.
    Then `git checkout --no-track -b <name>`, so no `branch.autoSetupMerge`
    setting ties it to an upstream.
@@ -356,12 +373,12 @@ retries mid-work often omits the commit it already made.
    user finds the branch by the slug. You never delete a branch you did
    not create in this cycle.
 
-   It succeeds → record it as **branch**{% if followup %}; HEAD = round base = review
+   It succeeds → record it as {% if not stack %}the primary's {% endif %}**branch**{% if followup %}; HEAD = round base = review
    base = `<start>`'s commit{% endif %}. The branch checked out at launch{% if followup %},
    like the previous cycle's work branch,{% endif +%}
    is never recorded and never touched again; it stays where it was. This
-   is the last setup step, so no setup stop leaves the branch behind.
-{% endif %}
+   is the last setup step, so no setup stop leaves the branch behind.{% if not stack %} Another
+   repository of the scope keeps the branch recorded at step 2.{% endif +%}
 
 {% if stack %}
 The stack chains run in one repository. User words with a scope phrase —
@@ -957,7 +974,7 @@ For each due repository X, in order:
    base → HEAD, every carried path{% if fg_ship %}, the forester brief{% endif %}, and the position (`ship
    1 of 2: <X>`). Read none of them.
 {% endif %}
-2. {% if autopush %}Approval in hand{% else %}User approves the squash{% endif %} → squash X to its **original base** with a
+2. {% if autoship %}Approval in hand{% else %}User approves the squash{% endif %} → squash X to its **original base** with a
    clean message, folding every round into one; when the artifact repo is
    X, the freeze commits too. A rejected commit → **Commit failure**, naming
    X.{% if changelog %} Then `ccc run changelog-author`: + X's path, + its original base, + its
@@ -1002,7 +1019,7 @@ For each due repository X, in order:
    the project's full check.
 5. The recorded `order=` still names a repository → its first entry, step
    0. Every repository shipped or retired → step 7.
-6. Changes requested instead, at any ship point → capture the request ({% if autopush %}the userproxy notes, {% endif %}the
+6. Changes requested instead, at any ship point → capture the request ({% if autoship %}the userproxy notes, {% endif %}the
    user's document, or chat directives verbatim to a fresh notes file).
    Every change request, whatever it asks for, goes to `designer` **delta**
    mode (**Spec deltas**); you do not classify it. The delta lands in a new
@@ -1168,16 +1185,16 @@ right. `K` += 1. Two repairs exist, and you state which are on the table:
   here — the work branch moves to HEAD, and a branch HEAD was found on stays
   where it is. Offered{% else %}
   recorded HEAD; if detached, `git checkout -B <branch>` here; if on another
-  branch, that branch is now **branch**. Offered{% endif %} only while round base stays
+  branch: with a branch prefix recorded, `git checkout -B <branch>` here —
+  **branch** moves to HEAD, and a branch HEAD was found on stays where it
+  is; without one, that branch is now **branch**. Offered{% endif %} only while round base stays
   an ancestor of HEAD; otherwise no round can be measured from it.
 - `restore` — `git checkout -B <branch> <recorded HEAD>`. The dropped
   commits stay in the reflog; the ruling names their hashes.
-{% if stack %}
 
-Neither repair moves a branch HEAD was found on: it keeps whatever was
+{% if stack %}Neither{% else %}With a branch prefix recorded, neither{% endif %} repair moves a branch HEAD was found on: it keeps whatever was
 committed on it. Name that branch as moved in the stop or brief; putting it
 back is the user's.
-{% endif %}
 
 {% if forester %}
 **Forester gate**, mode repo, id `k<K>`: + {% if not stack %}the repository, its {% endif %}branch, recorded HEAD, current
@@ -1557,9 +1574,9 @@ and history-rewriting rules only as **Destructive git** says.
   flattened; push. Force-push ever.
 {% endif %}
 {% else %}
-- {% if autopush %}Squash to original base without the forester's `approve` or the user's
-  explicit word; push without that `approve` on a branch other than `main`, or
-  the user's explicit word{% else %}Squash to original base, or push, without the user's explicit word for that
+- {% if autoship %}Squash to original base without the forester's `approve` or the user's
+  explicit word; push without {% if autopush %}that `approve` on a branch other than `main`, or
+  the user's explicit word{% else %}the user's explicit word{% endif %}{% else %}Squash to original base, or push, without the user's explicit word for that
   step{% endif %}. Force-push ever.
 {% endif %}
 {% if not stack %}
@@ -1578,6 +1595,6 @@ and history-rewriting rules only as **Destructive git** says.
 {% set ok_text %}`shipped` when the cycle ran to its end: every due repository squashed{% if changelog %}, its changelog amended{% endif %}, whether or not HEAD is pushed; `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting squash approval, a pin stop awaiting a shipped reference, a change request under way{% endset %}
 {% endif %}
 {% set out_text %}for `shipped`, {% if fg_ship %}the latest forester ship document{% else %}`-`{% endif %}; for `gate`, the primary document you surfaced{% endset %}
-{% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if followup %}a pr-liaison escalation or failed stack check before the ship gate, {% endif %}a misnamed or missing request path at setup, {% if stack %}a rebase in progress at setup, a work branch that could not be created at setup{% else %}a detached HEAD at setup{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
+{% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if followup %}a pr-liaison escalation or failed stack check before the ship gate, {% endif %}a misnamed or missing request path at setup, a rebase in progress at setup, {% if stack %}a work branch that could not be created at setup{% else %}a detached HEAD at setup without a branch prefix, a cycle branch that could not be created at setup{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
 {{ reply(ok=ok_text, out=out_text, escalate=escalate_text, commit=("current HEAD" if stack else "the primary's current HEAD; the surfaced lines carry every repository"),
          prose="**Stop commit** first, when the artifact repo is separate. Above the status line goes only what the stop already surfaces — the paths, in at most two lines" ~ ("" if stack else ", the `scope:` line when the scope holds more than the primary, and the ship gate's fact lines") ~ " — plus the one `artifact commit rejected: …` line when the stop commit was rejected; nothing else. A human operator reads those lines; a parent driver relays them and routes on the status line.") }}
