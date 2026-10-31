@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The report no longer costs a forester launch.** The forester's `report` mode is
+  gone: the end-of-cycle report is now the closing **Report** section of
+  the last ship ruling or brief (`forester-ship-k<K>.md`), written at the
+  ship gate rather than by a second launch after the squash, and no
+  `forester-report-<K>.md` is written any more. The cycle's closing stop
+  and the orchestrator's `out=` name that ship document. A stopped cycle
+  writes no report: its escalation stands alone, and the forester log
+  holds the rulings made in the user's name. The project forester and the
+  burndown's triage forester read the ship document instead — and, for a
+  stopped cycle, the escalation and the forester log; a burndown attempt
+  closed before the upgrade is read from its design and forester log.
 - **New variants `project-burndown` and `project-burndown-auto`** carry a
   goal or a spec too large for one cycle through as many cycles as it
   takes. A planning agent, the project forester, scopes each cycle — a build through the

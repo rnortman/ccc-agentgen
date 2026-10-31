@@ -203,14 +203,14 @@ pick is your judgement.
 ended `incomplete`: a cycle reported shipped and the tool found the entry
 still listed (`TODO.md` or `todo.d/`); `remaining` names which of the unit's entries were
 left. Read that attempt's ADR dir (`adr_dir`): its `request.md`, and the
-latest `forester-report-<K>.md`; absent a report, `design.md` and
-`forester-log.md`. The report says what was built and what the cycle pushed
-back on; the design's **Request assessment** says what it dropped and why.
+`forester-ship-k<K>.md` with the highest `K`, compared as a number — its
+**Report** closes it; when it has no
+**Report**, or there is none, `design.md` and `forester-log.md`. The report says what was built and what
+the cycle pushed back on; the design's **Request assessment** says what it dropped and why.
 Decide from these whether the remainder is a unit — one that finishes the
 work — or a sign that the entry should not be attempted this way. The
-selection document for a follow-up names the prior attempt (ADR dir and
-the commit the report names), states what it shipped and what it left, why
-it left it as far as the record says, and asks for the remainder only; its
+selection document for a follow-up names the prior attempt (ADR dir),
+states what it shipped and what it left, why it left it as far as the record says, and asks for the remainder only; its
 closing item (that the work removes each named entry and its `TODO(slug)`
 comments) stands. The chain reads the request as a new cycle's — the prior
 cycle's design is history it may consult, not a spec it inherits. A prior

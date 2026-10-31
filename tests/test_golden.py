@@ -138,7 +138,9 @@ RESULTS = {
     "changelog-author": {"written"},
     "pr-assembler": {"assembled", "restacked"},
     "pr-liaison": {"new-comments", "no-new-comments", "posted", "published", "unpushed"},
+    # Advise: `written`, naming the gate tokens it does not use. Decide: the gate tokens.
     "forester": {"written", "approve", "noted", "notes", "adopt", "restore"},
+    "forester/decide": {"approve", "noted", "notes", "adopt", "restore"},
     "forester-commentator": {"written"},
     "sketcher": {"written"},
     "contrarian": {"written"},
@@ -381,9 +383,8 @@ def test_non_spawning_roles_know_nothing_of_kill(builds):
 
 def _forester_holds_design(variant: Variant, autonomy: str) -> bool:
     return (
-        "forester" in variant.roles
+        _forester_gate(variant, "design")
         and variant.vars.get("forester_autonomy") == autonomy
-        and "design" in variant.vars.get("forester_gates", ())
     )
 
 
@@ -717,9 +718,8 @@ def test_non_stack_orchestrator_keeps_the_checked_out_branch(builds):
 
 def _autopush(variant: Variant) -> bool:
     return (
-        "forester" in variant.roles
-        and variant.vars.get("forester_autonomy") == "decide"
-        and "ship" in variant.vars.get("forester_gates", ())
+        _forester_gate(variant, "ship")
+        and _decide(variant)
         and "pr-assembler" not in variant.roles
     )
 
@@ -1071,6 +1071,8 @@ def test_result_vocabulary_is_closed(built: Build):
                 key = "implementer/planned"
             elif role.id == "implementer" and "pr-assembler" in built.by_id:
                 key = "implementer/stack"
+            elif role.id == "forester" and _decide(built.variant):
+                key = "forester/decide"
             assert found == RESULTS[key], filename
             emitted[role.id] |= found
     drivers = [role.id for role in built.roles if role.id in DRIVERS]
@@ -1162,7 +1164,7 @@ def test_forester_select_mode_offers_chains_and_combined_units(builds):
             assert ("every `blocked_on` item of every follower must be resolved or in the"
                     " selection") in flat, filename
             assert "overlapping `site_dirs`" in flat, filename
-            assert "latest `forester-report-<K>.md`" in flat, filename
+            assert "`forester-ship-k<K>.md` with the highest `K`, compared as a number" in flat, filename
             assert "work ordered in a repository other than the one the chain runs in" in flat, filename
             assert "the designer carries into its **Scope** section" in flat, filename
             assert "the other candidates are the unit's other remaining entries" in flat, filename
@@ -2252,7 +2254,7 @@ def test_project_driver_resumes_from_every_record_state(builds):
 
 def test_project_driver_cycle_gate_only_where_the_user_holds_it(builds):
     for where, flat, variant in _project_driver_bodies(builds):
-        gate = variant.vars.get("forester_autonomy") != "decide"
+        gate = not _decide(variant)
         assert ("**Cycle gate:** STOP" in flat) == gate, where
         assert ("Step 3 at once." in flat) == (not gate), where
 
@@ -2815,7 +2817,7 @@ def test_forester_never_passes_a_gate_by_writing_it_down(builds):
     for build in builds.values():
         if "forester" not in build.by_id:
             continue
-        decide = build.variant.vars.get("forester_autonomy") == "decide"
+        decide = _decide(build.variant)
         stack = "pr-assembler" in build.variant.roles
         for name, body in build.bodies("forester"):
             seen = True
@@ -2862,7 +2864,7 @@ def test_forester_never_passes_a_gate_by_writing_it_down(builds):
             else:
                 assert "**Unsettled** names such a need" not in ship, where
                 assert "A brief whose **Recommendation** is approve names no need" in ship, where
-            report = " ".join(_raw_section(body, "## Mode: report").split())
+            report = " ".join(_raw_section(body, "## The report").split())
             squash = "stack" if stack else "squash"
             assert (
                 'No **Recommendation**, no next cycle, no "revisit", no "fishy", no **Watch**, '
@@ -2908,7 +2910,7 @@ def test_ship_gate_document_has_no_watch_or_unsettled(builds):
             where = f"{build.stem}/{name}"
             document = " ".join(_raw_section(body, "## The gate document").split())
             assert "At the ship gate neither **Unsettled** nor **Watch** is written" in document, where
-            assert "after the last ship point comes only the report, which takes no instructions" in document, where
+            assert "the **Report** you close the ruling with takes none" in document, where
             log = _forester_log_rules(body)
             assert "On a ship-gate entry `Flag:` is `-`" in log, where
     assert seen, "no variant emitted the forester"
@@ -2919,7 +2921,7 @@ def test_forester_log_records_user_notes_in_both_autonomies(builds):
     for build in builds.values():
         if "forester" not in build.by_id:
             continue
-        decide = build.variant.vars.get("forester_autonomy") == "decide"
+        decide = _decide(build.variant)
         for name, body in build.bodies("forester"):
             seen.add(decide)
             where = f"{build.stem}/{name}"
@@ -2937,11 +2939,7 @@ def test_final_round_skips_the_forester_scan_gate(builds):
     seen = False
     for build in builds.values():
         variant = build.variant
-        fg_scan = (
-            "forester" in variant.roles
-            and "workflow-scanner" in variant.roles
-            and "scan" in variant.vars.get("forester_gates", ())
-        )
+        fg_scan = _forester_gate(variant, "scan") and "workflow-scanner" in variant.roles
         if "orchestrator" in build.by_id and "workflow-scanner" in variant.roles:
             for name, body in build.bodies("orchestrator"):
                 where = f"{build.stem}/{name}"
@@ -2986,23 +2984,29 @@ def test_user_reader_rule_is_shared(builds):
     assert seen == {"forester", "workflow-scanner"}, seen
 
 
-def test_report_launch_carries_next_key(builds):
+def test_ship_launch_carries_next_key(builds):
+    """No report launch exists; the non-stack ship launch carries `next=` for
+    the **Report** the last ship document closes with.
+    """
     seen = False
     for build in builds.values():
         if "forester" not in build.by_id:
             continue
         stack = _is_stack(build)
-        decide = build.variant.vars.get("forester_autonomy") == "decide"
+        decide = _decide(build.variant)
+        fg_ship = _forester_gate(build.variant, "ship")
         if "orchestrator" in build.by_id:
             for name, body in build.bodies("orchestrator"):
                 where = f"{build.stem}/{name}"
-                report = _section(body, "### Report")
-                assert "+ every carried path, + every user notes path" in report, where
-                assert ("+ the recorded `next=`" in report) == (not stack), where
-                assert "applies to gates, not to the report" in report, where
+                assert "### Report" not in body, where
+                ship = _section(body, "### Ship gate")
+                for gate in (ship, _section(body, "### Forester gate")):
+                    assert "**Report**" not in gate, where
+                assert ("+ the recorded `next=`" in ship) == (fg_ship and not stack), where
         for name, body in build.bodies("forester"):
             where = f"{build.stem}/{name}"
             escalating = " ".join(_raw_section(body, "## Escalating to the user").split())
+            assert "**Report**" not in escalating, where
             opener = "A brief whose **Recommendation** is not approve opens with one sentence naming the decision"
             shape = "Its first sentence names the decision the user is being asked to make"
             if decide:
@@ -3015,8 +3019,79 @@ def test_report_launch_carries_next_key(builds):
     assert seen, "no advise-mode forester"
 
 
+def test_report_closes_the_last_ship_document(builds):
+    """The report is the closing section of the last ship document; no
+    forester launch writes a separate report, and its readers read the ship
+    document.
+    """
+    seen = set()
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        stack = _is_stack(build)
+        decide = _decide(build.variant)
+        fg_ship = _forester_gate(build.variant, "ship")
+        for name, body in build.bodies("forester"):
+            seen.add("forester")
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert "Modes: **design**, **triage**, **scan**, **ship**, each a gate" in flat, where
+            assert "**report**" not in flat, where
+            assert "## Mode: report" not in body, where
+            report = " ".join(_raw_section(body, "## The report").split())
+            assert "A stopped cycle has no report" in report, where
+            ship = " ".join(_raw_section(body, "## Mode: ship").split())
+            last = ship[ship.index("**The last ship point.**") :]
+            last = last[: last.index("are the closing stop's lines.")]
+            assert "closes the document with **Report**" in last, where
+            assert ("the recorded `order=` names only X" in last) == (not stack), where
+            no_report = (
+                "`notes` writes no **Report**" if decide
+                else "A brief that does not recommend approve writes no **Report**"
+            )
+            assert f"{no_report}: a new round follows, and its ship gate writes one" in last, where
+            reply = flat[flat.rindex("## Reply") :] if "## Reply" in flat else flat
+            assert ("`written` for the report" not in reply), where
+            if decide:
+                assert "`written`" not in reply, where
+        if "orchestrator" in build.by_id:
+            for name, body in build.bodies("orchestrator"):
+                seen.add("orchestrator")
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                assert "forester-report" not in flat, where
+                assert "forester report" not in flat, where
+                ship = _section(body, "### Ship gate")
+                closing = ship[ship.rindex(". STOP: surface") :]
+                assert ("ship document path" in closing) == fg_ship, where
+    for build in builds.values():
+        for role_id in ("project-forester", "triage-forester"):
+            if role_id not in build.by_id:
+                continue
+            for name, body in build.bodies(role_id):
+                seen.add(role_id)
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                assert "`forester-ship-k<K>.md` with the highest `K`, compared as a number" in flat, where
+                assert "forester-report" not in flat, where
+                if role_id == "triage-forester":
+                    assert "when it has no **Report**, or there is none" in flat, where
+                else:
+                    assert "when it has no **Report**, its **Why**" in flat, where
+                    assert "the record each has, if any — a need with none is unfiled" in flat, where
+    assert seen == {"forester", "orchestrator", "project-forester", "triage-forester"}, seen
+
+
 def _is_stack(build: Build) -> bool:
     return "pr-assembler" in build.variant.roles
+
+
+def _decide(variant: Variant) -> bool:
+    return variant.vars.get("forester_autonomy") == "decide"
+
+
+def _forester_gate(variant: Variant, gate: str) -> bool:
+    return "forester" in variant.roles and gate in variant.vars.get("forester_gates", ())
 
 
 def test_ship_shape_matches_the_ship_gate(builds):
@@ -3303,11 +3378,7 @@ def test_key_failure_triage_carries_the_keys(builds):
         build = builds[stem]
         stack = _is_stack(build)
         variant = build.variant
-        fg_decide = (
-            "forester" in variant.roles
-            and variant.vars.get("forester_autonomy") == "decide"
-            and "triage" in variant.vars.get("forester_gates", ())
-        )
+        fg_decide = _forester_gate(variant, "triage") and _decide(variant)
         for name, body in build.bodies("orchestrator"):
             where = f"{stem}/{name}"
             triage = " ".join(_section(body, "### Triage").split())
@@ -3339,8 +3410,8 @@ def test_forester_ship_gate_checks_the_keys_against_the_scope(builds):
         build = builds[stem]
         stack = _is_stack(build)
         variant = build.variant
-        fg_ship = "forester" in variant.roles and "ship" in variant.vars.get("forester_gates", ())
-        decide = variant.vars.get("forester_autonomy") == "decide"
+        fg_ship = _forester_gate(variant, "ship")
+        decide = _decide(variant)
         for name, body in build.bodies("orchestrator"):
             where = f"{stem}/{name}"
             launch = "+ the recorded `order=` and `pins=`, + the pending pins"

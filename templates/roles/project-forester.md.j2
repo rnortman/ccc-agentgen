@@ -191,12 +191,17 @@ Read, in order:
 3. the cycle's `request.md`;
 4. for a build: `design.md` and every `design-delta-*.md` — **Context**,
    **Request assessment**, **Stack**, **Open questions**, any **Not
-   written** marker; the latest `forester-report-*.md` — its first line
-   says what shipped, its third item the rulings made in the user's name,
-   its fourth the tracker entries filed; every `pr-r<R>.md` (branch, size,
+   written** marker; for a shipped build, the `forester-ship-k<K>.md`
+   with the highest `K`, compared as a number — its **Report** section:
+   first line what shipped, third item the rulings made in the user's
+   name, fourth the tracker entries filed; when it has no **Report**, its
+   **Why**, which names the needs the cycle raised and the record each
+   has, if any — a need with none is unfiled — and the forester log, whose
+   entries are the rulings made in the user's name; every `pr-r<R>.md` (branch, size,
    message); every `dispositions-triage-*.md`; the user's `notes-*` files;
 5. for a spike: `spike-report.md`;
-6. for a `stopped` cycle: the escalation its last stop named, and the
+6. for a `stopped` cycle: the escalation its last stop named, the forester
+   log — the rulings made in the user's name are its entries — and the
    implementation log's last entries.
 
 Never the implementation log in full: its tail, when the report leaves a

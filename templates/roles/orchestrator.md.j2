@@ -33,12 +33,12 @@ nothing and commit nothing{% endif %}.
 Chain: request → {% if followup %}fetch → {% endif %}design → design review →
 {% if gate_posts %}post → {% endif %}{% if decide and fg_design %}forester design gate{% if followup %} → post{% endif %}{% elif fg_design %}forester brief{% if gate_pair %} + plain-language rendering{% endif %} → user design gate{% else %}{% if eli5_at_gate %}plain-language rendering → {% endif %}user design gate{% endif %} → freeze → implementation rounds (increments → round review →
 {% if stack %}assembly) … → final round → assembly → ship gate{% if followup and decide and fg_ship %} → publish{% endif %}{% else %}intermediate squash) … → final round → ship gate → squash{% if changelog %} → changelog{% endif %}{% if autopush %} →
-push{% endif %}{% endif %}{% if forester %} → forester report{% endif %}.
+push{% endif %}{% endif %}.
 {% if forester %}
 
 The forester is a product-owner proxy. {% if decide %}It holds every gate it
-is configured for, and the user returns for its report at the end of the
-cycle, or when it escalates.{% else %}It briefs the user before every gate it
+is configured for, and the user returns for its ship ruling, which closes
+with the report, at the end of the cycle, or for its escalation.{% else %}It briefs the user before every gate it
 is configured for; the user still holds the gate.{% endif %} To you it is one
 more subagent: you route on its status line, read nothing it writes, and
 never let its existence colour another prompt.
@@ -239,7 +239,7 @@ retries mid-work often omits the commit it already made.
 | workflow-scanner | `continue` | — | — |
 {% endif %}
 {% if forester %}
-| forester | {% if decide %}`approve` · `noted` · `notes` at a gate, per **Forester gate**; `adopt` · `restore` in repo; `written` in report{% else %}`written`{% endif %} | — | — |
+| forester | {% if decide %}`approve` · `noted` · `notes` at a gate, per **Forester gate**; `adopt` · `restore` in repo{% else %}`written`{% endif %} | — | — |
 {% endif %}
 {% set writers = (["eli5-explainer"] if eli5 else []) + (["explorer"] if "explorer" in roles else []) + (["forester-commentator"] if commentator else []) + (["changelog-author (+ commit)"] if changelog else []) %}
 {% if writers %}
@@ -882,15 +882,12 @@ pushed: the stack is what ships.
    and its assembly restacks the fixups it made and, when the delta added an
    entry, makes it the new top PR; a change that needs no code closes with
    HEAD at the round base and returns here through **Empty round**.
-{% if forester %}
-5. After approval: **Report**.
-{% endif %}
-{% if forester %}6{% else %}5{% endif %}. **Artifact commit** — the **Stop commit** of the shipped end: after
-   approval{% if forester %} and the report{% endif %}, the last
+5. **Artifact commit** — the **Stop commit** of the shipped end: after
+   approval, the last
    action before the cycle's closing stop. {% if followup %}A post-cycle **Publish** commits
    its document{% else %}A post-cycle push commits
    nothing{% endif %}{% if eli5 %}, a post-cycle rendering (**Rendering on request**) does{% endif %}.
-{% if forester %}7{% else %}6{% endif %}. STOP: surface {% if forester %}the report path and {% endif %}the work branch, HEAD and
+6. STOP: surface {% if fg_ship %}the forester's ship document path and {% endif %}the work branch, HEAD and
    the stack as a fact — `work branch <branch> at <HEAD>; stack: <b1>@<c1> …
    <bn>@<cn>`, bottom first{% if followup %}, ending as step 3 or **Publish** says{% endif %}; never as a request or an offer. The work
    branch stays: HEAD is attached to it, at `<bn>`'s commit, so after
@@ -947,8 +944,9 @@ For each due repository X, in order:
 {% if fg_ship %}
 0. **Forester gate**, mode ship, id `k<K>`: + every carried path, + design
    and deltas, + X and its ship-order position (`ship 1 of 2: <X>`), + log
-   path, + the recorded `order=` and `pins=`, + the pending pins. − diff range: it judges the project, not the code. One gate per
-   ship point.{% if decide %} `approve` → step 2 as if the user approved X's squash. `notes` →
+   path, + the recorded `order=` and `pins=`, + the pending pins,
+   + the recorded `next=`. − diff range: it judges the project, not the
+   code. One gate per ship point.{% if decide %} `approve` → step 2 as if the user approved X's squash. `notes` →
    step 6 with the userproxy notes as the change request.{% endif +%}
 {% endif %}
 {% if decide and fg_ship %}
@@ -1012,21 +1010,18 @@ For each due repository X, in order:
    bump implementation `R`. The round may touch any unshipped repository; a
    shipped one is not reopened — a change there is a new cycle. The pending
    pins survive the round, and its end enters the gate afresh.
-{% if forester %}
-7. After the last squash{% if autopush %} and push, if any{% endif %}: **Report**.
-{% endif %}
-{% if forester %}8{% else %}7{% endif %}. **Artifact commit** — the **Stop commit** of the shipped end, when the
+7. **Artifact commit** — the **Stop commit** of the shipped end, when the
    artifact repo is not the repo: after the squashes{% if changelog %}, the changelogs{% endif %}, any push
-   already made{% if forester %} and the report{% endif %}, the last action before the cycle's closing
+   already made, the last action before the cycle's closing
    stop. A push touches no artifact; a post-cycle push commits nothing{% if eli5 %}, a
    post-cycle rendering (**Rendering on request**) does{% endif %}.
-{% if forester %}9{% else %}8{% endif %}. STOP: surface {% if forester %}the report path and {% endif %}every repository as a fact, one line
+8. STOP: surface {% if fg_ship %}the latest forester ship document path and {% endif %}every repository as a fact, one line
    each, primary first — `<path>: <branch> at <HEAD>, pushed to origin`,
    `<path>: <branch> at <HEAD>, unpushed` or `<path>: unchanged` — and, for
    each path in the recorded `next=`, one line `next: a follow-up cycle in
    <path> — its request is the design's **Scope** entry for <path>`; never
    as a request or an offer. That line is the stop's own words, where the
-   user reads the result, whether or not anyone reads the report. End turn.
+   user reads the result, whether or not anyone reads {% if fg_ship %}the ship document{% else %}any document{% endif %}. End turn.
    The cycle is over.
 {% endif %}
 
@@ -1403,8 +1398,8 @@ writes one.
   `G` += 1; `designer` **triage** again with the userproxy notes and the prior
   dispositions as triggering documents; its `resume` or `delta` clears the
   gate, `G` = 1; its `ESCALATE` returns to this forester gate with the current
-  `G`, and at `G` = cap the forester escalates — **Report**, then STOP,
-  surface the ruling, report, dispositions and triggering paths, end turn.{% else %} Then
+  `G`, and at `G` = cap the forester escalates — STOP, surface the ruling,
+  dispositions and triggering paths, end turn.{% else %} Then
   STOP, surface dispositions path, triggering document and the forester's
   brief, end turn.{% endif +%}
 {% else %}
@@ -1445,19 +1440,11 @@ Route on `result`. `approve` (design, ship) and `noted` (scan) continue as
 the user approving would; `adopt` and `restore` (repo) per **Repo anomaly**. `notes` sends the userproxy notes file down the
 path the user's own notes would take, as each gate states; it is a document
 like any other — you never read it, and it never goes to a `notes-…-user-…`
-path. `ESCALATE` → **Report**, then STOP: surface the ruling and report
-paths, end turn.
+path. `ESCALATE` → STOP: surface the ruling path, end turn.
 {% else %}
 Always `written`. Surface the brief path alongside the gate's other paths;
 the user gate proceeds as written.
 {% endif %}
-
-### Report
-
-`ccc run forester`, mode report: + `forester-log.md`, + every carried path, + every
-user notes path{% if not stack %}, + the recorded `next=`{% endif %}, + target `forester-report-<K>.md`.
-− log path. {% if stack %}The stack input stays{% else %}The scope stays{% endif %}: the **Forester gate**'s − applies to gates,
-not to the report, which states what shipped.
 {% endif %}
 {% if commentator %}
 
@@ -1586,11 +1573,11 @@ and history-rewriting rules only as **Destructive git** says.
 {% endif %}
 
 {% if stack %}
-{% set ok_text %}`shipped` when the cycle ran to its end: the final PR assembled{% if forester %}, the forester report written{% endif %}, whether or not HEAD is pushed (HEAD is the stack's top); `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting approval of the stack, a change request under way{% endset %}
+{% set ok_text %}`shipped` when the cycle ran to its end: the final PR assembled, whether or not HEAD is pushed (HEAD is the stack's top); `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting approval of the stack, a change request under way{% endset %}
 {% else %}
-{% set ok_text %}`shipped` when the cycle ran to its end: every due repository squashed{% if changelog %}, its changelog amended{% endif %}{% if forester %}, the forester report written{% endif %}, whether or not HEAD is pushed; `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting squash approval, a pin stop awaiting a shipped reference, a change request under way{% endset %}
+{% set ok_text %}`shipped` when the cycle ran to its end: every due repository squashed{% if changelog %}, its changelog amended{% endif %}, whether or not HEAD is pushed; `gate` when your turn ends awaiting the user's words with the cycle unfinished — the design gate, the ship gate awaiting squash approval, a pin stop awaiting a shipped reference, a change request under way{% endset %}
 {% endif %}
-{% set out_text %}for `shipped`, {% if forester %}the forester report{% else %}`-`{% endif %}; for `gate`, the primary document you surfaced{% endset %}
+{% set out_text %}for `shipped`, {% if fg_ship %}the latest forester ship document{% else %}`-`{% endif %}; for `gate`, the primary document you surfaced{% endset %}
 {% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if followup %}a pr-liaison escalation or failed stack check before the ship gate, {% endif %}a misnamed or missing request path at setup, {% if stack %}a rebase in progress at setup, a work branch that could not be created at setup{% else %}a detached HEAD at setup{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
 {{ reply(ok=ok_text, out=out_text, escalate=escalate_text, commit=("current HEAD" if stack else "the primary's current HEAD; the surfaced lines carry every repository"),
          prose="**Stop commit** first, when the artifact repo is separate. Above the status line goes only what the stop already surfaces — the paths, in at most two lines" ~ ("" if stack else ", the `scope:` line when the scope holds more than the primary, and the ship gate's fact lines") ~ " — plus the one `artifact commit rejected: …` line when the stop commit was rejected; nothing else. A human operator reads those lines; a parent driver relays them and routes on the status line.") }}

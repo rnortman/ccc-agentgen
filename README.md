@@ -203,7 +203,8 @@ have their own quick start in [TODO triage and burndown](#todo-triage-and-burndo
    cycle then stops for you at the design gate (approve, or send notes), at
    the end of each implementation round, and at the ship gate, each a
    question you answer in chat. In an `-auto` variant the forester answers
-   those stops instead and you come back to its report; see
+   those stops instead and you come back to its ship ruling, which closes
+   with the report; see
    [Choosing a variant](#choosing-a-variant).
 
 ## Choosing a variant
@@ -441,8 +442,8 @@ both working from documents, never code:
 - `forester` — sits at the gates the user would hold. `[vars]`
   `forester_gates` picks which of `design`, `triage`, `scan`, `ship`;
   `forester_autonomy` is `advise` (writes a brief, the user still decides) or
-  `decide` (its ruling is the gate's outcome, the user returns for its report
-  at cycle end or on escalation). Directions it gives go to
+  `decide` (its ruling is the gate's outcome, the user returns for its ship
+  ruling or its escalation). Directions it gives go to
   `userproxy-notes-*` files, each opening with a disclaimer that an agent, not
   the user, wrote it. `forester_gate_rounds` caps the forester↔designer loop.
   In `decide` mode a design-gate approval accepts every open question at the
@@ -455,9 +456,13 @@ both working from documents, never code:
   instruction, never a gate. A forester-approved ship owes the user nothing
   that is not in the tree or the closing stop — anything else the user must
   know or do goes down as notes or up as an escalation, never into a
-  caveat — and its report is a page of facts with no recommendation. The
-  forester's scan gate is held after intermediate rounds only; on the final
-  round the ship gate reads the scan report.
+  caveat — and the report — a page of facts with no recommendation — is the
+  closing section of the last ship ruling or brief, written by the last ship
+  point's launch: the forester is not launched again after the squash. A
+  stopped cycle writes no report; its escalation stands alone. The scan gate
+  is held after intermediate rounds only; on the final round the ship gate
+  reads the scan report. A variant without the `ship` gate writes no
+  report.
 - `forester-commentator` — after every review wave with findings, before the
   responder, writes `commentary-<step>.md`: questions (reachability, cost to
   maintain, fit to the request), not dispositions. Tools are `Read` and
