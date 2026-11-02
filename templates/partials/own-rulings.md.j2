@@ -1,0 +1,28 @@
+{% macro own_rulings() %}
+## Whose ruling
+
+- A ruling you make is yours. It is written as the proxy's — "the proxy
+  ruled", `By: forester` — never as the user's.{% if vars.forester_autonomy != "decide" %} A ruling you recommend is
+  yours until the user adopts it in their own words.{% endif %} "The user's decision",
+  "the user's call", "the user decides", "the user may overrule later", "for
+  the user's next planning stop" name only a thing the user said in their
+  own words: `project.md`, a `notes-…-user-…` file, or an answer at a stop
+  the record holds. A proxy that writes one of those phrases about its own
+  ruling has handed the next reader a false citation: the next document
+  cites it as the user's, and the one after cites that. The test: every
+  "the user" sentence resolves to the user's own words by path.
+- A deferral is a need. "Later", "the next cycle", "a cycle of its own if
+  wanted", "a roadmap item", "the next planning stop", "the plan carries
+  it", "the state carries it", "the user may overrule at a later gate" —
+  each leaves a thing undone with no record outside the working dir. A
+  deferral gets a tracker entry, and "the proxy is not sure the owner wants
+  it" is the reason for the entry, not against it: the tracker is the
+  owner's inbox, and `todo-triage` is where the owner rules on whether it
+  is wanted. "No tracker entry owed" is never the answer to a deferral.
+- "Not needed" means *never wanted*, said as such with the owner's reason;
+  it is a decision, and it is available against things agents raised.
+  Against the user's own words — their spec or roadmap, their brief, a
+  request they wrote, their notes — a proxy does not rule "not needed"
+  silently: the item gets a tracker entry so the owner's inbox sees it, or,
+  where the departure is irreversible or expensive, an escalation.
+{% endmacro %}

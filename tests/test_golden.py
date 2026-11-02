@@ -63,12 +63,12 @@ BURNDOWN_EMBEDS = {BURNDOWN_STEM: FULL_STEM, BURNDOWN_AUTO_STEM: FULL_AUTO_STEM}
 BURNDOWN_ROLES = {"burndown-orchestrator", "triage-forester"}
 # The roles a project variant adds on top of the plain chain it embeds.
 PROJECT_EMBEDS = {PROJECT_STEM: FULL_STEM, PROJECT_AUTO_STEM: FULL_AUTO_STEM}
-# The chain roles a project variant renders differently from its chain: only
-# in `-auto`, and only in the push wording, since the project's publisher
-# alone pushes.
-PROJECT_PUSH_ROLES = {PROJECT_AUTO_STEM: {"orchestrator", "forester"}}
-# Every difference, as (chain wording, project wording) pairs: substituting
-# each pair into the chain role's flattened body yields the project's.
+# The chain roles a project variant renders differently from its chain, each
+# with every difference as (chain wording, project wording) pairs: substituting
+# each pair into the chain role's flattened body yields the project's. In
+# `-auto` the push wording differs, since the project's publisher alone
+# pushes; in both, the forester reads a request's later-cycle work as the
+# project's sequencing, not a deferral.
 PROJECT_PUSH_WORDING = {
     "orchestrator": (
         ("→ changelog → push.", "→ changelog."),
@@ -90,6 +90,34 @@ PROJECT_PUSH_WORDING = {
             " project's setting",
         ),
     ),
+}
+PROJECT_SEQUENCING_WORDING = (
+    (
+        "A refused item an agent raised is a decision and needs no entry.",
+        "A refused item an agent raised is a decision and needs no entry. In a project, work the"
+        " cycle's request names as a later cycle's is the project's sequencing, which the project"
+        " forester carries: it is not left for later and takes no entry here. An item the request"
+        ' or the design declines, redraws or leaves "if the user wants it" is a deferral all the'
+        " same.",
+    ),
+    (
+        "narrowed or left for later; any",
+        "narrowed or left for later — beyond what the request names as a later cycle's work,"
+        " which is the project's sequencing; any",
+    ),
+    (
+        "is bound by **Whose ruling**; - the user ruled",
+        "is bound by **Whose ruling**. A tracker entry the request lists as a deliverable is"
+        " never ruled this way: it is filed, and the owner drops it in `todo-triage`; - the user"
+        " ruled",
+    ),
+)
+PROJECT_WORDING = {
+    PROJECT_STEM: {"forester": PROJECT_SEQUENCING_WORDING},
+    PROJECT_AUTO_STEM: {
+        "orchestrator": PROJECT_PUSH_WORDING["orchestrator"],
+        "forester": PROJECT_PUSH_WORDING["forester"] + PROJECT_SEQUENCING_WORDING,
+    },
 }
 PROJECT_ROLES = {"project-orchestrator", "project-forester", "experimenter", "publisher"}
 
@@ -512,6 +540,128 @@ def test_forester_approval_binds_open_questions_to_defaults(builds):
             assert (DEFAULTS_RULE in flat) == (autonomy == "decide"), where
             if autonomy == "advise":
                 assert "userproxy" not in flat, where
+
+
+def test_proxies_own_their_rulings(builds):
+    """Both forester kinds write their own rulings as theirs and treat a
+    deferral as a need, under either autonomy.
+    """
+    seen = set()
+    for build in builds.values():
+        autonomy = build.variant.vars.get("forester_autonomy")
+        for role_id in ("forester", "project-forester"):
+            if role_id not in build.by_id:
+                continue
+            seen.add((role_id, autonomy))
+            for name, body in build.bodies(role_id):
+                where = f"{build.stem}/{name}"
+                section = " ".join(_raw_section(body, "## Whose ruling").split())
+                for phrase in (
+                    "A deferral is a need",
+                    "never as the user's",
+                    "*never wanted*",
+                    '"No tracker entry owed" is never the answer to a deferral',
+                ):
+                    assert phrase in section, f"{where}: {phrase}"
+                adopts = "A ruling you recommend is yours until the user adopts it" in section
+                assert adopts == (autonomy != "decide"), where
+    for role_id in ("forester", "project-forester"):
+        assert (role_id, "decide") in seen and (role_id, "advise") in seen, role_id
+
+
+def test_forester_names_no_fourth_exit(builds):
+    """The cycle forester names the roadmap, the plan, the state and "later"
+    as non-exits, routes its flags, and reads "not needed" as never wanted.
+    """
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        for name, body in build.bodies("forester"):
+            where = f"{build.stem}/{name}"
+            ship_means_ship = " ".join(_raw_section(body, "## Ship means ship").split())
+            for phrase in ("the next planning stop", "a roadmap", "a project state", "is the fourth exit"):
+                assert phrase in ship_means_ship, f"{where}: {phrase}"
+            mode_ship = " ".join(_raw_section(body, "## Mode: ship").split())
+            not_records = mode_ship[mode_ship.index("Not records:") :]
+            not_records = not_records[: not_records.index("A need whose only record")]
+            for phrase in ("the next planning stop", "roadmap", "a project plan or state document", "`Flag:`"):
+                assert phrase in not_records, f"{where}: {phrase}"
+            assert "never wanted, said as such with the owner's reason" in mode_ship, where
+            assert '"confirmed from the record" is not a route' in mode_ship, where
+            flat = " ".join(body.split())
+            log = flat[flat.index("`Flag:` is a reminder to a later gate") :]
+            assert '"for the next planning stop"' in log, where
+            assert "the flag that would have carried it is `-`" in log, where
+            decide = build.variant.vars.get("forester_autonomy") == "decide"
+            by_notes = "routed *now*, by `notes` or an escalation" in log
+            by_recommendation = "routed *now*, by the **Recommendation**" in log
+            assert (by_notes, by_recommendation) == (decide, not decide), where
+            gate = " ".join(_raw_section(body, "## The gate document").split())
+            assert "never hold a need or a decision for the user" in gate, where
+            design = " ".join(_raw_section(body, "## Mode: design").split())
+            assert '"the user may want to overrule"' in design, where
+            project = "project-orchestrator" in build.variant.roles
+            carve_out = "is the project's sequencing, which the project forester carries" in design
+            assert carve_out == project, where
+            assert ("beyond what the request names as a later cycle's work" in mode_ship) == project, where
+            assert ("A tracker entry the request lists as a deliverable is never ruled" in mode_ship) == project, where
+
+
+def test_project_forester_scaffolding_by_autonomy(builds):
+    """The project forester knows who reads its plan, writes no section for
+    the user, carries unfiled needs as `owed to the tree`, and checks a
+    cycle's work only after a shipped build but its questions after any.
+    """
+    readers = {
+        PROJECT_AUTO_STEM: "no one reads the plan before the cycle runs",
+        PROJECT_STEM: "the user reads the plan at the cycle gate",
+    }
+    for stem, reader in readers.items():
+        build = builds[stem]
+        other = readers[PROJECT_STEM if stem == PROJECT_AUTO_STEM else PROJECT_AUTO_STEM]
+        for name, body in build.bodies("project-forester"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            scaffolding = " ".join(
+                _raw_section(body, "## The plan and the state are scaffolding").split()
+            ).lower()
+            assert reader in scaffolding, where
+            assert other not in scaffolding, where
+            assert "6. **For the user**" not in flat, where
+            assert "The digest has no exit of its own" in flat, where
+            assert "`owed to the tree`" in flat, where
+            assert "the **Declined** tail" in flat, where
+            assert "For a **shipped build** only" in flat, where
+            assert "a need whatever the cycle's ending" in flat, where
+            assert "Digest mode: `written`, always" in flat, where
+            plan = " ".join(_raw_section(body, "## Mode: plan").split())
+            assert "A spike is not planned while" in plan, where
+            assert "would not build and has a tracker entry in the tree, verified read-only" in plan, where
+            assert "work the project still intends is not met by an entry" in plan, where
+            assert "`git ls-tree HEAD todo.d/ .todo.d/`" in plan, where
+            assert "`<stack top>`" not in flat and "<stack top>:" not in flat, where
+            assert "`- owed to the tree: <slug> — <entry text> (<where it was raised>)`" in flat, where
+            assert "the marker appears nowhere else in a plan or a state" in flat, where
+            assert "The escalating plan writes every other entry it identified" in plan, where
+            assert "Above the status line, and only then: the plan's `owed to the tree` lines" in flat, where
+            assert "except the tracker entries a stopped build's request listed" in flat, where
+            assert "rulings in the user's name that deferred, dropped or narrowed something" in flat, where
+            assert "`git ls-tree <cycle branch> todo.d/ .todo.d/`" in flat, where
+            assert "names nothing for the user to decide" in flat, where
+
+
+def test_project_orchestrator_end_surfaces_owed_entries(builds):
+    """The project driver's closing stop lists every tracker entry the state
+    still owes.
+    """
+    for stem in (PROJECT_STEM, PROJECT_AUTO_STEM):
+        for name, body in builds[stem].bodies("project-orchestrator"):
+            where = f"{stem}/{name}"
+            end = " ".join(_raw_section(body, "### End").split())
+            assert "grep '^- owed to the tree: ' <latest state>" in end, where
+            boundary = " ".join(_raw_section(body, "## Information boundary").split())
+            assert "the lines the fixed-marker `grep` prints from the latest state" in boundary, where
+            assert "tracker entries the next build was to file; the project ended first" in end, where
 
 
 def test_owner_overrules_frozen_search_and_false_rationale_rules(builds):
@@ -1304,7 +1454,8 @@ def test_two_level_variants_embed_their_chain(builds, embeds, added):
         for role_id, role in chain.by_id.items():
             where = f"{stem}/{role_id}"
             assert build.by_id[role_id].frontmatter == role.frontmatter, where
-            if role_id not in PROJECT_PUSH_ROLES.get(stem, set()):
+            wording = PROJECT_WORDING.get(stem, {}).get(role_id)
+            if wording is None:
                 assert build.bodies(role_id) == chain.bodies(role_id), where
                 continue
             assert build.bodies(role_id) != chain.bodies(role_id), where
@@ -1312,9 +1463,11 @@ def test_two_level_variants_embed_their_chain(builds, embeds, added):
                 build.bodies(role_id), chain.bodies(role_id), strict=True
             ):
                 flat, chain_flat = " ".join(body.split()), " ".join(chain_body.split())
-                for chain_phrase, project_phrase in PROJECT_PUSH_WORDING[role_id]:
+                for chain_phrase, project_phrase in wording:
                     assert chain_flat.count(chain_phrase) == 1, f"{stem}/{name}: {chain_phrase}"
-                    assert chain_phrase not in flat, f"{stem}/{name}: {chain_phrase}"
+                    assert project_phrase in flat, f"{stem}/{name}: {project_phrase}"
+                    if chain_phrase not in project_phrase:
+                        assert chain_phrase not in flat, f"{stem}/{name}: {chain_phrase}"
                     chain_flat = chain_flat.replace(chain_phrase, project_phrase)
                 assert flat == chain_flat, f"{stem}/{name}"
 
@@ -2464,8 +2617,9 @@ def test_project_forester_plans_and_digests(builds):
             ):
                 assert phrase in flat, f"{where}: {phrase}"
             assert "pr-r<R>.md" not in flat, where
-            for section in ("Goal", "Branches", "Cycles", "Learned", "Remaining", "For the user"):
+            for section in ("Goal", "Branches", "Cycles", "Learned", "Remaining"):
                 assert f"**{section}** —" in flat, f"{where}: {section}"
+            assert "**For the user** —" not in flat, where
 
 
 PUBLISHER_FORGEJO_TOOLS = {f"mcp__forgejo__forgejo_{name}" for name in ("list_prs", "get_pr", "open_pr")}
@@ -2958,7 +3112,7 @@ def test_forester_never_passes_a_gate_by_writing_it_down(builds):
             records = (
                 "- the need itself was met in full — what was asked for, not a stand-in for it — and the log says where;",
                 "- it has a `TODO(slug)` comment and tracker entry in an in-scope repository;",
-                "- a gate ruled it not needed, and the log carries the ruling",
+                "- a gate ruled it not needed — never wanted, said as such with the owner's reason — and the log carries the ruling",
                 "- the user ruled on it in person at a stop: a `notes-…-user-…` file holds the user's own words",
             )
             for record in records:

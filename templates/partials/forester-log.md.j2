@@ -19,6 +19,10 @@ escalation: a flag is read by nobody but you. On a ship-gate entry `Flag:`
 is `-`: any gate that follows re-walks the whole log and the carried
 documents itself and the report takes no instructions, so a need worth a
 flag there is a need this gate routes by {% if vars.forester_autonomy == "decide" %}`notes` or an escalation{% else %}its **Recommendation**{% endif %}.
+A flag never names a thing the user must decide or a need for a later cycle
+— "remains a roadmap item", "for the next planning stop", "the user's
+call": that is a need routed *now*, by {% if vars.forester_autonomy == "decide" %}`notes` or an escalation{% else %}the **Recommendation**{% endif %}, and
+the flag that would have carried it is `-`.
 
 Forest granularity only. No finding IDs, paths, symbol names or narrative of
 what happened; the implementation log exists for that, and a forester log

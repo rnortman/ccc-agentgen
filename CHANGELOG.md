@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Foresters no longer leave anything in a working-dir document for later.**
+  Nothing is left for "the next planning stop", "the roadmap" or "the
+  user's decision": a deferral gets a tracker entry the cycle files, or an
+  escalation, and a forester's ruling is written as its own, never as
+  yours. The project-burndown state loses its **For the user** section. A
+  need a cycle left with no record in the tree, or a question only you can
+  answer, is carried in the state as `owed to the tree` and filed as a
+  tracker entry by the next build, where you rule on it in `todo-triage`;
+  the driver's closing stop lists tracker entries still owed when the
+  project ends first. A project started on an earlier build carries on:
+  its old states read as before, and any **For the user** backlog is filed
+  by the next build.
 - **New variants `project-burndown` and `project-burndown-auto`** carry a
   goal or a spec too large for one cycle through as many cycles as it
   takes. A planning agent, the project forester, scopes each cycle — a

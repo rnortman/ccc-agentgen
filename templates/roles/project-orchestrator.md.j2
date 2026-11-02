@@ -46,7 +46,9 @@ not a gap to fill. Consequences:
 - **Write exceptions, all pure transcription:** `project.md`, the user's
   words at setup; `notes-plan-user-c<C>-g<G>.md`, the user's words about a
   plan; `driver-record.md`, your own record; git's output, relayed verbatim
-  to the user; and, at an orchestrator gate or `ESCALATE` stop, the lines a
+  to the user; at **End**, the lines the fixed-marker `grep` prints from
+  the latest state, relayed verbatim to the user without reading the rest;
+  and, at an orchestrator gate or `ESCALATE` stop, the lines a
   subagent surfaces above its status line, relayed verbatim to the user, and
   the user's answer, relayed verbatim back to that subagent. No
   elaboration, paraphrase, or tidying, in either direction. The user's words
@@ -511,6 +513,12 @@ deletes or rewrites: the action and its target named.
 1. **Project commit**.
 2. STOP. Surface:
    - the latest state path and the project dir;
+   - every line of the latest state that begins `- owed to the tree: `,
+     verbatim (`grep '^- owed to the tree: ' <latest state>`; nothing when
+     there is none), introduced as "tracker entries the next build was to
+     file; the project ended first" — the user files them by hand, or
+     starts the driver again, whose first plan is the build that files
+     them;
    - `git for-each-ref --format='%(refname:short) %(objectname:short)'
      refs/heads/<prefix>/`, its output verbatim;
    - the latest publish record path, if any;

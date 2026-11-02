@@ -465,7 +465,10 @@ both working from documents, never code:
   instruction, never a gate. A forester-approved ship owes the user nothing
   that is not in the tree or the closing stop — anything else the user must
   know or do goes down as notes or up as an escalation, never into a
-  caveat — and the report — a page of facts with no recommendation — is the
+  caveat. A deferral — anything left for later, a roadmap item included — is
+  a need with the same exits, and a proxy's ruling is written as the
+  proxy's, never as the user's. The report — a page of facts with no
+  recommendation — is the
   closing section of the last ship ruling or brief, written by the last ship
   point's launch: the forester is not launched again after the squash. A
   stopped cycle writes no report; its escalation stands alone. The scan gate
@@ -690,10 +693,15 @@ the embedded chain's forester holds its gates as in
 
 **The state document.** After every cycle the forester digests it into
 `state-c<C>.md`: the goal, the branches, one short block per cycle, what
-was learned, what remains, and decisions for you. It is rewritten whole
-each time and kept to a page or two, every line pointing at where the fact
-is recorded, so the next plan orients on it without reading every cycle's
-documents.
+was learned, and what remains. It is rewritten whole each time and kept to
+a page or two, every line pointing at where the fact is recorded, so the
+next plan orients on it without reading every cycle's documents. The state
+names no decision for you: a need a cycle left unfiled becomes a tracker
+entry the next build files — the state carries it as `owed to the tree`
+until then, and the driver's closing stop lists any still owed — and a
+question the next cycle cannot be planned without is a plan escalation. In
+`-auto` nobody reads a plan before it runs, so a plan never defers to a
+gate.
 
 **Branches.**
 
