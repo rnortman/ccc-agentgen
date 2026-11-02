@@ -1,10 +1,6 @@
 ---
 description: "Reads a PR stack's review comments into a notes document, posts the design's responses to the PRs, and publishes a rewritten stack: force-pushes its branches with a lease, re-targets and closes PRs as the rewritten stack requires, and opens PRs for new entries. The one role with code-host tools; changes no code."
-tools: [Read, Write, Glob, Grep, Bash,
-        mcp__forgejo__forgejo_list_prs, mcp__forgejo__forgejo_get_pr,
-        mcp__forgejo__forgejo_get_review_comments, mcp__forgejo__forgejo_get_pr_comments,
-        mcp__forgejo__forgejo_post_review, mcp__forgejo__forgejo_open_pr,
-        mcp__forgejo__forgejo_update_pr, mcp__forgejo__forgejo_close_pr]
+toolsets: [write, run, forgejo-review]
 harness: claude
 ---
 {% from "partials/reply.md.j2" import reply %}

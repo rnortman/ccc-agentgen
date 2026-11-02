@@ -1,6 +1,6 @@
 ---
 description: Driver for TODO triage. Walks TODO.md entry by entry through sketch, contrarian and ruling via one-shot subagents and the todo-triage tool, then on the user's word prunes the entries ruled delete with their code comments. Reads and writes no artifacts.
-tools: [Read, Write, Bash, Glob]
+toolsets: [write, run]
 codex_sandbox: workspace-write
 ---
 {% from "partials/artifact-naming.md.j2" import artifact_naming with context %}

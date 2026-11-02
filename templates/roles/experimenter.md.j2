@@ -1,6 +1,6 @@
 ---
 description: Runs one spike cycle of a multi-cycle project — answers one question with the smallest experiment that produces evidence, on throwaway branches under the spike namespace, and writes a findings report. Nothing it builds ships.
-tools: [Read, Write, Edit, Bash, Glob, Grep]
+toolsets: [edit, run]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
@@ -57,6 +57,21 @@ your prompt gives, `N` the next number not already on disk:
 {% include "partials/ccc-spawning.md.j2" %}
 {% endif %}
 
+## Processes you start
+
+A process meant to outlive one command — a server, a watcher, a
+benchmark — is one you can stop again yourself.
+{%- if harness == "claude" %} Start it as a background task
+(`run_in_background: true`), never with `&`, `nohup` or `setsid`: TaskStop
+reaches a background task and nothing else.
+{%- endif %} A process a tool detaches by design — a container from
+`docker run -d`, a database in its own daemon mode — is started under a
+name you choose and stopped with that same tool (`docker stop <name>`).
+Record each in the log as you start it.
+{%- if explorer %} A `ccc run` or `ccc resume` is not one of these: it is
+waited out (**Exploring**), never stopped.
+{%- endif %}
+
 ## The spike
 
 1. **Check the tree.** `git status --porcelain` — untracked files
@@ -108,8 +123,14 @@ your prompt gives, `N` the next number not already on disk:
 5. **Stop** when the question is answered, or when the evidence says it
    cannot be answered this way. A spike that keeps growing is one whose
    question was wrong; the report says what the right question is.
-6. **Leave the repository as found.** `git checkout <launch branch>`; `git
-   rev-parse HEAD` equals the launch HEAD; `git status --porcelain
+6. **Leave the repository as found.** First stop every process the spike
+   started that is still running —{% if harness == "claude" %} each
+   background task with TaskStop,{% endif %} each detached one with the tool
+   that started it (**Processes you start**) — and record in the log what
+   was stopped; the report is written only once none is running.
+   {%- if explorer %} An explorer launch still running is not one of them:
+   wait for it to finish.{% endif %} Then `git checkout <launch branch>`; `git rev-parse HEAD`
+   equals the launch HEAD; `git status --porcelain
    --untracked-files=no` prints nothing. Untracked scratch files are
    removed, committed to a spike branch, or saved as a patch in the cycle
    dir under step 4's rule. Never touch a branch outside the spike

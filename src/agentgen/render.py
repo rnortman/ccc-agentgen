@@ -11,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateError
 
 from . import AgentGenError
 from .model import HARNESSES, RoleSpec, Variant, check_role_frontmatter, merge_frontmatter, normalize_table_harness
+from .toolsets import Catalogue, load_catalogue
 
 FRONTMATTER_FENCE = "---"
 
@@ -84,7 +85,9 @@ def role_template_name(role_id: str) -> str:
     return f"roles/{role_id}.md.j2"
 
 
-def load_role_spec(templates_dir: Path, role_id: str, variant: Variant) -> RoleSpec:
+def load_role_spec(
+    templates_dir: Path, role_id: str, variant: Variant, catalogue: Catalogue | None = None
+) -> RoleSpec:
     """Read a role template's frontmatter and merge it with the variant's tiers."""
     template = role_template_name(role_id)
     path = templates_dir / template
@@ -98,7 +101,7 @@ def load_role_spec(templates_dir: Path, role_id: str, variant: Variant) -> RoleS
     check_role_frontmatter(frontmatter, str(path))
     frontmatter = normalize_table_harness(frontmatter, str(path))
     merged = merge_frontmatter(
-        role_id, frontmatter, variant.defaults, variant.roles.get(role_id, {})
+        role_id, frontmatter, variant.defaults, variant.roles.get(role_id, {}), catalogue
     )
     return RoleSpec(id=role_id, frontmatter=merged, template=template)
 
@@ -106,7 +109,8 @@ def load_role_spec(templates_dir: Path, role_id: str, variant: Variant) -> RoleS
 def render_variant(templates_dir: Path, variant: Variant) -> list[RenderedRole]:
     """Render every role in the variant. Raises on the first failure."""
     env = make_environment(templates_dir)
-    specs = [load_role_spec(templates_dir, rid, variant) for rid in variant.role_ids]
+    catalogue = load_catalogue(templates_dir)
+    specs = [load_role_spec(templates_dir, rid, variant, catalogue) for rid in variant.role_ids]
     role_ids = sorted(spec.id for spec in specs)
     rendered: list[RenderedRole] = []
     for spec in specs:

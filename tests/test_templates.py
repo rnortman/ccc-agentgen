@@ -15,7 +15,8 @@ import pytest
 
 from agentgen.check import check_all, spawn_references
 from agentgen.model import Variant
-from agentgen.render import make_environment, render_variant
+from agentgen.render import make_environment, parse_frontmatter, render_variant, split_frontmatter
+from agentgen.toolsets import load_catalogue
 from conftest import (
     DEFAULT_CHECK,
     DEFAULTS_RULE,
@@ -395,3 +396,78 @@ def test_forestry_drift_names_the_assessment(rendered):
         body = _body(rendered, role_id)
         assert "**Request assessment** declared" in body, role_id
         assert "launders nothing" in body, role_id
+
+
+TASKSTOP_SENTENCE = "Stopping a background `ccc run` or `ccc resume` with TaskStop is no exception"
+
+
+def _template_frontmatter(role_id: str) -> dict:
+    path = TEMPLATES / "roles" / f"{role_id}.md.j2"
+    front, _ = split_frontmatter(path.read_text(encoding="utf-8"), path.name)
+    return parse_frontmatter(front, path.name)
+
+
+def test_every_role_template_declares_toolsets_not_tools():
+    catalogue = load_catalogue(TEMPLATES)
+    assert catalogue is not None
+    names = {toolset.name for toolset in catalogue.sets}
+    for rid in role_ids():
+        front = _template_frontmatter(rid)
+        assert "tools" not in front, rid
+        assert isinstance(front.get("toolsets"), list), rid
+        assert set(front["toolsets"]) <= names, rid
+
+
+# What each shipped built-in set must keep granting, includes counted. A floor,
+# not an exact list: a tool added to a set passes, a tool lost from one fails.
+SET_FLOORS = {
+    "harmless": {"Read"},
+    "write": {"Write"},
+    "edit": {"Write", "Edit", "NotebookEdit"},
+    "run": {"LSP", "Bash", "TaskStop", "Monitor"},
+}
+
+
+def test_every_role_template_keeps_its_sets_floor():
+    catalogue = load_catalogue(TEMPLATES)
+    assert catalogue is not None
+    for rid in role_ids():
+        toolsets = _template_frontmatter(rid)["toolsets"]
+        floor = set().union(SET_FLOORS["harmless"], *(SET_FLOORS.get(name, set()) for name in toolsets))
+        assert floor <= set(catalogue.resolve(rid, toolsets, None)), rid
+
+
+def test_spawning_roles_forbid_taskstop_on_a_ccc_launch_on_claude_only(full):
+    spawning = [role for role in full if SPAWNING_PARTIAL_SENTINEL in role.body_for(role.harnesses[0])]
+    assert spawning
+    for role in spawning:
+        for harness in role.harnesses:
+            flat = " ".join(role.body_for(harness).split())
+            assert (TASKSTOP_SENTENCE in flat) == (harness == "claude"), (role.id, harness)
+
+
+@pytest.mark.parametrize("explorer", [True, False])
+def test_experimenter_stops_what_it_started(explorer):
+    ids = [rid for rid in role_ids() if explorer or rid != "explorer"]
+    role = next(role for role in render(ids) if role.id == "experimenter")
+    for harness in role.harnesses:
+        flat = " ".join(role.body_for(harness).split())
+        launch = flat[flat.index("## Processes you start") : flat.index("## The spike")]
+        assert "is one you can stop again yourself" in launch, harness
+        assert "stopped with that same tool (`docker stop <name>`)" in launch, harness
+        claude_launch = "Start it as a background task (`run_in_background: true`), never with `&`, `nohup` or `setsid`"
+        assert (claude_launch in launch) == (harness == "claude"), harness
+        assert ("is waited out (**Exploring**), never stopped" in launch) == explorer, harness
+        step = flat[flat.index("6. **Leave the repository as found.**") :]
+        assert "First stop every process the spike started that is still running" in step, harness
+        assert "each detached one with the tool that started it" in step, harness
+        assert "record in the log what was stopped" in step, harness
+        assert ("each background task with TaskStop," in step) == (harness == "claude"), harness
+        assert ("An explorer launch still running is not one of them: wait for it to finish." in step) == explorer, harness
+
+
+def test_no_role_body_names_the_glob_tool(full):
+    """Claude Code drops Glob beside Bash; no role receives it."""
+    for role in full:
+        for harness in role.harnesses:
+            assert "Glob" not in role.body_for(harness), (role.id, harness)

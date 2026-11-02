@@ -331,8 +331,8 @@ code changes as fixups into the PRs they belong to, or as new PRs on top.
 The liaison is pinned to Claude (`harness: claude`): it calls the forgejo MCP
 server's tools by their Claude Code names (`mcp__forgejo__forgejo_list_prs`,
 `_get_pr`, `_get_review_comments`, `_get_pr_comments`, `_post_review`,
-`_open_pr`, `_update_pr`, `_close_pr`), which a role reaches only when its
-`tools:` list names them, and the Codex configuration carries no forgejo
+`_open_pr`, `_update_pr`, `_close_pr`), which a role reaches only when one
+of its tool sets grants them, and the Codex configuration carries no forgejo
 server. In the plain variant the responses are posted at every design gate
 the review chain cleared; your word to proceed freezes the design as it
 stands, and comments posted after the last fetch wait for the next cycle. A
@@ -477,8 +477,8 @@ both working from documents, never code:
   report.
 - `forester-commentator` — after every review wave with findings, before the
   responder, writes `commentary-<step>.md`: questions (reachability, cost to
-  maintain, fit to the request), not dispositions. Tools are `Read` and
-  `Write` only so it cannot reach the code.
+  maintain, fit to the request), not dispositions. Its one tool set is
+  `write`, so it holds `Read` and `Write` only and cannot reach the code.
 
 Shared partials: `forestry` (the owner's perspective), `desk` (what is read),
 `forester-log`, `forester-escalation`, `userproxy`.
@@ -788,9 +788,11 @@ body-only `<role>.claude.md` or `<role>.codex.md` overlay.
 
 ### Layout
 
-- `templates/roles/<role>.md.j2` — literal YAML frontmatter (ccc keys intrinsic
-  to the role: `description`, `tools`, `codex_sandbox`) then a Jinja body.
+- `templates/roles/<role>.md.j2` — literal YAML frontmatter (keys intrinsic
+  to the role: `description`, `toolsets`, `codex_sandbox`) then a Jinja body.
 - `templates/partials/*.md.j2` — shared fragments and macros the bodies include.
+- `templates/toolsets.toml` — the Claude Code tool-set catalogue
+  ([Tool sets](#tool-sets)).
 - `variants/<name>.toml` — `[defaults]` frontmatter for every role, `[vars]`
   knobs the templates read, and one `[roles.<id>]` table per included role.
   Frontmatter precedence, later wins: role template, `[defaults]`,
@@ -803,11 +805,70 @@ the first is allowed and preferred and later entries are allowed fallbacks.
 Whole values replace earlier tiers. A blank value means the policy is absent
 at that tier. After precedence is resolved, keys for every harness excluded by
 the winning policy are removed automatically, including `model`, `effort`,
-`tools`, `codex_model`, `codex_effort`, and `codex_sandbox`. A more-specific
+`tools`, `toolsets`, `codex_model`, `codex_effort`, and `codex_sandbox`. A more-specific
 tier must override `harness` itself if it wants to allow that harness.
 Template bodies receive `harness` for the current render and `harnesses` for
 the effective ordered policy. Overlays are written
 only when a later allowed harness's body differs from the preferred/base body.
+
+### Tool sets
+
+A role says what it may do, not which tools it holds: its `toolsets`
+frontmatter names sets from `templates/toolsets.toml`, and the build emits
+the Claude Code `tools` allowlist they grant. Claude Code treats that list as
+exact — no other built-in tool and no MCP tool not named — and drops a name
+it does not know without a word, so the catalogue is where every tool is
+decided once.
+
+The catalogue holds two tables:
+
+- `[sets.<name>]` — `description` (required: what the set lets an agent do
+  and why its tools travel together), `tools` (tool names, may be empty) and
+  `include` (other set names, optional). A set grants its own tools plus
+  everything its included sets grant, transitively. Set names follow the
+  role-id grammar.
+- `[withheld]` — `<tool> = "<reason>"` for every known built-in tool no set
+  grants: the record that it was considered and why no role gets it.
+
+`harmless` is always offered: every role that allows Claude receives it,
+whether or not it names it. It must exist, include no set and grant at least
+one tool, since ccc reads an empty `tools` list as every tool. The `run` set
+carries `Bash` with `TaskStop` and `Monitor`, so no role can start a
+background process it cannot wait on and stop.
+
+`toolsets` is accepted at all three tiers under the usual precedence (later
+wins, whole value replaces). `tools` stays accepted at the same tiers and
+means individual extras: a withheld tool, or an `mcp__<server>__<tool>` name
+the catalogue does not mention. After the tiers merge, for a role that allows
+Claude, the emitted `tools` is `harmless` plus the closure of `toolsets` —
+sets in catalogue order, each set's tools in its listed order — then the
+extras in their given order, duplicates dropped; `toolsets` itself is never
+emitted. The build fails, naming the role, on an unknown set name; an extra
+that a set grants (name the set instead — `Bash` cannot be had without
+`run`); an extra that is neither in the catalogue nor shaped like an MCP tool;
+and a role that sets neither `toolsets` nor `tools`, which would get every
+Claude Code tool and every MCP server. A role that excludes Claude drops
+`toolsets` with its other Claude keys. A catalogue that breaks its own rules
+— unknown keys, a blank description, an unknown or cyclic `include`, a tool
+in two places — fails the build, naming the file and the item.
+
+A root without `templates/toolsets.toml` builds as before: `tools` passes
+through unchanged, and `toolsets` is an error.
+
+When Claude Code changes its tools — after every upgrade:
+
+1. Classify every new tool in a set or in `[withheld]`. A harmless one goes
+   in `harmless` and reaches every role with that one edit.
+2. Update any renamed tool names.
+3. Run the probe test ([Tests](#tests)), which asks the installed Claude
+   Code for its inventory and for what each emitted role list actually
+   registers.
+
+The catalogue is flat. When Claude Code's allowlist drops one listed tool
+because of another — as `Bash` drops `Grep` and `Glob` — the probe finds it,
+and the catalogue records it as data: the tool is withheld with the reason,
+or moved out of the set that brings it beside the other. `resolve` applies no
+such rule.
 
 ### Checks
 
@@ -840,6 +901,14 @@ pinned: a failure on a newer binary is the signal its report shape moved.
 Bash switcher
 tests use Bash when available; set `AGENTGEN_REQUIRE_BASH=1` to make missing
 Bash a failure.
+
+`AGENTGEN_PROBE_CLAUDE=1` runs the tool-set probe in
+`tests/test_toolsets.py`, which is otherwise skipped: it costs model calls
+(Haiku), so CI never runs it. It launches the installed `claude` once with no
+tool list and fails on any built-in tool the catalogue does not classify, then
+once per distinct `tools` list the shipped variants emit (MCP names removed)
+and fails on any name Claude Code does not register. With the variable set, a
+missing `claude` is a failure. Run it after every Claude Code upgrade.
 
 ### Hooks and checks
 

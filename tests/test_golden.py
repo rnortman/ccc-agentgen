@@ -1376,8 +1376,50 @@ def test_triage_clerk_frontmatter_pins(builds):
     clerk = builds[TRIAGE_STEM].by_id["triage-clerk"].frontmatter
     assert clerk["model"] == "claude-opus-5-5[1M]"
     assert clerk["effort"] == "low"
-    assert "Grep" in clerk["tools"]
+    assert "Bash" in clerk["tools"]
     assert "Write" not in clerk["tools"]
+
+
+
+def _claude_roles(builds):
+    for build in builds.values():
+        for role in build.roles:
+            if "claude" in role.harnesses:
+                yield f"{build.stem}/{role.id}", role.frontmatter
+
+
+def test_every_bash_role_can_wait_on_and_stop_its_processes(builds):
+    for where, front in _claude_roles(builds):
+        tools = front["tools"]
+        if "Bash" in tools:
+            assert {"TaskStop", "Monitor"} <= set(tools), where
+            # Claude Code drops both beside Bash; the probes in test_toolsets.py are the authority.
+            assert not {"Grep", "Glob"} & set(tools), where
+
+
+def test_every_claude_role_reads_and_has_a_tool_list(builds):
+    """No Claude role is unrestricted, and every one holds the harmless set."""
+    for where, front in _claude_roles(builds):
+        assert "toolsets" not in front, where
+        assert "Read" in front["tools"], where
+
+
+def test_experimenter_holds_the_run_set(builds):
+    seen = 0
+    for build in builds.values():
+        if "experimenter" in build.by_id:
+            seen += 1
+            assert {"Bash", "TaskStop", "Monitor"} <= set(build.by_id["experimenter"].frontmatter["tools"]), build.stem
+    assert seen
+
+
+def test_forester_commentator_cannot_reach_the_code(builds):
+    seen = 0
+    for build in builds.values():
+        if "forester-commentator" in build.by_id:
+            seen += 1
+            assert build.by_id["forester-commentator"].frontmatter["tools"] == ["Read", "Write"], build.stem
+    assert seen
 
 
 def test_site_remover_frontmatter_pins(builds):
@@ -2534,7 +2576,7 @@ def test_project_driver_setup_guards_the_prefix_and_sidecar(builds):
             '`git check-ref-format --branch "<prefix>/x"` succeeds',
             "for every leading path of the prefix — `p1`, `p1/p2`, … through `<prefix>` itself —",
             "`git show-ref --verify --quiet refs/heads/<that path>` fails",
-            "the slug holds no `--`, and Glob `<ADR root>/*/*/??-<slug>` and `<ADR root>/*/*/??-<slug>--*` match nothing",
+            "the slug holds no `--`, and no path matches `<ADR root>/*/*/??-<slug>` or `<ADR root>/*/*/??-<slug>--*`",
             "`git for-each-ref refs/heads/<prefix>/` prints nothing",
             "`git -C <ADR root> rev-parse --show-toplevel` succeeds and differs",
             "detached HEAD) → STOP",
@@ -2589,7 +2631,7 @@ def test_project_driver_publish_now_returns_to_its_stop(builds):
 def test_project_driver_end_lists_orphans_of_any_date(builds):
     for where, flat, _ in _project_driver_bodies(builds):
         end = flat[flat.index("### End"):]
-        assert "Glob `<ADR root>/*/*/??-<project slug>--*` matches, any date" in end, where
+        assert "every directory matching `<ADR root>/*/*/??-<project slug>--*`, any date" in end, where
 
 
 def test_project_forester_plans_and_digests(builds):

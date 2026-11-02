@@ -1,0 +1,75 @@
+# Claude Code tool sets. A role names sets in its `toolsets` frontmatter; the
+# build emits `harmless`, plus every named set and the sets it includes, as
+# the role's `tools` allowlist. Every built-in Claude Code tool is either
+# granted by exactly one set or listed in [withheld] with the reason.
+#
+# Classified against Claude Code 2.1.316's tool inventory. After upgrading
+# Claude Code, run the probe test (README, Tool sets).
+
+[sets.harmless]
+description = "Side-effect free and reaching nothing a role should be kept from. Every role that runs on Claude receives it, whether or not it names it."
+tools = ["Read"]
+
+[sets.navigate]
+description = "Find code by symbol (definitions, references) through a language server. Read-only."
+tools = ["LSP"]
+
+[sets.write]
+description = "Create and overwrite files: documents, logs, reports."
+tools = ["Write"]
+
+[sets.edit]
+description = "Change files in place."
+include = ["write"]
+tools = ["Edit", "NotebookEdit"]
+
+[sets.run]
+description = "Launch a process, foreground or background, wait on it, and stop it. Bash is never granted without the means to watch and stop what it starts. A role that holds Bash can read and search every file anyway, so it gets symbol lookup too."
+include = ["navigate"]
+tools = ["Bash", "TaskStop", "Monitor"]
+
+[sets.forgejo-publish]
+description = "Find and open pull requests on the forgejo host."
+tools = [
+    "mcp__forgejo__forgejo_list_prs",
+    "mcp__forgejo__forgejo_get_pr",
+    "mcp__forgejo__forgejo_open_pr",
+]
+
+[sets.forgejo-review]
+description = "Read and answer pull-request review, retarget and close pull requests on the forgejo host."
+include = ["forgejo-publish"]
+tools = [
+    "mcp__forgejo__forgejo_get_review_comments",
+    "mcp__forgejo__forgejo_get_pr_comments",
+    "mcp__forgejo__forgejo_post_review",
+    "mcp__forgejo__forgejo_update_pr",
+    "mcp__forgejo__forgejo_close_pr",
+]
+
+[withheld]
+Agent = "In-session subagents. Workflows spawn only through ccc, which routes, audits and can kill; an in-session subagent does none of that."
+Task = "The in-session subagent tool under its other name. Workflows spawn only through ccc, which routes, audits and can kill; an in-session subagent does none of that."
+Skill = "Loads instructions from outside the definition; the definition and the prompt are an agent's whole contract."
+Grep = "Claude Code drops it whenever Bash is listed, and a role that holds Bash searches with Bash. Never put it in a set that travels with run; a role without Bash that needs to search gets a set of its own holding it."
+Glob = "Claude Code drops it whenever Bash is listed, and a role that holds Bash searches with Bash. Never put it in a set that travels with run; a role without Bash that needs to search gets a set of its own holding it."
+ToolSearch = "A restricted role's tools register directly without it; listed, it defers TaskStop and Monitor behind a search step."
+WebFetch = "Network reach and an injection surface; no role's work needs it."
+WebSearch = "Network reach and an injection surface; no role's work needs it."
+CronCreate = "Schedules work outside ccc and outside the one-shot run."
+CronDelete = "Schedules work outside ccc and outside the one-shot run."
+CronList = "Schedules work outside ccc and outside the one-shot run."
+ScheduleWakeup = "Schedules work outside ccc and outside the one-shot run."
+RemoteTrigger = "Schedules work outside ccc and outside the one-shot run."
+SendMessage = "Reaches other agents; one-shot agents report through their status line."
+SendToProject = "Reaches sessions in other projects; one-shot agents report through their status line."
+SendToProjectContext = "Reaches sessions in other projects; one-shot agents report through their status line."
+PushNotification = "Reaches the user's devices; one-shot agents report through their status line."
+EnterWorktree = "Moves the session into another worktree; roles manage branches and the tree by their own rules."
+ExitWorktree = "Moves the session into another worktree; roles manage branches and the tree by their own rules."
+ListAgents = "No role needs it."
+ReportFindings = "No role needs it."
+Workflow = "No role needs it."
+DesignSync = "No role needs it."
+ShareOnboardingGuide = "No role needs it."
+PublishPlugin = "No role needs it."

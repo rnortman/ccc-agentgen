@@ -144,3 +144,7 @@ your own parent, and you — is the same `claude` or `codex` binary. A
 name-based or guessed-pid kill is as likely to take out another session's
 agent or yourself as the target. `ccc kill` identity-checks the process and
 is confined to your subtree; it is the only way you stop a subagent.
+{%- if harness == "claude" %} Stopping a background `ccc run` or `ccc
+resume` with TaskStop is no exception: TaskStop signals the `ccc` process,
+not the subagent's tree.
+{%- endif %}

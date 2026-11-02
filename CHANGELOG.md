@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **Every agent that can run commands can now stop what it starts.** Until
+  now an agent could launch a background process (a server, a watcher, a
+  benchmark) with no tool to watch it or kill it; the experimenter was the
+  clearest case. Roles now pick named tool sets — `toolsets: [write, run]`
+  in their frontmatter — from a new catalogue, `templates/toolsets.toml`,
+  instead of listing tools one by one. A set bundles everything its
+  capability needs: `run` always brings `TaskStop` and `Monitor` (stop and
+  watch a background task) with `Bash`, plus language-server symbol lookup;
+  `edit` brings notebook editing with file editing. A set of harmless tools
+  is granted to every role, and every Claude Code tool no set grants is
+  listed in the catalogue with the reason it is withheld, so a tool added
+  by a later Claude Code release gets a deliberate decision rather than an
+  accidental one (an opt-in test, `AGENTGEN_PROBE_CLAUDE=1`, checks the
+  catalogue against the installed Claude Code).
+  - `Grep` and `Glob` leave every list: Claude Code silently drops both
+    whenever `Bash` is listed, so no agent ever received them.
+  - The experimenter starts a long-running process as a background task,
+    or a detached one under a name, and stops each before it writes its
+    report.
+  - If you keep your own templates root, nothing changes unless you add a
+    `templates/toolsets.toml`; without one, `tools:` lists pass through as
+    before.
+  - Sessions started before you regenerate keep their old tool list on
+    `ccc resume`; finish or restart a running cycle to give its agents
+    `TaskStop`.
 - **Foresters no longer leave anything in a working-dir document for later.**
   Nothing is left for "the next planning stop", "the roadmap" or "the
   user's decision": a deferral gets a tracker entry the cycle files, or an

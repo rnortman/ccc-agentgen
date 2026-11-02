@@ -1,6 +1,6 @@
 ---
 description: Driver for a multi-cycle project. The project forester plans each cycle and digests it into the project state; a build cycle runs the review chain's orchestrator to one squashed commit on the cycle's own branch, a spike runs the experimenter, and the publisher pushes the stack of cycle branches when asked. Reads no artifact but its own record.
-tools: [Read, Write, Bash, Glob]
+toolsets: [write, run]
 codex_sandbox: workspace-write
 ---
 {% from "partials/artifact-naming.md.j2" import artifact_naming with context %}
@@ -198,8 +198,8 @@ you gave the agent, or, from the orchestrator, `-`.
    restate it, end turn.
 2. **New project.** In the repo:
    - The slug: `git check-ref-format --branch "<slug>"` succeeds, the slug
-     holds no `--`, and Glob `<ADR root>/*/*/??-<slug>` and `<ADR
-     root>/*/*/??-<slug>--*` match nothing — no project or cycle dir in
+     holds no `--`, and no path matches `<ADR root>/*/*/??-<slug>` or
+     `<ADR root>/*/*/??-<slug>--*` — no project or cycle dir in
      the ADR root carries the slug yet, so every dir named for it is this
      project's → else STOP, quote the command or the matches, ask for
      another slug, end turn.
@@ -524,7 +524,7 @@ deletes or rewrites: the action and its target named.
    - the latest publish record path, if any;
    - the HEAD range, start HEAD → HEAD;
    - the open cycle's dir and session id, if one is open;
-   - every directory Glob `<ADR root>/*/*/??-<project slug>--*` matches,
+   - every directory matching `<ADR root>/*/*/??-<project slug>--*`,
      any date, that no `planned` line names — a cycle dir a cut-off plan
      made before the record could name it, the user's to delete;
    - the resume command: `ccc launch project-orchestrator --cwd <repo>`,

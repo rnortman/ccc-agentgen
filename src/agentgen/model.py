@@ -6,9 +6,12 @@ import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import AgentGenError
+
+if TYPE_CHECKING:
+    from .toolsets import Catalogue
 
 # A role id is a ccc agent type, a file stem, and a spawn-reference token;
 # all three share this shape. Its no-dot grammar also excludes ccc's reserved
@@ -16,16 +19,20 @@ from . import AgentGenError
 ROLE_ID_PATTERN = r"[a-z][a-z0-9-]*"
 ROLE_ID_RE = re.compile(rf"^{ROLE_ID_PATTERN}$")
 
+# The tool-set catalogue's file name within the templates directory.
+CATALOGUE_NAME = "toolsets.toml"
+
 # A variant name becomes a directory name under `build/`.
 VARIANT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
-# ccc accepts exactly these frontmatter keys.
 HARNESSES = ("claude", "codex")
+# The keys each harness reads; a harness the policy excludes loses them.
 HARNESS_KEYS = {
-    "claude": ("model", "effort", "tools"),
+    "claude": ("model", "effort", "tools", "toolsets"),
     "codex": ("codex_model", "codex_effort", "codex_sandbox"),
 }
 
+# ccc accepts exactly these frontmatter keys.
 CCC_KEYS = (
     "name",
     "description",
@@ -38,8 +45,10 @@ CCC_KEYS = (
     "codex_sandbox",
 )
 
-# `name` is always the role id, so a role template may not set it.
-ROLE_TEMPLATE_KEYS = tuple(k for k in CCC_KEYS if k != "name")
+# The keys a role template and a variant tier may set: ccc's, less `name`
+# (always the role id), plus `toolsets`, which the merge resolves into `tools`
+# and never emits.
+ROLE_TEMPLATE_KEYS = tuple(k for k in CCC_KEYS if k != "name") + ("toolsets",)
 
 VARIANT_TABLES = ("defaults", "vars", "roles")
 
@@ -99,7 +108,7 @@ def load_variant(path: Path) -> Variant:
     if not roles:
         raise AgentGenError(f"{path}: no `[roles.<id>]` tables; the variant is empty")
 
-    _reject_non_ccc_keys(defaults, f"{path}: [defaults]")
+    _reject_unknown_keys(defaults, f"{path}: [defaults]")
     normalized_defaults = normalize_table_harness(defaults, f"{path}: [defaults]")
     normalized_roles: dict[str, dict[str, Any]] = {}
     for role_id, overrides in roles.items():
@@ -110,7 +119,7 @@ def load_variant(path: Path) -> Variant:
             )
         if not isinstance(overrides, dict):
             raise AgentGenError(f"{path}: `[roles.{role_id}]` must be a table")
-        _reject_non_ccc_keys(overrides, f"{path}: [roles.{role_id}]")
+        _reject_unknown_keys(overrides, f"{path}: [roles.{role_id}]")
         normalized_roles[role_id] = normalize_table_harness(
             overrides, f"{path}: [roles.{role_id}]"
         )
@@ -161,11 +170,11 @@ def normalize_table_harness(table: dict[str, Any], where: str) -> dict[str, Any]
     return normalized
 
 
-def _reject_non_ccc_keys(table: dict[str, Any], where: str) -> None:
+def _reject_unknown_keys(table: dict[str, Any], where: str) -> None:
     unknown = sorted(set(table) - set(ROLE_TEMPLATE_KEYS))
     if unknown:
         raise AgentGenError(
-            f"{where}: key(s) not accepted by ccc: {', '.join(unknown)}; "
+            f"{where}: key(s) not accepted by agentgen: {', '.join(unknown)}; "
             f"allowed: {', '.join(ROLE_TEMPLATE_KEYS)}"
         )
 
@@ -179,8 +188,8 @@ def resolve_variant_path(root: Path, name_or_path: str) -> Path:
 
 
 def check_role_frontmatter(frontmatter: dict[str, Any], where: str) -> None:
-    """Role-template frontmatter carries only ccc keys, and must set a description."""
-    _reject_non_ccc_keys(frontmatter, where)
+    """Role-template frontmatter carries only accepted keys, and must set a description."""
+    _reject_unknown_keys(frontmatter, where)
     description = frontmatter.get("description")
     if not isinstance(description, str) or not description.strip():
         raise AgentGenError(f"{where}: `description` is required and must be non-empty")
@@ -191,8 +200,14 @@ def merge_frontmatter(
     template_frontmatter: dict[str, Any],
     defaults: dict[str, Any],
     overrides: dict[str, Any],
+    catalogue: Catalogue | None = None,
 ) -> dict[str, Any]:
-    """Later wins: role template < `[defaults]` < `[roles.<id>]`. `name` is the id."""
+    """Later wins: role template < `[defaults]` < `[roles.<id>]`. `name` is the id.
+
+    With a catalogue and Claude allowed, `toolsets` and `tools` (the extras)
+    resolve into the emitted `tools`. Without one, `tools` passes through and
+    `toolsets` is an error.
+    """
     merged: dict[str, Any] = {}
     merged.update(template_frontmatter)
     merged.update(defaults)
@@ -211,5 +226,23 @@ def merge_frontmatter(
         if harness not in allowed:
             for key in HARNESS_KEYS[harness]:
                 merged.pop(key, None)
+    if "claude" in allowed:
+        _resolve_tools(role_id, merged, catalogue)
     merged["name"] = role_id
     return {k: merged[k] for k in CCC_KEYS if k in merged}
+
+
+def _resolve_tools(role_id: str, merged: dict[str, Any], catalogue: Catalogue | None) -> None:
+    if catalogue is None:
+        if "toolsets" in merged:
+            raise AgentGenError(
+                f"role {role_id}: `toolsets` needs a tool-set catalogue, "
+                f"and there is no templates/{CATALOGUE_NAME}"
+            )
+        return
+    if "toolsets" not in merged and "tools" not in merged:
+        raise AgentGenError(
+            f"role {role_id}: a role with no tool list gets every Claude Code tool "
+            "and every MCP server; declare `toolsets`"
+        )
+    merged["tools"] = catalogue.resolve(role_id, merged.pop("toolsets", None), merged.get("tools"))

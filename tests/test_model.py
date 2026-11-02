@@ -6,7 +6,8 @@ import pytest
 
 from agentgen import AgentGenError
 from agentgen.model import load_variant, merge_frontmatter, normalize_harness, resolve_variant_path
-from agentgen.render import load_role_spec
+from agentgen.render import load_role_spec, render_variant
+from agentgen.toolsets import load_catalogue
 
 VARIANT = """
 name = "demo"
@@ -170,7 +171,7 @@ def test_role_template_frontmatter_and_variant_tiers_merge(root):
 def test_role_template_with_non_ccc_key_is_rejected(root):
     root.role("explorer", "description: d\nstage: review", "body\n")
     variant = load_variant(root.variant("demo", VARIANT))
-    with pytest.raises(AgentGenError, match="not accepted by ccc"):
+    with pytest.raises(AgentGenError, match="not accepted by agentgen"):
         load_role_spec(root.templates, "explorer", variant)
 
 
@@ -265,3 +266,133 @@ def test_resolve_variant_path():
 def test_resolve_variant_path_keeps_a_dotted_bare_name():
     root_dir = Path("/tmp/root")
     assert resolve_variant_path(root_dir, "demo.v2") == root_dir / "variants" / "demo.v2.toml"
+
+
+MERGE_CATALOGUE = """
+[sets.harmless]
+description = "always offered"
+tools = ["Read"]
+
+[sets.write]
+description = "write files"
+tools = ["Write"]
+
+[sets.run]
+description = "run commands"
+tools = ["Bash", "TaskStop"]
+
+[withheld]
+Agent = "spawn through ccc"
+"""
+
+
+def _catalogue(root):
+    (root.templates / "toolsets.toml").write_text(MERGE_CATALOGUE, encoding="utf-8")
+    catalogue = load_catalogue(root.templates)
+    assert catalogue is not None
+    return catalogue
+
+
+@pytest.mark.parametrize(
+    "template, defaults, overrides, expected",
+    [
+        ({"toolsets": ["write"]}, {}, {}, ["Read", "Write"]),
+        ({"toolsets": ["write"]}, {"toolsets": ["run"]}, {}, ["Read", "Bash", "TaskStop"]),
+        ({"toolsets": ["write"]}, {"toolsets": ["run"]}, {"toolsets": []}, ["Read"]),
+        ({"toolsets": ["write"], "tools": ["Agent"]}, {}, {}, ["Read", "Write", "Agent"]),
+        ({"toolsets": ["write"], "tools": ["Agent"]}, {"tools": []}, {}, ["Read", "Write"]),
+        ({"toolsets": ["write"]}, {}, {"tools": ["mcp__s__t"]}, ["Read", "Write", "mcp__s__t"]),
+        ({"tools": ["Agent"]}, {}, {}, ["Read", "Agent"]),
+    ],
+)
+def test_merge_resolves_toolsets_per_key_across_tiers(root, template, defaults, overrides, expected):
+    merged = merge_frontmatter(
+        "explorer", {"description": "d", **template}, defaults, overrides, _catalogue(root)
+    )
+    assert merged["tools"] == expected
+    assert "toolsets" not in merged
+
+
+def test_merge_reports_resolution_errors_with_the_role(root):
+    with pytest.raises(AgentGenError, match="role explorer: `Bash` is granted by tool set `run`"):
+        merge_frontmatter(
+            "explorer", {"description": "d", "tools": ["Bash"]}, {}, {}, _catalogue(root)
+        )
+
+
+def test_merge_with_catalogue_rejects_a_claude_role_without_a_tool_list(root):
+    with pytest.raises(AgentGenError, match="role explorer: a role with no tool list"):
+        merge_frontmatter("explorer", {"description": "d"}, {}, {}, _catalogue(root))
+
+
+def test_merge_with_catalogue_drops_both_keys_for_a_codex_only_role(root):
+    merged = merge_frontmatter(
+        "coder",
+        {"description": "d", "toolsets": ["nonexistent"], "tools": ["Bash"]},
+        {"harness": ["codex"]},
+        {},
+        _catalogue(root),
+    )
+    assert "tools" not in merged and "toolsets" not in merged
+
+
+def test_merge_with_catalogue_codex_only_role_needs_no_tool_list(root):
+    merged = merge_frontmatter(
+        "coder", {"description": "d"}, {}, {"harness": ["codex"]}, _catalogue(root)
+    )
+    assert "tools" not in merged
+
+
+def test_merge_with_catalogue_resolves_for_a_role_allowing_both(root):
+    merged = merge_frontmatter(
+        "explorer",
+        {"description": "d", "toolsets": ["run"]},
+        {"harness": ["codex", "claude"]},
+        {},
+        _catalogue(root),
+    )
+    assert merged["tools"] == ["Read", "Bash", "TaskStop"]
+
+
+def test_merge_without_catalogue_passes_tools_through():
+    merged = merge_frontmatter("explorer", {"description": "d", "tools": ["Bash", "Grep"]}, {}, {})
+    assert merged["tools"] == ["Bash", "Grep"]
+
+
+def test_merge_without_catalogue_needs_no_tool_list():
+    merged = merge_frontmatter("explorer", {"description": "d"}, {}, {})
+    assert "tools" not in merged
+
+
+@pytest.mark.parametrize("tier", ["template", "defaults", "overrides"])
+def test_merge_without_catalogue_rejects_toolsets(tier):
+    tiers = {"template": {"description": "d"}, "defaults": {}, "overrides": {}}
+    tiers[tier]["toolsets"] = ["run"]
+    with pytest.raises(AgentGenError, match="role explorer: `toolsets` needs a tool-set catalogue"):
+        merge_frontmatter("explorer", tiers["template"], tiers["defaults"], tiers["overrides"])
+
+
+def test_variant_and_template_accept_toolsets(root):
+    root.role("explorer", "description: explores\ntoolsets: [write]", "body\n")
+    _catalogue(root)
+    path = root.variant("demo", '[defaults]\ntoolsets = ["run"]\n[roles.explorer]\ntoolsets = ["write", "run"]\n')
+    variant = load_variant(path)
+    spec = load_role_spec(root.templates, "explorer", variant, load_catalogue(root.templates))
+    assert spec.frontmatter["tools"] == ["Read", "Write", "Bash", "TaskStop"]
+    assert "toolsets" not in spec.frontmatter
+
+
+def test_render_variant_loads_the_catalogue(root):
+    root.role("explorer", "description: explores\ntoolsets: [run]", "{{ role.tools | join(',') }}\n")
+    _catalogue(root)
+    variant = load_variant(root.variant("demo", "[roles.explorer]\n"))
+    (role,) = render_variant(root.templates, variant)
+    assert role.frontmatter["tools"] == ["Read", "Bash", "TaskStop"]
+    assert role.body == "Read,Bash,TaskStop\n"
+
+
+def test_render_variant_without_catalogue_rejects_toolsets(root):
+    root.role("explorer", "description: explores\ntoolsets: [run]", "body\n")
+    variant = load_variant(root.variant("demo", "[roles.explorer]\n"))
+    with pytest.raises(AgentGenError, match="no templates/toolsets.toml"):
+        render_variant(root.templates, variant)

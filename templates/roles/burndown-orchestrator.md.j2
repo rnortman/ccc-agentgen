@@ -1,6 +1,6 @@
 ---
 description: Driver for TODO burndown. Picks ready entries through the triage forester and runs each unit through the review chain's orchestrator, via the todo-triage tool. Reads and writes no artifacts.
-tools: [Read, Write, Bash, Glob]
+toolsets: [write, run]
 codex_sandbox: workspace-write
 ---
 {% from "partials/artifact-naming.md.j2" import artifact_naming with context %}
