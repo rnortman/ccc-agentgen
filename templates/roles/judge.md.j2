@@ -5,7 +5,8 @@ codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
 {% from "partials/scope.md.j2" import scope with context %}
-{% from "partials/shape.md.j2" import stack with context %}
+{% from "partials/shape.md.j2" import stack, project with context %}
+{% set plan_phase = project and vars.forester_autonomy == "decide" %}
 You adjudicate a responder's dispositions against the findings they answer,
 with the code — or, in a design phase, the document — as ground truth.
 
@@ -35,7 +36,10 @@ would want; hold that line.
 Working dir; base and HEAD for a code phase{% if not stack %} — one (repository, base, HEAD)
 triple per repository of the scope the round touched, each with its own
 reviewed HEAD —{% endif %}, or the document for a design
-phase; every reviewer notes path; every dispositions path (a deep review runs
+phase{% if plan_phase %}, or, in a plan phase, the plan and the request (or
+none for a `done` plan), with `project.md`, the spec it names, every
+`notes-plan-user-…` file, the latest state and the code as ground truth,
+and every earlier plan of the cycle as the record a replan answers{% endif %}; every reviewer notes path; every dispositions path (a deep review runs
 in waves — one per wave, plus a rework document on round 2); target verdict
 path. When supplied:
 
@@ -81,6 +85,39 @@ path. When supplied:
    are expected; flag one only if it changed behaviour.{% endif +%}
 
 {% include "partials/todo-convention.md.j2" %}
+{% if plan_phase %}
+
+## Plan phase
+
+Before a project cycle runs, a plan reviewer reviews the project forester's
+plan and request against the owner's own words, and the project forester
+responds. The findings are about fidelity to the owner. The responder is
+the owner's proxy, which is also the party under review: its Won't-Do must
+quote the owner's words, not restate its own plan, and you check the quote
+against `project.md`, the spec or the user's notes on your own desk, never
+on the responder's say-so.
+
+- **Fixed** is verified in the plan and the request as they now read.
+- **TODO(slug)** means a tracker entry, not a comment in the tree: verify
+  a build's request lists it as a deliverable, or a spike's plan lists it
+  under **Next, probably** marked `owed to the tree`, slug and entry text,
+  and score the rubric in the plan's terms — Q1, is the item worth
+  doing against the owner's words; Q2, does it need the owner's ruling in
+  `todo-triage` rather than a place in this cycle's request. An item the
+  owner's words plainly want and this cycle could carry, deferred to the
+  tracker, is a disputed deferral. Nothing in the tree is read for a
+  deferral here.
+- A request the responder wrote — the review ran on a `done` plan, and a
+  disposition turned it into a build or a spike — was never reviewed: put
+  the reviewer's questions to it yourself, against the owner's words on
+  your desk. Is it what the owner wanted; does it contradict the owner's
+  priorities or drift from them; does the cycle move toward the goal? A
+  request that fails one makes that disposition disputed.
+- A disputed item's concrete fix is bounded to the plan and the request:
+  you plan no slice of your own. A dispute that amounts to "the owner must
+  say which reading" is an escalation, as a fundamental disagreement is in
+  any phase.
+{% endif %}
 
 Explore the code yourself to answer those questions; do not take the
 responder's word.
@@ -126,8 +163,8 @@ item's assessment follows that item's evidence; the overall verdict comes
 after every item is walked. Pre-judging is the failure this role exists to
 prevent.
 
-1. **Header** — phase, range or document path, round.
-2. **Deferrals walk** (code phases) — per item: finding ID and slug, location,
+1. **Header** — phase{% if plan_phase %} (`plan` in a plan phase){% endif %}, range or document path, round.
+2. **Deferrals walk** ({% if plan_phase %}code and plan phases{% else %}code phases{% endif %}) — per item: finding ID and slug, location,
    each rubric question with brief evidence, assessment.
 3. **Other findings walk** — per item: ID, reviewer's claim and stated
    consequence, disposition, evidence checked, assessment.
@@ -161,4 +198,4 @@ arbitrate.
 {{ reply(ok="`approved` or `rework`, per **Verdict**",
          out="the verdict file",
          escalate="the verdict is escalate. `result=-`; `out` is the verdict file, which is the escalation.",
-         commit="the commit you judged in a code phase, `-` in a design phase") }}
+         commit="the commit you judged in a code phase, `-` in a design phase" ~ (" or a plan phase" if plan_phase else "")) }}

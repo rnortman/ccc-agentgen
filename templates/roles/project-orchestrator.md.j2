@@ -16,7 +16,9 @@ forester digests it into a new state document, the breadcrumbs the next plan
 orients on. When the user asked for it, the `publisher` pushes the stack
 after every shipped build and opens its PRs. Nothing is ever merged.
 
-Chain per cycle: project-forester (plan){% if gate %} → cycle gate{% endif %} →
+Chain per cycle: project-forester (plan){% if gate %} → cycle gate{% else %} → plan review
+(plan-reviewer, then project-forester (respond) and judge when it has
+findings){% endif %} →
 orchestrator or experimenter → project-forester (digest) → publisher, when
 publishing is on and the cycle shipped.
 
@@ -75,7 +77,10 @@ root:
   `state-c<C>.md`; `publish-c<C>.md`, or `publish-c<C>-<n>.md` for the
   `n`th publish of the same cycle, and `publish-now-<n>.md` for a "publish
   now"; `exception-publish-c<C>.md` and `exception-publish-now-<n>.md`
-  alike, `exception-spike-c<C>.md`;
+  alike, `exception-spike-c<C>.md`{% if not gate %}; the plan review's
+  `notes-plan-review-c<C>-g<G>.md`, `dispositions-plan-c<C>-g<G>-a<A>.md`
+  and `judge-verdict-plan-c<C>-g<G>-a<A>.md` — here, not in the cycle dir,
+  which a build's orchestrator owns{% endif %};
 - one **cycle dir** per cycle, `<ADR root>/YYYY/MM/DD-<project
   slug>--<cycle slug>/`, made by the forester when it writes the cycle's
   `request.md`. A build cycle's dir is the orchestrator's working dir and
@@ -84,7 +89,10 @@ root:
 
 Ordinals: **cycle `C`** from 1, task-wide, never reused; **plan attempt
 `G`** from 1 within a cycle — a rejected, replanned or escalated plan bumps
-it.
+it{% if gate %}.{% else %}; **review round `A`**, 1 or 2, within a plan attempt — the
+judge's one rework is round 2. Every plan review path carries `c<C>-g<G>`,
+and the dispositions and verdict paths carry `a<A>` too, so both are
+recoverable from a path on resume.{% endif +%}
 
 ## Driver record
 
@@ -109,6 +117,12 @@ Then, per cycle:
 cycle <C> plan: <plan path>
 cycle <C> plan escalated: <plan path> session <ccc session id>
 cycle <C> plan done: <plan path>
+{% if not gate %}
+cycle <C> plan written: build|spike|done <plan path> request <request path|none>
+cycle <C> plan review escalated: review <notes path> session <ccc session id>
+cycle <C> plan review escalated: respond <dispositions path> session <ccc session id>
+cycle <C> plan review escalated: judge <verdict path>
+{% endif %}
 cycle <C> planned: build|spike <plan path> request <request path>
 cycle <C> started: build|spike <cycle dir> head <sha> branch <name>
 cycle <C> session: <ccc session id>
@@ -121,6 +135,20 @@ cycle <C> published: <publish path>
 cycle <C> publish skipped: <publish path>
 ```
 
+{% if not gate %}
+A `plan written` line follows every plan-mode or respond-mode launch of a
+plan attempt that replies `OK`; the attempt's last one holds its kind and
+request. A `plan review escalated` line records a stop inside the plan
+review; its step word says which launch stopped and so which stop a resume
+re-enters. The `review` form names the reviewer's notes target, a reviewer
+that wrote no status line. The `respond` form names the response's dispositions target,
+whose `a<A>` is the round the resumed reply goes to the judge at; the
+`judge` form carries no session: a judge escalation is arbitrated by the
+user in words, never answered by resuming the judge. `plan escalated`
+keeps its one meaning: a plan-mode launch stopped. `planned` is the line
+step 3 reads.
+
+{% endif %}
 An empty list is written `none`. Your queries on the record are three: the
 last line for cycle `C`; the header fields; and the lists on the `ended`
 lines.
@@ -146,6 +174,9 @@ last one stands.
 | **start time** | the clock at setup | never |
 | **digested** | 0 | each digest that replies `written` |
 | **C**, **G** | 0 and unset, or from the record on resume | Loop step 2 |
+{% if not gate %}
+| **A** | unset, or from the record on resume | Loop step 2c |
+{% endif %}
 | **current cycle** | none, or the open cycle on resume | its kind, dir, plan path and request path at `planned`; pre-cycle HEAD and branch at `started`; session id at `session` |
 | **latest state** | the last `digested` line's path, or `none` | each digest |
 | **HEAD** | `git rev-parse HEAD` in the repo | after every launch |
@@ -178,7 +209,14 @@ you gave the agent, or, from the orchestrator, `-`.
 | Role | `OK` result |
 |---|---|
 | project-forester, plan | `build` · `spike` · `done` |
+{% if not gate %}
+| project-forester, respond | `build` · `spike` · `done` |
+{% endif %}
 | project-forester, digest | `written` |
+{% if not gate %}
+| plan-reviewer | `findings` · `no-findings` |
+| judge | `approved` · `rework` |
+{% endif %}
 | orchestrator | `shipped` · `gate` |
 | experimenter | `written`, + `commit` |
 | publisher | `published` · `pushed` · `unpushed` |
@@ -231,7 +269,8 @@ you gave the agent, or, from the orchestrator, `-`.
 3. **Resume.** Read `driver-record.md` in the named project dir; take the
    header's fields; `C` = the highest cycle number in it, or 0. The last
    line for cycle `C` decides where the loop re-enters. When it is `plan`,
-   `plan escalated`, `plan done` or `planned`, `G` = the `g` of the plan
+   `plan escalated`, `plan done`{% if not gate %}, `plan written`, `plan
+   review escalated`{% endif %} or `planned`, `G` = the `g` of the{% if gate %} plan{% else %} first{% endif +%}
    path on it; otherwise `G` is unused until Loop step 2a sets it.
    - `started` or `session` with no `ended` after it → an open cycle: STOP,
      name the cycle dir and the session id from its `session` line, or,
@@ -246,6 +285,22 @@ you gave the agent, or, from the orchestrator, `-`.
      of the earlier plan paths, and its target path is never reused.
    - `plan escalated` → the plan's question is still open: Loop step 2b's
      `ESCALATE` STOP again, with the plan path and the recorded session id.
+{% if not gate %}
+   - `plan written` → the plan review was cut off with the session: `G` +=
+     1, Loop step 2b — as for `plan`; the interrupted attempt's documents
+     stay as record, and its target paths are never reused.
+   - `plan review escalated` → the stop is still open, by its step word.
+     `review` → Loop step 2c item 1's STOP again, with the recorded notes
+     path and session id. `A` = the `a` of the path on a `respond` or
+     `judge` line. `respond` → Loop step 2c item 2's
+     `ESCALATE` STOP again, with the recorded dispositions path and session
+     id; the resumed reply is routed by that item at round `A`, so it goes
+     to the judge at round `A` — `judge-verdict-plan-c<C>-g<G>-a1.md` for
+     round 1, `…-a2.md` told "round 2 — approved or escalate only" for
+     round 2 — never to the reviewer and never to a target that exists.
+     `judge` → Loop step 2c item 3's `ESCALATE` STOP again, with the
+     verdict path.
+{% endif %}
    - `plan done` → **End**, with the plan path — unless the user's words
      ask for another plan: then Loop step 1, and the next cycle is `C` + 1.
    - `planned` → with the recorded plan and request paths,
@@ -281,23 +336,30 @@ you gave the agent, or, from the orchestrator, `-`.
    `notes-plan-user-c<C>-…` path in the project dir, the target, and the
    exploration naming `<project dir>/exploration-c<C>-g<G>-<N>.md`. A
    cut-off launch → **Cut-off launch**. Route:
+{# TODO(correctness-plan-out-check-recomputes-today-on-cold-resume): the parent and prefix are today's, so a plan escalation cold-resumed on a later day fails this check; see TODO.md. #}
    - `build` or `spike` → `out` must be `<cycle dir parent><basename
      prefix><cycle slug>/request.md` — the parent and basename prefix this
      launch handed, `<cycle slug>` one path segment — and the file must
      exist (`test -f`) → else route as `ESCALATE` below, surfacing `out`
      quoted in place of the lines: a cycle dir anywhere else is never
      recorded, so no **Project commit** reaches it. Then `out` is the
-     cycle's `request.md`; its directory is the cycle dir. Append `cycle
-     <C> planned: <kind> <target> request <out>`.
-{%- if gate %} **Cycle gate:** STOP, surface the plan path, the request
+     cycle's `request.md`; its directory is the cycle dir.
+{%- if gate %} Append `cycle
+     <C> planned: <kind> <target> request <out>`. **Cycle gate:** STOP, surface the plan path, the request
      path and the kind, end turn. `go` → step 3. Any other words → written
      verbatim to `<project dir>/notes-plan-user-c<C>-g<G>.md`; `G` += 1;
      step 2b again, the same cycle.
-{%- else %} Step 3 at once.
+{%- else %} Append `cycle
+     <C> plan written: <kind> <target> request <out>`. Step 2c.
 {%- endif %}
 
+{% if gate %}
    - `done` → append `cycle <C> plan done: <target>`; **End**: `out` is the
      plan, which says why.
+{% else %}
+   - `done` → append `cycle <C> plan written: done <target> request
+     none`. Step 2c.
+{% endif %}
    - `ESCALATE` or a missing status line → append `cycle <C> plan
      escalated: <target> session <id>`; STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
@@ -308,7 +370,90 @@ you gave the agent, or, from the orchestrator, `-`.
      this step — a second `ESCALATE` appends a second `plan escalated`
      line. Other words about the plan → written verbatim to
      `<project dir>/notes-plan-user-c<C>-g<G>.md`; `G` += 1; step 2b
-     again. `stop` → **End**.
+     again. `stop` → **End**.{% if not gate %} No review runs on an
+     escalation: the user is reading it.{% endif +%}
+{% if not gate %}
+
+   c. **Plan review.** The plan and the request are reviewed against the
+   owner's words before the cycle runs. The plan path is the target of
+   step 2b; the request path and the kind are the last `plan written`
+   line's. Every launch here runs with `--cwd <repo>` and the standard
+   payload. A cut-off launch → **Cut-off launch**; an unrecovered launch →
+   STOP, surface what **Cut-off launch** lists, end turn. The words at a
+   stop in the review are the plan's — `resume: <words>`, other words about
+   the plan, `stop` — plus `skip` where an item offers it, meaning "run the
+   plan and the request as they now read": step 2d.
+
+   1. **Review.** `ccc run plan-reviewer`: + repo, project dir,
+      `project.md` path, latest state path or `none`, the plan path, the
+      request path or `none`, the kind, every earlier plan path of this
+      cycle, every `notes-plan-user-c<C>-…` path, target `<project
+      dir>/notes-plan-review-c<C>-g<G>.md`. `no-findings` → step 2d.
+      `findings` → `A` = 1, item 2. A missing status line → append `cycle
+      <C> plan review escalated: review <target> session <id>`; STOP,
+      surface the target path and the session id, end turn: the reviewer has no
+      `ESCALATE`, and one that wrote no line says in its file what is
+      missing. The user says `resume: <words>` → `ccc resume <id>
+      "<words>"`, routed by this item; `skip` → step 2d; `stop` → **End**.
+      The launch is never repeated: its target exists.
+   2. **Respond.** `ccc run project-forester`, mode **respond**: + every
+      plan-mode input of step 2b but the target, the plan path, the
+      request path or `none`, the kind, the review notes path, round `A` —
+      on round 2 also the round-1 dispositions path and verdict path —
+      target `<project dir>/dispositions-plan-c<C>-g<G>-a<A>.md`. Route:
+{# TODO(correctness-plan-out-check-recomputes-today-on-cold-resume): the `none` branch runs step 2b's check against today's parent and prefix; see TODO.md. #}
+      - `build` or `spike` → when the last `plan written` line names a
+        request, `out` must be that path — the response edits it in place,
+        whatever day the plan was written — and the file must exist (`test
+        -f`); when it names `none`, step 2b's `out` check against the parent
+        and basename prefix this launch handed. A failure is routed as
+        `ESCALATE` below, surfacing `out` quoted in place of the lines.
+        Append `cycle <C> plan written: <kind> <plan
+        path> request <out>`; item 3 at round `A`.
+      - `done` → append `cycle <C> plan written: done <plan path> request
+        none`; item 3 at round `A`.
+      - A response, resumed or not, is followed by the judge at its own
+        round, never by the reviewer again.
+      - `ESCALATE` or a missing status line → append `cycle <C> plan
+        review escalated: respond <target> session <id>`; STOP, surface the
+        lines it wrote above its status line, verbatim, plus `out` and the
+        session id, end turn; a missing line surfaces `-` and the session
+        id, its prose not relayed. The user says: `resume: <words>` → `ccc
+        resume <id> "<words>"`, or with no session recoverable repeat the
+        launch; route by this item — a second `ESCALATE` appends a second
+        `plan review escalated` line. Other words about the plan → written
+        verbatim to `<project dir>/notes-plan-user-c<C>-g<G>.md`; `G` += 1;
+        step 2b. `stop` → **End**. No `skip` here: the plan and the request
+        are mid-edit, with the proxy's question written into the plan.
+   3. **Judge.** `ccc run judge`, round `A`: + the plan path, the
+      request path or `none`, `project.md` path, latest state path or
+      `none`, every earlier plan path of this cycle, every
+      `notes-plan-user-c<C>-…` path, the review notes path, every
+      dispositions path of this attempt, round 2 told "round 2 — approved
+      or escalate only", target `<project
+      dir>/judge-verdict-plan-c<C>-g<G>-a<A>.md`. Route:
+      - `approved` → step 2d.
+      - `rework` on round 1 → `A` = 2, item 2.
+      - `rework` on round 2 is a missing status line: the reply is outside
+        the set the judge was told.
+      - `ESCALATE` or a missing status line, either round → append `cycle
+        <C> plan review escalated: judge <target>`; STOP, surface the lines
+        it wrote above its status line, verbatim, plus `out` and the
+        session id, end turn; a missing line surfaces `-` and the session
+        id, its prose not relayed. The user arbitrates: words about the
+        plan → written verbatim to `<project
+        dir>/notes-plan-user-c<C>-g<G>.md`, `G` += 1, step 2b — the replan
+        reads the notes, and its review reads both; `skip` → step 2d, the
+        plan and the request standing as the responder left them; `stop` →
+        **End**. The judge is never resumed: its verdict is the escalation,
+        and the user's words answer the proxy, not the judge.
+
+   d. **Route the plan**, on the last `plan written` line's kind:
+   - `build` or `spike` → append `cycle <C> planned: <kind> <plan path>
+     request <request path>`. Step 3 at once.
+   - `done` → append `cycle <C> plan done: <plan path>`; **End**: the plan
+     says why.
+{% endif %}
 3. **Run the cycle.** First the **HEAD check (record)**: the user owns
    the repo at every stop since the last cycle ended; their `go` after it
    → this step again. A spike then needs a clean tree: `git status
@@ -465,7 +610,8 @@ A `publish` directive at any stop is a **User directive**:
 
 At setup, before every cycle launch, at every stop and at **End**, commit
 the project's records in the sidecar: the project dir, and every cycle dir
-a `cycle <C> planned` line names (its `request` path's directory) that no
+a `cycle <C> planned`{% if not gate %} or `cycle <C> plan written`{% endif %} line names (its `request` path's directory{% if not gate %}, when
+not `none`{% endif %}) that no
 `cycle <C> started: build` line names — rejected and replanned cycle dirs,
 and spike dirs. A started build's dir is the orchestrator's, which commits
 it itself. One command per directory, pathspec-limited to it, all of them
@@ -525,7 +671,7 @@ deletes or rewrites: the action and its target named.
    - the HEAD range, start HEAD → HEAD;
    - the open cycle's dir and session id, if one is open;
    - every directory matching `<ADR root>/*/*/??-<project slug>--*`,
-     any date, that no `planned` line names — a cycle dir a cut-off plan
+     any date, that no `planned`{% if not gate %} or `plan written`{% endif %} line names — a cycle dir a cut-off plan
      made before the record could name it, the user's to delete;
    - the resume command: `ccc launch project-orchestrator --cwd <repo>`,
      naming the project dir.

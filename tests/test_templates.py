@@ -258,6 +258,7 @@ PROVENANCE_READERS = {
     "experimenter",
     "sketcher",
     "contrarian",
+    "plan-reviewer",
     "judge",
     "workflow-scanner",
     "eli5-explainer",

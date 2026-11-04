@@ -229,7 +229,7 @@ project workflows.
 | `todo-burndown` | Works ruled entries down through `review-chain` | Claude or Codex |
 | `todo-burndown-auto` | Works ruled entries down through `review-chain-auto` | Claude or Codex |
 | `project-burndown` | Works a multi-cycle project into one stack of branches, one per cycle, through `review-chain` | Claude or Codex |
-| `project-burndown-auto` | `project-burndown` with the forester deciding, through `review-chain-auto` | Claude or Codex |
+| `project-burndown-auto` | `project-burndown` with the forester deciding and every plan reviewed against the owner's words before it runs, through `review-chain-auto` | Claude or Codex |
 
 "Claude or Codex" means either CLI alone runs it; "Claude and Codex" means
 it needs both.
@@ -643,11 +643,13 @@ so they can be removed by hand before an entry is ruled.
 large for one cycle through as many cycles as it takes, and end with one
 stack of branches, one per cycle, never merged. They embed `review-chain`
 and `review-chain-auto` whole — except that in `-auto` the embedded chain
-never pushes — and add four roles: the driver
+never pushes — and add four roles, five in `-auto`: the driver
 `project-orchestrator`, which knows nothing about what is being built; the
 `project-forester`, a product-owner proxy that plans each cycle and digests
-it; the `experimenter`, which runs spikes; and the `publisher`, which pushes
-the stack and opens its PRs.
+it; the `experimenter`, which runs spikes; the `publisher`, which pushes
+the stack and opens its PRs; and, in `-auto` only, the `plan-reviewer`,
+which reviews each plan and request against your own words before the
+cycle runs.
 
 **Quick start.**
 
@@ -687,9 +689,21 @@ one of:
 
 In `project-burndown` you hold a **cycle gate** after every plan: `go`
 runs the cycle; anything else is written to `notes-plan-user-c<C>-g<G>.md`
-and the forester plans again. In `-auto` the forester's plan stands, and
-the embedded chain's forester holds its gates as in
-`review-chain-auto`.
+and the forester plans again. In `-auto` no one holds a gate on the plan;
+instead the **plan review** runs before every cycle: the `plan-reviewer`
+reads the plan and the request against `project.md`, the spec and your
+notes, adversarially, asking whether the forester is a faithful proxy —
+whether the request is what you asked for, contradicts your priorities or
+drifts from them, and moves the project toward the goal — and writes
+findings to `notes-plan-review-c<C>-g<G>.md`. With findings, a fresh
+project forester answers them in `dispositions-plan-c<C>-g<G>-a<A>.md`,
+editing the plan and the request, and the `judge` rules in
+`judge-verdict-plan-c<C>-g<G>-a<A>.md`, with one rework round. A judge
+escalation, a responder escalation, or a reviewer that wrote no reply
+stops the driver like a plan escalation: your words about the plan are
+written to `notes-plan-user-c<C>-g<G>.md` and the forester plans again;
+`skip` (not at a responder's stop) runs the plan as it stands. The
+embedded chain's forester then holds its gates as in `review-chain-auto`.
 
 **The state document.** After every cycle the forester digests it into
 `state-c<C>.md`: the goal, the branches, one short block per cycle, what
@@ -748,7 +762,8 @@ setting.
 **Resuming.** `driver-record.md` in the project dir is the driver's
 append-only record, and the only file it reads back. Launch the driver
 again naming the project dir: it re-enters where the record ends — the
-plan, the cycle gate, a plan escalation, the digest or the publish — once
+plan, the cycle gate, a plan escalation, a stop in the plan review, the
+digest or the publish — once
 HEAD is where the last cycle left it; it stops naming the commit and
 branch otherwise. An open cycle is resumed with `resume: <words>`, or
 closed as stopped with `close`. Run one driver per project at a time.

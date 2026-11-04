@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **`project-burndown-auto` reviews every plan before the cycle runs.** A
+  new role, the `plan-reviewer`, reads the project forester's plan and
+  `request.md` against your own words — `project.md`, the spec, your notes
+  on earlier plans — and asks one thing: is the forester a faithful proxy?
+  Does the request do what you asked, contradict your priorities or drift
+  from them, and move the project toward the goal? With findings, a fresh
+  project forester answers them (a new **respond** mode, editing the plan
+  and the request in place) and the `judge` rules, with one rework round.
+  A judge or responder escalation stops the driver like a plan escalation:
+  your words replan, `skip` runs the plan as it stands. The plain
+  `project-burndown` is unchanged: you already read every plan at its
+  cycle gate.
+  - The `plan-reviewer` is pinned like the project forester:
+    `claude-fable-5-1[1M]`, `gpt-6-astra` on Codex.
+  - The driver record gains two line kinds, `cycle <C> plan written: …`
+    and `cycle <C> plan review escalated: …`; the review's documents live
+    in the project dir as `notes-plan-review-c<C>-g<G>.md`,
+    `dispositions-plan-c<C>-g<G>-a<A>.md` and
+    `judge-verdict-plan-c<C>-g<G>-a<A>.md`.
+  - A project started on an earlier build resumes unchanged: its record's
+    `planned` lines are read as before. A project with a plan in flight
+    should finish or close that plan before you regenerate; a resumed
+    driver routes the old `plan` line to a replan, as it already does.
 - **Every agent that can run commands can now stop what it starts.** Until
   now an agent could launch a background process (a server, a watcher, a
   benchmark) with no tool to watch it or kill it; the experimenter was the

@@ -1,5 +1,25 @@
 # TODO
 
+## `correctness-plan-out-check-recomputes-today-on-cold-resume`
+
+In `project-orchestrator.md.j2` Loop step 2b, a `build`/`spike` reply's
+`out` must sit under the cycle dir parent and basename prefix the launch
+handed, and a fresh driver session rebuilds those from today's date (step 2b
+hands "`DD-<project slug>--` (today's date)"). A plan-mode `ESCALATE` resumed
+cold on a later day — Resume's `plan escalated` route re-enters step 2b's
+stop — therefore replies with a request path carrying the plan day's prefix
+and is routed as a failure. Affects `project-burndown` and
+`project-burndown-auto`, and `-auto`'s respond step (Loop step 2c item 2)
+when the last `plan written` line names `none` and a `done` plan becomes a
+build or spike after a cold resume of a `plan review escalated: respond`
+stop. The check must not depend on the day the session runs. No record line
+carries the day the launch was handed: the plan and dispositions paths sit
+in the project dir, dated by the project's start, and the record header has
+no date. Where the check's expected parent and prefix come from, and how
+it treats records written before the fix, is the fix's design. It is one
+change for every step that checks an `out`, not a patch on one of the two
+paths.
+
 ## `correctness-step5-guard-misses-named-cluster-mates-double-note`
 
 A `todo-triage retriage` of a cluster mate already sent back by an earlier

@@ -112,14 +112,58 @@ PROJECT_SEQUENCING_WORDING = (
         " ruled",
     ),
 )
+# In `-auto` the judge also adjudicates the plan review, a phase the plain
+# variant's cycle gate makes the user's.
+PROJECT_PLAN_PHASE = (
+    "## Plan phase Before a project cycle runs, a plan reviewer reviews the project forester's plan and"
+    " request against the owner's own words, and the project forester responds. The findings are about"
+    " fidelity to the owner. The responder is the owner's proxy, which is also the party under review:"
+    " its Won't-Do must quote the owner's words, not restate its own plan, and you check the quote"
+    " against `project.md`, the spec or the user's notes on your own desk, never on the responder's"
+    " say-so. - **Fixed** is verified in the plan and the request as they now read. - **TODO(slug)**"
+    " means a tracker entry, not a comment in the tree: verify a build's request lists it as a"
+    " deliverable, or a spike's plan lists it under **Next, probably** marked `owed to the tree`, slug"
+    " and entry text, and score the rubric in the plan's terms — Q1, is the item"
+    " worth doing against the owner's words; Q2, does it need the owner's ruling in `todo-triage` rather"
+    " than a place in this cycle's request. An item the owner's words plainly want and this cycle could"
+    " carry, deferred to the tracker, is a disputed deferral. Nothing in the tree is read for a deferral"
+    " here. - A request the responder wrote — the review ran on a `done` plan, and a disposition turned"
+    " it into a build or a spike — was never reviewed: put the reviewer's questions to it yourself,"
+    " against the owner's words on your desk. Is it what the owner wanted; does it contradict the"
+    " owner's priorities or drift from them; does the cycle move toward the goal? A request that fails"
+    " one makes that disposition disputed. - A disputed item's concrete fix is bounded to the plan and the request: you plan no slice"
+    ' of your own. A dispute that amounts to "the owner must say which reading" is an escalation, as a'
+    " fundamental disagreement is in any phase. "
+)
+PROJECT_JUDGE_WORDING = (
+    (
+        "or the document for a design phase; every reviewer notes path",
+        "or the document for a design phase, or, in a plan phase, the plan and the request (or none for a"
+        " `done` plan), with `project.md`, the spec it names, every `notes-plan-user-…` file, the latest"
+        " state and the code as ground truth, and every earlier plan of the cycle as the record a replan"
+        " answers; every reviewer notes path",
+    ),
+    (
+        "Explore the code yourself to answer those questions",
+        PROJECT_PLAN_PHASE + "Explore the code yourself to answer those questions",
+    ),
+    ("**Header** — phase, range", "**Header** — phase (`plan` in a plan phase), range"),
+    ("**Deferrals walk** (code phases)", "**Deferrals walk** (code and plan phases)"),
+    ("`-` in a design phase.", "`-` in a design phase or a plan phase."),
+)
 PROJECT_WORDING = {
     PROJECT_STEM: {"forester": PROJECT_SEQUENCING_WORDING},
     PROJECT_AUTO_STEM: {
         "orchestrator": PROJECT_PUSH_WORDING["orchestrator"],
         "forester": PROJECT_PUSH_WORDING["forester"] + PROJECT_SEQUENCING_WORDING,
+        "judge": PROJECT_JUDGE_WORDING,
     },
 }
 PROJECT_ROLES = {"project-orchestrator", "project-forester", "experimenter", "publisher"}
+# Per project stem, the roles it adds on top of its chain: `-auto` reviews
+# every plan before it runs, where the plain variant's user reads it at the
+# cycle gate.
+PROJECT_ADDED = {PROJECT_STEM: PROJECT_ROLES, PROJECT_AUTO_STEM: PROJECT_ROLES | {"plan-reviewer"}}
 
 # Set where the suite runs with `ccc` available, to turn the integration test's
 # skip into a failure.
@@ -202,6 +246,7 @@ RESULTS = {
     "contrarian": {"written"},
     "triage-forester": {"ruled", "selected", "nothing"},
     "project-forester": {"build", "spike", "done", "written"},
+    "plan-reviewer": {"findings", "no-findings"},
     "experimenter": {"written"},
     "publisher": {"published", "pushed", "unpushed"},
     # Interactive: the user reads the turn, the line only keeps the grammar closed.
@@ -1483,7 +1528,8 @@ def test_site_remover_never_commits(builds):
 
 
 @pytest.mark.parametrize(
-    ("embeds", "added"), [(BURNDOWN_EMBEDS, BURNDOWN_ROLES), (PROJECT_EMBEDS, PROJECT_ROLES)]
+    ("embeds", "added"),
+    [(BURNDOWN_EMBEDS, {stem: BURNDOWN_ROLES for stem in BURNDOWN_EMBEDS}), (PROJECT_EMBEDS, PROJECT_ADDED)],
 )
 def test_two_level_variants_embed_their_chain(builds, embeds, added):
     """The inner orchestrator resolves its roles from the two-level variant's
@@ -1491,8 +1537,8 @@ def test_two_level_variants_embed_their_chain(builds, embeds, added):
     """
     for stem, chain_stem in embeds.items():
         build, chain = builds[stem], builds[chain_stem]
-        assert set(build.by_id) - added == set(chain.by_id), stem
-        assert added <= set(build.by_id), stem
+        assert set(build.by_id) - added[stem] == set(chain.by_id), stem
+        assert added[stem] <= set(build.by_id), stem
         for role_id, role in chain.by_id.items():
             where = f"{stem}/{role_id}"
             assert build.by_id[role_id].frontmatter == role.frontmatter, where
@@ -1642,9 +1688,10 @@ def test_stack_vocabulary_is_absent_elsewhere(builds):
             _assert_no_vocabulary(build, forbidden)
             continue
         # A project's own roles keep "stack" for its stack of cycle branches.
-        _assert_no_vocabulary(build, forbidden, set(build.by_id) - PROJECT_ROLES)
+        added = PROJECT_ADDED[build.stem]
+        _assert_no_vocabulary(build, forbidden, set(build.by_id) - added)
         project_forbidden = [word for word in forbidden if word != "stack"] + ["-stack-work"]
-        _assert_no_vocabulary(build, project_forbidden, PROJECT_ROLES)
+        _assert_no_vocabulary(build, project_forbidden, added)
 
 
 def test_followup_vocabulary_is_absent_elsewhere(builds):
@@ -2466,12 +2513,18 @@ PROJECT_CUT_OFF_ROUTES = (
 )
 
 
+# The plan review's launches, in `-auto` only; one recovery pointer at the
+# head of the section covers its three launches.
+PROJECT_REVIEW_CUT_OFF_ROUTES = (("c. **Plan review.**", "d. **Route the plan**"),)
+
+
 def test_project_driver_recovers_before_every_stop(builds):
     """Every launch the driver makes points at recovery before its first
     stop, routes an unrecovered launch, and relays an `ESCALATE` verbatim.
     """
-    for where, flat, _ in _project_driver_bodies(builds):
-        for start, end in PROJECT_CUT_OFF_ROUTES:
+    for where, flat, variant in _project_driver_bodies(builds):
+        routes = PROJECT_CUT_OFF_ROUTES + (PROJECT_REVIEW_CUT_OFF_ROUTES if _decide(variant) else ())
+        for start, end in routes:
             route = _between(flat, start, end)
             pointer = "A cut-off launch → **Cut-off launch**"
             assert pointer in route, f"{where}: {start}"
@@ -2546,17 +2599,23 @@ RECORD_LINE_KINDS = (
     "plan", "plan escalated", "plan done", "planned", "started", "session", "ended",
     "digested", "publish", "published", "publish skipped",
 )
+# The kinds only the `-auto` driver's plan review writes.
+REVIEW_RECORD_LINE_KINDS = ("plan written", "plan review escalated")
 
 
 def test_project_driver_resumes_from_every_record_state(builds):
     """Every line the record can end on has a resume route, after the HEAD
     check; a plan the session lost is never renumbered over.
     """
-    for where, flat, _ in _project_driver_bodies(builds):
+    for where, flat, variant in _project_driver_bodies(builds):
         resume = _between(flat, "3. **Resume.**", "4. **Project commit**")
-        for kind in RECORD_LINE_KINDS:
+        review = REVIEW_RECORD_LINE_KINDS if _decide(variant) else ()
+        for kind in RECORD_LINE_KINDS + review:
             assert f"`{kind}`" in resume, f"{where}: {kind}"
             assert f"cycle <C> {kind}:" in flat, f"{where}: {kind}"
+        if not review:
+            for kind in REVIEW_RECORD_LINE_KINDS:
+                assert kind not in flat, f"{where}: {kind}"
         assert "Every other state first passes the **HEAD check (record)**." in resume, where
         assert "`G` += 1, Loop step 2b" in resume, where
         assert "One driver per project at a time" in resume, where
@@ -2567,6 +2626,18 @@ def test_project_driver_cycle_gate_only_where_the_user_holds_it(builds):
         gate = not _decide(variant)
         assert ("**Cycle gate:** STOP" in flat) == gate, where
         assert ("Step 3 at once." in flat) == (not gate), where
+
+
+def test_plan_reviewer_role_exactly_where_the_forester_decides(builds):
+    """The plan review renders on `forester_autonomy = "decide"`, the reviewer
+    exists through its `[roles.plan-reviewer]` table: every shipped variant
+    keeps the two in agreement, so neither a dead role nor an unreviewed
+    deciding forester builds.
+    """
+    for stem, build in builds.items():
+        roles = build.variant.roles
+        expected = "project-orchestrator" in roles and _decide(build.variant)
+        assert ("plan-reviewer" in roles) == expected, stem
 
 
 def test_project_driver_setup_guards_the_prefix_and_sidecar(builds):
@@ -2603,10 +2674,11 @@ def test_project_driver_checks_the_cycle_dir_it_records(builds):
     """A plan's `out` becomes a cycle dir only under the parent and basename
     prefix the launch handed, so no project commit runs in a dir elsewhere.
     """
-    for where, flat, _ in _project_driver_bodies(builds):
+    for where, flat, variant in _project_driver_bodies(builds):
         plan = _between(flat, "b. **Launch the plan.**", "- `done` → append")
         check = plan.index("`out` must be `<cycle dir parent><basename prefix><cycle slug>/request.md`")
-        assert check < plan.index("Append `cycle <C> planned:"), where
+        append = "Append `cycle <C> plan written:" if _decide(variant) else "Append `cycle <C> planned:"
+        assert check < plan.index(append), where
         assert "the file must exist (`test -f`) → else route as `ESCALATE` below" in plan, where
 
 
@@ -2632,6 +2704,146 @@ def test_project_driver_end_lists_orphans_of_any_date(builds):
     for where, flat, _ in _project_driver_bodies(builds):
         end = flat[flat.index("### End"):]
         assert "every directory matching `<ADR root>/*/*/??-<project slug>--*`, any date" in end, where
+
+
+def test_project_plan_is_reviewed_before_it_runs(builds):
+    """In `-auto`, where no user reads the plan, every plan and request is
+    reviewed, answered and judged before the cycle runs; the plain driver's
+    user reads them at the cycle gate instead.
+    """
+    for where, flat, variant in _project_driver_bodies(builds):
+        if not _decide(variant):
+            for word in ("plan-reviewer", "plan written", "plan review escalated", "Plan review"):
+                assert word not in flat, f"{where}: {word}"
+            plan = _between(flat, "b. **Launch the plan.**", "3. **Run the cycle.**")
+            assert "Append `cycle <C> planned:" in plan, where
+            continue
+        plan = _between(flat, "b. **Launch the plan.**", "c. **Plan review.**")
+        assert "Append `cycle <C> plan written: <kind> <target> request <out>`. Step 2c." in plan, where
+        assert "append `cycle <C> plan written: done <target> request none`. Step 2c." in plan, where
+        assert "planned:" not in plan, where
+        assert "No review runs on an escalation" in plan, where
+        review = _between(flat, "c. **Plan review.**", "d. **Route the plan**")
+        reviewer = _between(review, "1. **Review.**", "2. **Respond.**")
+        respond = _between(review, "2. **Respond.**", "3. **Judge.**")
+        judge = review[review.index("3. **Judge.**"):]
+        assert "`ccc run plan-reviewer`" in reviewer, where
+        assert "target `<project dir>/notes-plan-review-c<C>-g<G>.md`" in reviewer, where
+        assert "`no-findings` → step 2d" in reviewer, where
+        assert "`skip` → step 2d" in reviewer, where
+        for given in (
+            "`project.md` path",
+            "latest state path or `none`",
+            "every earlier plan path of this cycle",
+            "every `notes-plan-user-c<C>-…` path",
+        ):
+            assert given in reviewer, f"{where}: reviewer is handed {given}"
+            assert given in judge, f"{where}: judge is handed {given}"
+        assert "review escalated: review <target> session <id>" in reviewer, where
+        assert "`ccc run project-forester`, mode **respond**" in respond, where
+        assert "target `<project dir>/dispositions-plan-c<C>-g<G>-a<A>.md`" in respond, where
+        assert "never by the reviewer again" in respond, where
+        assert "every plan-mode input of step 2b but the target" in respond, where
+        assert "on round 2 also the round-1 dispositions path and verdict path" in respond, where
+        assert "when the last `plan written` line names a request, `out` must be that path" in respond, where
+        assert "when it names `none`, step 2b's `out` check" in respond, where
+        assert "review escalated: respond <target> session <id>" in respond, where
+        assert "No `skip` here" in respond, where
+        assert "`skip` →" not in respond, where
+        assert "`ccc run judge`, round `A`" in judge, where
+        assert 'round 2 told "round 2 — approved or escalate only"' in judge, where
+        assert "`rework` on round 1 → `A` = 2, item 2." in judge, where
+        assert judge.count("`A` = 2") == 1, where
+        assert "`rework` on round 2 is a missing status line" in judge, where
+        assert "review escalated: judge <target>`" in judge, where
+        assert "`skip` → step 2d" in judge, where
+        assert "The judge is never resumed" in judge, where
+        route = _between(flat, "d. **Route the plan**", "3. **Run the cycle.**")
+        assert "append `cycle <C> planned: <kind> <plan path> request <request path>`. Step 3 at once." in route, where
+        assert flat.count("append `cycle <C> planned:") + flat.count("Append `cycle <C> planned:") == 1, where
+        for line in (
+            "cycle <C> plan written: build|spike|done <plan path> request <request path|none>",
+            "cycle <C> plan review escalated: review <notes path> session <ccc session id>",
+            "cycle <C> plan review escalated: respond <dispositions path> session <ccc session id>",
+            "cycle <C> plan review escalated: judge <verdict path>",
+        ):
+            assert line in flat, f"{where}: {line}"
+        resume = _between(flat, "3. **Resume.**", "4. **Project commit**")
+        assert "`plan written` → the plan review was cut off with the session: `G` += 1, Loop step 2b" in resume, where
+        assert "`review` → Loop step 2c item 1's STOP again, with the recorded notes path and session id" in resume, where
+        assert "`A` = the `a` of the path on a `respond` or `judge` line" in resume, where
+        assert "`respond` → Loop step 2c item 2's `ESCALATE` STOP again, with the recorded dispositions path" in resume, where
+        assert "`judge` → Loop step 2c item 3's `ESCALATE` STOP again, with the verdict path" in resume, where
+        commit = _between(flat, "### Project commit", "### Never")
+        assert "a `cycle <C> planned` or `cycle <C> plan written` line names" in commit, where
+        end = flat[flat.index("### End"):]
+        assert "that no `planned` or `plan written` line names" in end, where
+
+
+def test_plan_reviewer_asks_the_owners_questions(builds):
+    """The plan reviewer is the owner's adversary against the proxy: four
+    questions, one finding category, every claim quoted from the owner's
+    words, and no planning of its own; it reads like the contrarian and
+    spawns nothing.
+    """
+    build = builds[PROJECT_AUTO_STEM]
+    contrarian = builds[TRIAGE_STEM].by_id["contrarian"]
+    reviewer = build.by_id["plan-reviewer"]
+    assert reviewer.frontmatter["tools"] == contrarian.frontmatter["tools"]
+    assert "plan-reviewer" not in builds[PROJECT_STEM].by_id
+    for name, body in build.bodies("plan-reviewer"):
+        flat = " ".join(body.split())
+        where = f"{PROJECT_AUTO_STEM}/{name}"
+        for phrase in (
+            "**Is this request what the owner wanted?**",
+            "**Is the proxy a good proxy?**",
+            "**Direct contradiction, or indirect drift.**",
+            "**Does this cycle move toward the goal?**",
+            "categories here: `fidelity-` only",
+            "## Not this reviewer's job",
+            "Whether the request can ship in one squash",
+            "never a slice of your own",
+            "Every claim about the owner's intent quotes the owner's words by path and line.",
+            "You do not pick the reading",
+            "edit neither the plan nor the request",
+            "On a replan, check too that the plan answers every user note",
+            "you spawn no explorers",
+        ):
+            assert phrase in flat, f"{where}: {phrase}"
+        assert spawn_references(body) == set(), where
+
+
+def test_project_forester_responds_to_the_plan_review(builds):
+    """Only the `-auto` project forester answers a plan review: the chain's
+    three dispositions with the plan's meanings, a kind that may change, and
+    no finding standing in for the owner's words.
+    """
+    for stem in PROJECT_EMBEDS:
+        decide = _decide(builds[stem].variant)
+        for name, body in builds[stem].bodies("project-forester"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            assert ("## Mode: respond" in body) == decide, where
+            if not decide:
+                assert "Modes: **plan** and **digest**." in flat, where
+                continue
+            assert "Modes: **plan**, **respond** and **digest**." in flat, where
+            respond = _between(flat, "## Mode: respond", "## Mode: digest")
+            for phrase in (
+                "- **Fixed** — the plan or the request changed",
+                "A fix may change the plan's **Kind**.",
+                "the cycle dir it had stays on disk as a record, never deleted",
+                "- **TODO(slug)** — the item becomes a tracker entry",
+                "A build's request lists it as a deliverable",
+                "a spike files nothing, so its plan carries the entry under **Next, probably**, marked `owed to the tree`",
+                "A clear NO to Q2",
+                "- **Won't-Do** — following the finding would contradict the owner's own words",
+                "a finding never answers for the owner",
+                "reply `ESCALATE` with `out` the plan",
+                "carrying every undisputed block unchanged",
+            ):
+                assert phrase in respond, f"{where}: {phrase}"
+            assert "> *Provenance:" not in respond, where
 
 
 def test_project_forester_plans_and_digests(builds):
@@ -2948,7 +3160,7 @@ SCOPE_ROLES = {
 SCOPE_SHORT_FORM_ROLES = {"comment-rewriter", "changelog-author"}
 NO_SCOPE_ROLES = {
     "eli5-explainer", "explorer", "forester-commentator", "site-remover", "sketcher", "contrarian",
-    "triage-clerk", "pr-assembler", "pr-liaison",
+    "triage-clerk", "pr-assembler", "pr-liaison", "plan-reviewer",
 }
 SCOPE_WIDENING_RULE = "Only the user widens the scope."
 SCOPE_STACK_RULE = "This cycle runs in **exactly one repository**"
