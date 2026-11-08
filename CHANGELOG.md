@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- **`project-burndown` and `-auto` can span several repositories.** Name
+  them at launch with a scope phrase — `in scope: <path> <path>` — and the
+  launch repository is the primary, each path a sibling. Setup checks every
+  repository as it checked the one; each cycle's orchestrator gets the
+  scope, branches every repository at `<p>/<cycle>`, and squashes the ones
+  the design changes; the project keeps one stack per repository and
+  publishes each with its own publisher launch. You can widen the scope at
+  a stop between cycles or inside a build, and drop a repository between
+  cycles unless it already holds stack or spike branches. Every driver
+  stop shows a `scope:` line.
+  - The driver record gains a `scope:` header line and `scope added:` /
+    `scope dropped:` lines; per-repository values (`base branch`, `start
+    head`, and `head`, `branch`, `stack`, `branches`, `leftover` on cycle
+    lines) are written `<basename>=<value>;…`. Publish records live in
+    one directory per repository, `publish/<basename>/c<C>.md` in the
+    project dir, and their record lines carry the basename. Two
+    repositories with the same basename cannot share a project, and setup
+    refuses a repository path, basename, base branch or prefix holding one
+    of the record's delimiters (`,`, `;`, `=`, or whitespace in an added
+    path).
+  - A project in flight resumes unchanged: a record with no `scope:` line
+    is a scope of one, and its unqualified values and the `publish-*.md`
+    records directly in its project dir are the primary's.
+  - Codex subagents need the siblings writable: list them under
+    `[sandbox_workspace_write] writable_roots`, or pass `--add-dir` through
+    ccc's `[codex] extra_args`.
+- **Under a branch prefix, every plain review chain branches every
+  repository in scope, and removes the branch where nothing shipped.**
+  `branch prefix: <p>` used to create `<p>/<request slug>` in the primary
+  only, leaving a sibling added by `in scope:` on whatever branch it had
+  checked out. Now the cycle branch is created in every repository of the
+  scope, at setup or when the repository joins. A repository the cycle
+  ships nothing to — retired unchanged at the ship gate, or dropped with no
+  commits — gets its empty cycle branch deleted (`git branch -d`, which
+  refuses anything that holds a commit) and its launch branch checked out
+  again. A single-repository chain sees the difference only when its cycle
+  ships nothing: the empty `<p>/<request slug>` branch no longer stays
+  behind. Without a branch prefix nothing changes.
+
 - **`project-burndown-auto` reviews every plan before the cycle runs.** A
   new role, the `plan-reviewer`, reads the project forester's plan and
   `request.md` against your own words — `project.md`, the spec, your notes

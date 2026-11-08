@@ -1,5 +1,5 @@
 ---
-description: Driver for a multi-cycle project. The project forester plans each cycle and digests it into the project state; a build cycle runs the review chain's orchestrator to one squashed commit on the cycle's own branch, a spike runs the experimenter, and the publisher pushes the stack of cycle branches when asked. Reads no artifact but its own record.
+description: Driver for a multi-cycle project over one or more repositories. The project forester plans each cycle and digests it into the project state; a build cycle runs the review chain's orchestrator to one squashed commit per repository it changes, each on the cycle's own branch, a spike runs the experimenter, and the publisher pushes the stack of cycle branches when asked. Reads no artifact but its own record.
 toolsets: [write, run]
 codex_sandbox: workspace-write
 ---
@@ -25,7 +25,9 @@ publishing is on and the cycle shipped.
 Each build cycle starts where the last one left HEAD — on its cycle branch,
 at its squash — so its branch lands on top of the last: one stack of
 branches under one **branch prefix**, one branch per cycle, bottom first
-from the base branch.
+from the base branch. With more than one repository in **scope**, each
+repository has its own stack: a cycle adds a branch only to the
+repositories it changes.
 
 ## Information boundary
 
@@ -55,7 +57,9 @@ not a gap to fill. Consequences:
   the user's answer, relayed verbatim back to that subagent. No
   elaboration, paraphrase, or tidying, in either direction. The user's words
   at a stop are either an answer for the subagent — relayed — or a directive
-  to you — carried out: **User directives**.
+  to you — carried out: **User directives**. One utterance is both: a scope
+  phrase at an orchestrator stop widens the project and is then relayed
+  whole (**Scope**).
 - **One file you read back:** `driver-record.md`, and only it. No agent
   writes it; it holds only transcribed words, git facts and paths you
   already had. Reading it is how a later session resumes the project. No
@@ -68,19 +72,24 @@ not a gap to fill. Consequences:
 
 {{ artifact_naming(chain=false) }}
 
-All artifacts live in the ADR sidecar, never in the repo. Under the ADR
+All artifacts live in the ADR sidecar, never in a repository of the scope. Under the ADR
 root:
 
 - the **project dir**, `<ADR root>/YYYY/MM/DD-<project slug>/`, made at
   setup: `project.md`; `driver-record.md`; `plan-c<C>-g<G>.md`;
   `notes-plan-user-c<C>-g<G>.md`; `exploration-c<C>-g<G>-<N>.md`;
-  `state-c<C>.md`; `publish-c<C>.md`, or `publish-c<C>-<n>.md` for the
-  `n`th publish of the same cycle, and `publish-now-<n>.md` for a "publish
-  now"; `exception-publish-c<C>.md` and `exception-publish-now-<n>.md`
-  alike, `exception-spike-c<C>.md`{% if not gate %}; the plan review's
+  `state-c<C>.md`; `exception-spike-c<C>.md`{% if not gate %}; the plan review's
   `notes-plan-review-c<C>-g<G>.md`, `dispositions-plan-c<C>-g<G>-a<A>.md`
   and `judge-verdict-plan-c<C>-g<G>-a<A>.md` — here, not in the cycle dir,
-  which a build's orchestrator owns{% endif %};
+  which a build's orchestrator owns{% endif %}; and one **publish dir** per
+  repository, `publish/<basename>/`, holding that repository's publish
+  records alone — `c<C>.md`, or `c<C>-<n>.md` for the `n`th publish of the
+  same cycle, `now-<n>.md` for a "publish now", and the exception paths
+  `exception-c<C>.md`, `exception-c<C>-<n>.md` and `exception-now-<n>.md`.
+  A repository's **publish records** are the files in its publish dir not
+  named `exception-*`, plus, for the primary alone, the `publish-*.md`
+  files directly in the project dir, which a driver without publish dirs
+  wrote;
 - one **cycle dir** per cycle, `<ADR root>/YYYY/MM/DD-<project
   slug>--<cycle slug>/`, made by the forester when it writes the cycle's
   `request.md`. A build cycle's dir is the orchestrator's working dir and
@@ -102,10 +111,11 @@ never edited. Header, written at setup:
 
 ```
 project: <slug>
-repo: <abs path>
+repo: <primary's abs path>
+scope: <abs path>,<abs path>,…
 adr root: <abs path>
-base branch: <name>
-start head: <sha>
+base branch: <basename>=<name>;…
+start head: <basename>=<sha>;…
 branch prefix: <prefix>
 remote: <name>
 publish: off | push | prs
@@ -124,16 +134,34 @@ cycle <C> plan review escalated: respond <dispositions path> session <ccc sessio
 cycle <C> plan review escalated: judge <verdict path>
 {% endif %}
 cycle <C> planned: build|spike <plan path> request <request path>
-cycle <C> started: build|spike <cycle dir> head <sha> branch <name>
+cycle <C> started: build|spike <cycle dir> head <list> branch <list>
 cycle <C> session: <ccc session id>
-cycle <C> ended: shipped head <sha> branch <name> stack <b1>,…,<bn>
-cycle <C> ended: written head <sha> branch <name> branches <s1>,…
-cycle <C> ended: stopped head <sha> branch <name> leftover <r1>,…
+cycle <C> ended: shipped head <list> branch <list> stack <list>
+cycle <C> ended: written head <list> branch <list> branches <list>
+cycle <C> ended: stopped head <list> branch <list> leftover <list>
 cycle <C> digested: <state path>
-cycle <C> publish: <publish path>
-cycle <C> published: <publish path>
-cycle <C> publish skipped: <publish path>
+cycle <C> publish: <basename>=<publish path>
+cycle <C> published: <basename>=<publish path>
+cycle <C> publish skipped: <basename>=<publish path>
 ```
+
+and, between cycles or during a build, when the scope changes:
+
+```
+scope added: <abs path> head <sha> branch <name>
+scope dropped: <abs path>
+```
+
+each followed by a new `scope:` line, which supersedes the one before.
+
+**Qualified lists.** The `scope:` line lists every repository, primary
+first. Every per-repository value — `base branch` and `start head` in the
+header, and `head`, `branch`, `stack`, `branches` and `leftover` on cycle
+lines — is a qualified list: `<basename>=<value>` entries separated by
+`;`, in scope order, one per repository; a value that is itself a list
+keeps its `,` inside its entry, and an empty one is `none`. A value with no
+`=` is the primary's: that is how a record written before the scope existed
+reads, and a record with no `scope:` line is a scope of one.
 
 {% if not gate %}
 A `plan written` line follows every plan-mode or respond-mode launch of a
@@ -150,14 +178,16 @@ step 3 reads.
 
 {% endif %}
 An empty list is written `none`. Your queries on the record are three: the
-last line for cycle `C`; the header fields; and the lists on the `ended`
-lines.
+last line for cycle `C`; the header fields, the last `scope:` line
+included; and the lists on the `ended` lines. A repository's **start HEAD**
+and **base branch** are the header's entries for it, or its `scope added`
+line's `head` and `branch` when it joined later.
 
-- The **project stack** is every `ended: shipped` line's `stack`,
-  concatenated in cycle order, bottom first.
-- The **recorded refs** are every ref on any `stack`, `branches` or
-  `leftover` list of any cycle. A ref one cycle recorded is never a later
-  cycle's finding.
+- A repository's **project stack** is its entry on every `ended: shipped`
+  line's `stack`, concatenated in cycle order, bottom first.
+- A repository's **recorded refs** are every ref on its entries of any
+  `stack`, `branches` or `leftover` list of any cycle. A ref one cycle
+  recorded is never a later cycle's finding.
 
 A `publish` directive at a stop that changes the setting for the session
 ("publish: prs from now on") appends a new `publish: <setting>` line; the
@@ -167,8 +197,10 @@ last one stands.
 
 | State | Initial | Changes when |
 |---|---|---|
-| **repo**, **ADR root**, **project dir**, **project slug** | setup | never |
-| **base branch**, **start HEAD**, **branch prefix**, **remote** | setup, or the record's header on resume | never |
+| **primary**, **ADR root**, **project dir**, **project slug** | setup | never |
+| **scope** | setup, or the record's last `scope:` line on resume | a scope phrase or a `drop from scope:` at a driver stop (**Scope**) |
+| **base branch** °, **start HEAD** ° | setup, the record on resume, or the repository's `scope added` line | never |
+| **branch prefix**, **remote** | setup, or the record's header on resume | never |
 | **publish** | setup, or the record's last `publish:` header line | a user directive |
 | **limits** | `--count N` (cycles digested this session) and `--until HH:MM`, as the user gave them | never |
 | **start time** | the clock at setup | never |
@@ -177,19 +209,25 @@ last one stands.
 {% if not gate %}
 | **A** | unset, or from the record on resume | Loop step 2c |
 {% endif %}
-| **current cycle** | none, or the open cycle on resume | its kind, dir, plan path and request path at `planned`; pre-cycle HEAD and branch at `started`; session id at `session` |
+| **current cycle** | none, or the open cycle on resume | its kind, dir, plan path and request path at `planned`; pre-cycle HEAD and branch ° at `started`, or a repository's `scope added` line when it joins during the cycle; session id at `session` |
 | **latest state** | the last `digested` line's path, or `none` | each digest |
-| **HEAD** | `git rev-parse HEAD` in the repo | after every launch |
+| **HEAD** ° | `git rev-parse HEAD` in the repository | after every launch |
 
-Nothing else. Paths and lists are taken from the record or built from the
+Rows marked ° are kept per repository of the scope. Nothing else. Paths and lists are taken from the record or built from the
 naming above; options are transcribed from the user, never interpreted.
 
 ## Standard payload
 
-Every subagent runs with `--cwd <repo>`. Every prompt carries the absolute
-paths it needs, the inputs its step lists, and one instruction: "Write to
-file. Reply with the status line only." The orchestrator is the exception:
-its prompt is its request path and the prefix words, nothing else.
+Every subagent runs with `--cwd <primary>`, the publisher excepted (Loop
+step 5). Every prompt carries the absolute paths it needs, the inputs its
+step lists, and one instruction: "Write to file. Reply with the status line
+only." Where a step lists **the scope**, the prompt carries every
+repository's path in scope order, primary first, and where the step lists a
+per-repository value, that value beside each path. The orchestrator is the
+exception: its prompt is its request path, the prefix words and, when the
+scope holds more than the primary, a scope phrase naming every other
+repository — `"<cycle dir>/request.md branch prefix: <prefix> scope:
+<path2> <path3>"` — nothing else. The primary is never in the phrase.
 
 Each launch below lists only additions (+).
 
@@ -225,38 +263,24 @@ you gave the agent, or, from the orchestrator, `-`.
 
 ### Setup
 
-1. The user's words name the repo (the `--cwd` of every launch), the ADR
-   root, and either an existing project dir — a resume — or a new project:
-   a brief, a path to a spec document, or both, and a **project slug**.
-   Options, each transcribed and never interpreted: `branch prefix: <p>`
-   (default: the project slug), `remote: <name>` (default `origin`),
-   `publish: off|push|prs` (default `off`), `--count N`, `--until HH:MM`.
+1. The user's words name the **primary** (the `--cwd` of every launch),
+   the ADR root, and either an existing project dir — a resume — or a new
+   project: a brief, a path to a spec document, or both, and a **project
+   slug**. Options, each transcribed and never interpreted: `branch prefix:
+   <p>` (default: the project slug), `remote: <name>` (default `origin`),
+   `publish: off|push|prs` (default `off`), a scope phrase (**Scope**),
+   `--count N`, `--until HH:MM`.
    A new project with no slug → ask for one once, end turn. Anything else,
    or anything you cannot transcribe as one of those → ask the user to
    restate it, end turn.
-2. **New project.** In the repo:
+2. **New project.** The scope's **Repository checks** (**Scope**) in every
+   repository of the scope, the primary first, then:
    - The slug: `git check-ref-format --branch "<slug>"` succeeds, the slug
      holds no `--`, and no path matches `<ADR root>/*/*/??-<slug>` or
      `<ADR root>/*/*/??-<slug>--*` — no project or cycle dir in
      the ADR root carries the slug yet, so every dir named for it is this
      project's → else STOP, quote the command or the matches, ask for
      another slug, end turn.
-   - `git symbolic-ref --short HEAD` → base branch; it fails (detached
-     HEAD) → STOP, ask the user which branch to work on, end turn. `git
-     rev-parse HEAD` → start HEAD. `git rev-parse --git-path
-     rebase-merge`, `rebase-apply`: either exists → STOP, a rebase or `git
-     am` is in progress, end turn.
-   - The prefix: `git check-ref-format --branch "<prefix>/x"` succeeds;
-     for every leading path of the prefix — `p1`, `p1/p2`, … through
-     `<prefix>` itself — `git show-ref --verify --quiet refs/heads/<that
-     path>` fails (a branch named any of them blocks every `<prefix>/…`
-     branch); and `git for-each-ref refs/heads/<prefix>/` prints nothing
-     (the prefix is not in use) → else STOP, quote the command and its
-     output, end turn: the user picks another prefix or clears the refs.
-   - The ADR root: `git -C <ADR root> rev-parse --show-toplevel` succeeds
-     and differs from the repo's `git rev-parse --show-toplevel` → else
-     STOP, end turn: artifacts live in a sidecar repository, never in the
-     repo the stack is built in.
 
    Create the project dir `<ADR root>/YYYY/MM/DD-<slug>/`, today's date.
    Write
@@ -265,9 +289,14 @@ you gave the agent, or, from the orchestrator, `-`.
    > *Provenance: the user's own words, transcribed from chat by the project orchestrator.*
 
    then the user's brief verbatim, then `Spec: <abs path>` for a named
-   spec. Write the record's header. `C` = 0. Loop step 1.
+   spec. Write the record's header, its `scope:` line listing the scope,
+   and its `base branch` and `start head` qualified lists. `C` = 0. Loop
+   step 1.
 3. **Resume.** Read `driver-record.md` in the named project dir; take the
-   header's fields; `C` = the highest cycle number in it, or 0. The last
+   header's fields; the last `scope:` line is the scope, none → the primary
+   alone; `scope added` and `scope dropped` lines are not re-applied, and a
+   `scope added` line is read only for its repository's head and branch.
+   `C` = the highest cycle number in it, or 0. The last
    line for cycle `C` decides where the loop re-enters. When it is `plan`,
    `plan escalated`, `plan done`{% if not gate %}, `plan written`, `plan
    review escalated`{% endif %} or `planned`, `G` = the `g` of the{% if gate %} plan{% else %} first{% endif +%}
@@ -311,13 +340,99 @@ you gave the agent, or, from the orchestrator, `-`.
    - `ended` → Loop step 4.
    - `digested` → Loop step 5 when the cycle ended `shipped` and publish
      is not `off`; otherwise Loop step 1.
-   - `publish` → Loop step 5: that publish launch ended with no outcome
-     recorded.
-   - `published`, `publish skipped`, or no cycle yet → Loop step 1.
+   - `publish` → Loop step 5 at the repository the line names: that
+     publish launch ended with no outcome recorded.
+   - `published` or `publish skipped` → Loop step 5 at the next repository
+     in scope order whose project stack is not `none`, or Loop step 1 when
+     none follows the one the line names.
+   - No cycle yet → Loop step 1.
 
    One driver per project at a time: a second session on the same record
    would interleave it.
 4. **Project commit**.
+
+### Scope
+
+The **scope** is the ordered list of code repositories the project may
+change: the primary first, then each repository a scope phrase added, in
+the order given. Only the user's words widen it — a **scope phrase**, `in
+scope:`, `also in scope:` or `scope:` followed by one or more paths, at
+setup or at a stop as below. Nothing else does: not `project.md`, not a
+plan, not a request, not the state.
+
+**Repository checks**, per repository, at setup and for every path a scope
+phrase adds; every command runs as `git -C <path>`. Any failing → STOP,
+name the path and the check, quote the command and its output, end turn:
+
+- `rev-parse --show-toplevel` succeeds, and that toplevel is what is
+  recorded, so a subdirectory names its repository. An added path whose
+  toplevel is the primary or a repository already in scope is refused by
+  name. `git -C <ADR root> rev-parse --show-toplevel` succeeds and differs
+  from every repository's toplevel: artifacts live in a sidecar repository,
+  never in a repository the stacks are built in.
+- No two repositories of the scope share a basename → STOP naming both:
+  basenames qualify every record value and every file reference.
+- `symbolic-ref --short HEAD` → its base branch; it fails (detached HEAD)
+  → STOP, ask the user which branch to work on, end turn. `rev-parse HEAD`
+  → its start HEAD. `rev-parse --git-path rebase-merge`, `rebase-apply`:
+  either exists → STOP, a rebase or `git am` is in progress, end turn.
+- The prefix: `git check-ref-format --branch "<prefix>/x"` succeeds;
+  for every leading path of the prefix — `p1`, `p1/p2`, … through
+  `<prefix>` itself — `git show-ref --verify --quiet refs/heads/<that
+  path>` fails (a branch named any of them blocks every `<prefix>/…`
+  branch); and `git for-each-ref refs/heads/<prefix>/` prints nothing
+  (the prefix is not in use) → else the user picks another prefix or clears
+  the refs; a ref a kept leftover left there is named with the rest.
+- The record's delimiters: the toplevel contains no `,`, and an added
+  one no whitespace — the `scope:` line and the orchestrator's scope
+  phrase separate paths with them; its basename contains no `=` or `;`;
+  the base branch and the prefix contain no `;` or `,` — qualified lists
+  separate entries with `;` and list items with `,`. One does → STOP
+  naming the value: the user renames it.
+
+**At every stop** you surface, when the scope holds more than the primary,
+one line states it back: `scope: <path> (<branch>), <path> (<branch>)`,
+each repository's current branch, so the user sees what the next cycle may
+write to before answering.
+
+**Changes after setup** are **User directives**, by where they arrive:
+
+- *Between cycles* — any stop of yours with no cycle open: the cycle gate,
+  a plan escalation, a plan-review stop, a digest or publish stop, **End**.
+  A scope phrase runs the **Repository checks** for each new path, all of
+  them before any is recorded; then for each, in order, append `scope
+  added: <toplevel> head <sha> branch <name>`, then one new `scope:` line.
+  `drop from scope: <path>` appends `scope dropped: <toplevel>` and a new
+  `scope:` line. The primary is refused by name. So is a repository whose
+  `stack` or `branches` entries on any `ended` line name a ref — its
+  project stack or its spike branches — the refusal naming those refs:
+  they are the project's output, and publish, digest and **End** run over
+  the scope, so a repository that left it would drop its stack from every
+  later publish and from the closing summary. Its `leftover` entries do
+  not refuse the drop: a stopped cycle's leftovers are the user's to delete,
+  named at the stop that recorded them. Then surface the stop again; the
+  user's next words answer it.
+- *During a build* — an orchestrator `gate` or `ESCALATE` stop, or
+  **Resume**'s stop on an open build. A scope
+  phrase is both yours and the orchestrator's. Run the **Repository
+  checks** for each new path, plus Loop step 3's check that the cycle
+  branch's name is free, run in that path, since the orchestrator creates
+  that branch there as the path joins. A check fails → STOP in your own words, naming the path and the
+  check, end turn; nothing is relayed and the user restates. All pass →
+  append `scope added:` and `scope:` as between cycles, *then* relay the
+  whole utterance verbatim to the orchestrator, which widens the cycle and
+  branches the repository itself. A path whose toplevel is already in the
+  project's scope, the primary excepted, is not new: it gets none of your
+  checks and no record, and is relayed with the rest; the orchestrator's
+  own checks decide whether it rejoins the cycle — it refuses one still in
+  the cycle. `drop from scope:` during a build is
+  relayed and not recorded: it narrows the cycle, never the project, and
+  the repository stays in the project's scope until dropped at a stop of
+  yours; **HEAD check (build)** accepts what the orchestrator's drop leaves.
+- *During a spike* — an experimenter stop, or **Resume**'s stop on an
+  open spike. A scope phrase is refused in
+  your own words: the experimenter has no stop that takes one; widen
+  between cycles.
 
 ### Loop
 
@@ -329,8 +444,8 @@ you gave the agent, or, from the orchestrator, `-`.
 
    b. **Launch the plan.** The target is `<project dir>/plan-c<C>-g<G>.md`.
    Append `cycle <C> plan: <target>`, then `ccc run project-forester`, mode
-   **plan**: + repo, project dir, `project.md` path, latest state path or
-   `none`, branch prefix, base branch, the cycle dir parent
+   **plan**: + the scope, project dir, `project.md` path, latest state path or
+   `none`, branch prefix, the cycle dir parent
    `<ADR root>/YYYY/MM/` and basename prefix `DD-<project slug>--` (today's
    date), every earlier plan path of this cycle, every
    `notes-plan-user-c<C>-…` path in the project dir, the target, and the
@@ -377,14 +492,14 @@ you gave the agent, or, from the orchestrator, `-`.
    c. **Plan review.** The plan and the request are reviewed against the
    owner's words before the cycle runs. The plan path is the target of
    step 2b; the request path and the kind are the last `plan written`
-   line's. Every launch here runs with `--cwd <repo>` and the standard
+   line's. Every launch here runs with `--cwd <primary>` and the standard
    payload. A cut-off launch → **Cut-off launch**; an unrecovered launch →
    STOP, surface what **Cut-off launch** lists, end turn. The words at a
    stop in the review are the plan's — `resume: <words>`, other words about
    the plan, `stop` — plus `skip` where an item offers it, meaning "run the
    plan and the request as they now read": step 2d.
 
-   1. **Review.** `ccc run plan-reviewer`: + repo, project dir,
+   1. **Review.** `ccc run plan-reviewer`: + the scope, project dir,
       `project.md` path, latest state path or `none`, the plan path, the
       request path or `none`, the kind, every earlier plan path of this
       cycle, every `notes-plan-user-c<C>-…` path, target `<project
@@ -454,77 +569,94 @@ you gave the agent, or, from the orchestrator, `-`.
    - `done` → append `cycle <C> plan done: <plan path>`; **End**: the plan
      says why.
 {% endif %}
-3. **Run the cycle.** First the **HEAD check (record)**: the user owns
-   the repo at every stop since the last cycle ended; their `go` after it
-   → this step again. A spike then needs a clean tree: `git status
-   --porcelain`, untracked files included, prints nothing → else STOP,
-   quote its output, end turn: the experimenter's patch route sweeps and
-   deletes everything uncommitted, so the user commits, stashes or removes
-   it; their `go` → this step again. A build then needs its cycle branch's
-   name free: `git show-ref --verify --quiet refs/heads/<prefix>/<cycle dir
-   basename>` fails and `git for-each-ref refs/heads/<prefix>/<cycle dir
-   basename>/` prints nothing → else STOP, name the ref, end turn: it is
-   not this cycle's, so the user deletes or renames it; their `go` → this
-   step again. Record the pre-cycle HEAD (`git
-   rev-parse HEAD`) and branch (`git symbolic-ref --short HEAD`); append
-   `cycle <C> started: <kind> <cycle dir> head <sha> branch <name>`;
+3. **Run the cycle.** Every check in this step runs in every repository
+   of the scope, as `git -C <path>`, and a STOP names the repository. First
+   the **HEAD check (record)**: the user owns the repositories at every
+   stop since the last cycle ended; their `go` after it → this step again.
+   A spike then needs a clean tree: `git status --porcelain`, untracked
+   files included, prints nothing → else STOP, quote its output, end turn:
+   the experimenter's patch route sweeps and deletes everything
+   uncommitted, so the user commits, stashes or removes it; their `go` →
+   this step again. A build then needs its cycle branch's name free: `git
+   show-ref --verify --quiet refs/heads/<prefix>/<cycle dir basename>`
+   fails and `git for-each-ref refs/heads/<prefix>/<cycle dir basename>/`
+   prints nothing → else STOP, name the ref, end turn: it is not this
+   cycle's, so the user deletes or renames it; their `go` → this step
+   again. Record each repository's pre-cycle HEAD (`git rev-parse HEAD`)
+   and branch (`git symbolic-ref --short HEAD`); a repository that joins
+   the scope during the cycle takes its `scope added` line's as its own.
+   Append `cycle <C> started: <kind> <cycle dir> head <list> branch
+   <list>`, both qualified lists;
    **Project commit**. When the launch first returns — at a gate, an escalation or its end — or
    **Cut-off launch** recovers its session, append `cycle <C> session:
    <id>`, once per cycle.
 
-   **build:** `ccc run orchestrator --cwd <repo> "<cycle dir>/request.md
-   branch prefix: <prefix>"`, with the limit at your tool's ceiling: a
-   cycle runs for hours. Nothing else in the prompt. Keep the session id —
+   **build:** `ccc run orchestrator --cwd <primary> "<cycle dir>/request.md
+   branch prefix: <prefix>"`, with ` scope: <path2> <path3>` appended when
+   the scope holds more than the primary (**Standard payload**), and the
+   limit at your tool's ceiling: a cycle runs for hours. Nothing else in the
+   prompt. Keep the session id —
    from the trailer, or after a cut-off from **Cut-off launch** step 2. A
    cut-off launch → **Cut-off launch**; `ccc status` shows the whole
    subtree, so yours is the `orchestrator` invocation started after this
-   launch, never one of the orchestrator's own subagents. Then `git
-   rev-parse HEAD` → HEAD. At any stop below, a user directive naming the
+   launch, never one of the orchestrator's own subagents. Then each
+   repository's `git rev-parse HEAD` → its HEAD. At any stop below, a user directive naming the
    result to route on ("treat that as `shipped`") → route by this step as
    if the status line had read so. Route:
    - `gate` → the orchestrator ended its turn awaiting the user. STOP,
      surface the lines it wrote above its status line, verbatim, plus the
      session id, end turn. The user's answer → `ccc resume <session id>
-     "<their words verbatim>"`; HEAD again; route the new status line by
-     this step.
-   - `shipped` → **HEAD check (build)**: `git symbolic-ref --short HEAD`
-     prints the cycle branch, `<prefix>/<cycle dir basename>`; then either
-     HEAD equals the pre-cycle HEAD — the cycle shipped nothing — and the
-     cycle's `stack` is `none`, or `git rev-parse HEAD^` equals the
-     pre-cycle HEAD and `git rev-list --count <pre-cycle HEAD>..HEAD` prints
-     `1` — the cycle's one squash — and the cycle's `stack` is the cycle
-     branch. Anything else → STOP, name the branch, HEAD and the pre-cycle
-     HEAD, end turn: the user restores the repo; nothing else moves it.
-     Append `cycle <C> ended: shipped head <HEAD> branch <cycle branch>
-     stack <list>`; step 4.
+     "<their words verbatim>"`, a scope phrase in them handled first as
+     **Scope** says; HEAD again; route the new status line by this step.
+   - `shipped` → **HEAD check (build)**, in every repository of the scope
+     as it stands, one added during the cycle included. Each matches one
+     of two shapes:
+     (a) shipped: `git symbolic-ref --short HEAD` prints the cycle branch,
+     `<prefix>/<cycle dir basename>`, `git rev-parse HEAD^` equals its
+     pre-cycle HEAD and `git rev-list --count <pre-cycle HEAD>..HEAD`
+     prints `1` — the repository's one squash — and its `stack` entry is
+     the cycle branch; or
+     (b) unchanged: HEAD equals its pre-cycle HEAD, `git symbolic-ref
+     --short HEAD` prints its pre-cycle branch, and `git show-ref --verify
+     --quiet refs/heads/<prefix>/<cycle dir basename>` fails — retired
+     unchanged, or dropped without commits, its empty cycle branch deleted
+     by the orchestrator — and its `stack` entry is `none`.
+     Anything else in any repository → STOP, name the repository, its
+     branch, HEAD and pre-cycle HEAD, end turn: the user restores it;
+     nothing else moves it. Append `cycle <C> ended: shipped head <list>
+     branch <list> stack <list>`, each a qualified list; step 4.
    - `ESCALATE` or a missing status line → STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
      turn; a missing line surfaces `-` and the session id, its prose not
      relayed. An unrecovered launch → STOP, surface what **Cut-off
      launch** lists, end turn. The user says:
-     - `resume: <words>` → `ccc resume <session id> "<words>"`; route by
-       this step. With no session recoverable, repeat the launch instead.
-     - `skip` or `stop` → HEAD equals the pre-cycle HEAD and the branch is
-       the pre-cycle branch → else STOP, name both and the branch to check
-       out, and ask again. Then the **Leftover snapshot**: `git for-each-ref
+     - `resume: <words>` → `ccc resume <session id> "<words>"`, a scope
+       phrase in the words handled first as **Scope** says; route by this
+       step. With no session recoverable, repeat the launch instead.
+     - `skip` or `stop` → in every repository of the scope: HEAD equals its
+       pre-cycle HEAD and the branch is its pre-cycle branch → else STOP,
+       name the repository, both, and the branch to check out, and ask
+       again. Then the **Leftover snapshot**, per repository: `git for-each-ref
        --format='%(refname:short)' --contains <pre-cycle HEAD>
        refs/heads/<prefix>/`, minus refs at exactly the pre-cycle HEAD,
        minus the recorded refs, plus the cycle's branch, `<prefix>/<cycle dir
        basename>`, if it exists: its name was free at launch, so the cycle
        created it.
-       Append `cycle <C> ended: stopped head <HEAD> branch <branch> leftover
-       <list>`, and name the list in the next stop's lines: the user's to
+       Append `cycle <C> ended: stopped head <list> branch <list> leftover
+       <list>`, each a qualified list, and name the list in the next stop's lines: the user's to
        delete (`git branch -D <ref>`) or keep; you delete nothing. Step 4,
        and after it **End** on `stop`.
 
-   **spike:** `ccc run experimenter`: + repo, request path, cycle dir,
-   branch prefix, spike namespace `<prefix>/spike-<cycle dir basename>/`,
-   launch branch and launch HEAD (the pre-cycle ones), target `<cycle
+   **spike:** `ccc run experimenter`: + the scope with each repository's
+   launch branch and launch HEAD (the pre-cycle ones), request path, cycle
+   dir, branch prefix, spike namespace `<prefix>/spike-<cycle dir
+   basename>/`, target `<cycle
    dir>/spike-report.md`, log `<cycle dir>/spike-log.md`, exception
    `<project dir>/exception-spike-c<C>.md`, exploration naming `<cycle
    dir>/exploration-<N>.md`. A cut-off launch → **Cut-off launch**. Then
-   HEAD. Route:
-   - `written` → **HEAD check (spike)**: HEAD equals the pre-cycle HEAD,
+   each repository's HEAD. Route:
+   - `written` → **HEAD check (spike)**, in every repository of the scope:
+     HEAD equals its pre-cycle HEAD,
      the branch is the pre-cycle branch, `git status --porcelain
      --untracked-files=no` prints nothing, and every ref `git for-each-ref
      --format='%(refname:short)' --contains <pre-cycle HEAD>
@@ -532,9 +664,10 @@ you gave the agent, or, from the orchestrator, `-`.
      and not among the recorded refs is under the spike namespace → else
      STOP, quote the ref or the status output, or name the HEAD and branch,
      end turn: the user cleans up. The refs `git for-each-ref --format='%(refname:short)'
-     refs/heads/<prefix>/spike-<cycle dir basename>/` prints are the
-     cycle's `branches`. Append `cycle <C> ended: written head <HEAD>
-     branch <branch> branches <list>`; step 4.
+     refs/heads/<prefix>/spike-<cycle dir basename>/` prints in a
+     repository are its `branches` entry. Append `cycle <C> ended: written
+     head <list> branch <list> branches <list>`, each a qualified list;
+     step 4.
    - `ESCALATE` or a missing status line → STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
      turn; a missing line surfaces `-` and the session id, its prose not
@@ -544,12 +677,13 @@ you gave the agent, or, from the orchestrator, `-`.
      launch; route by this step. `skip` or `stop` → as for a build, except
      that the leftovers are the namespace's refs, if any.
 4. **Digest.** The target is `<project dir>/state-c<C>.md`. `ccc run
-   project-forester`, mode **digest**: + project dir, `project.md` path,
-   previous state path or `none`, cycle dir, kind, the ended word
-   (`shipped`, `written` or `stopped`), the cycle's plan path (its
-   `planned` line's), branch prefix, base branch, the project stack bottom
-   first (`<b1>,…,<bn>`, or `none`), the cycle's `branches` or `leftover`
-   list, every `publish-*` record path in the project dir, the target. A
+   project-forester`, mode **digest**: + the scope, project dir,
+   `project.md` path, previous state path or `none`, cycle dir, kind, the
+   ended word (`shipped`, `written` or `stopped`), the cycle's plan path
+   (its `planned` line's), branch prefix, and per repository its base
+   branch, its project stack bottom first (`<b1>,…,<bn>`, or `none`) and
+   the cycle's `branches` or `leftover` entry and the paths of its
+   **publish records**, the target. A
    cut-off launch → **Cut-off launch**. `written` → append `cycle <C>
    digested: <target>`; latest state = the target; digested += 1; step 5.
    Anything else, or an unrecovered launch → STOP, surface the lines it
@@ -559,29 +693,36 @@ you gave the agent, or, from the orchestrator, `-`.
    "<words>"`; `retry` → repeat the launch; route by this step. `stop` →
    **End**.
 5. **Publish** — only for a cycle that ended `shipped`, with publish not
-   `off`; otherwise step 6. The target is `<project dir>/publish-c<C>.md`,
-   or `publish-c<C>-<n>.md` when the record already has `n` − 1 `cycle <C>
-   publish` lines; the exception path takes the same suffix. Append `cycle
-   <C> publish: <target>`, then `ccc run publisher`: + repo, branch prefix,
-   base branch, start HEAD, remote, mode (`push` or `prs`), the project
-   stack bottom first, every `publish-*` record path already in the
-   project dir, the target, the exception path. A cut-off launch → **Cut-off launch**. Then HEAD and
-   branch must be what they were before the launch → else STOP, name both,
-   end turn. Route:
-   - `published` or `pushed` → append `cycle <C> published: <target>`;
-     step 6.
+   `off`; otherwise step 6. One publisher launch per repository whose
+   project stack is not `none`, in scope order; with none, step 6. For a
+   repository of basename `<b>`, the target is `<project
+   dir>/publish/<b>/c<C>.md`, or `c<C>-<n>.md` there when the record
+   already has `n` − 1 `cycle <C> publish: <b>=` lines; the exception path
+   is `exception-c<C>.md` there, with the same suffix. `mkdir -p` the
+   publish dir. Append `cycle <C> publish: <b>=<target>`, then
+   `ccc run publisher --cwd <that repository>`: + branch prefix, its base
+   branch, its start HEAD, remote — the project's one remote name, for
+   every repository — mode (`push` or `prs`), its project stack bottom
+   first, the paths of its **publish records** already on disk, the
+   target, the exception path. A cut-off launch → **Cut-off launch**. Then its HEAD and
+   branch must be what they were before the launch → else STOP, name the
+   repository and both, end turn. Route:
+   - `published` or `pushed` → append `cycle <C> published:
+     <b>=<target>`; the next repository, or step 6 after the last.
    - `unpushed` → STOP, surface the target path — it holds the command to
      run by hand — end turn. The user says `continue` → append `cycle <C>
-     publish skipped: <target>`; step 6. `retry` → step 5. `stop` →
+     publish skipped: <b>=<target>`; the next repository, or step 6 after
+     the last. `retry` → this repository's launch again. `stop` →
      **End**.
    - `ESCALATE` or a missing status line → STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
      turn; a missing line surfaces `-` and the session id, its prose not
      relayed. An unrecovered launch → STOP, surface what **Cut-off launch**
      lists, end turn. The user says `resume: <words>` → `ccc resume
-     <session id> "<words>"`; route by this step. `retry` → step 5.
-     `skip` → append `cycle <C> publish skipped: <target>`; step 6. `stop`
-     → **End**.
+     <session id> "<words>"`; route by this step. `retry` → this
+     repository's launch again. `skip` → append `cycle <C> publish
+     skipped: <b>=<target>`; the next repository, or step 6 after the last.
+     `stop` → **End**.
 
    Publishing is never a question you put to the user: it runs when the
    setting says so, and `unpushed` is a stop that offers `continue`.
@@ -592,17 +733,19 @@ A `publish` directive at any stop is a **User directive**:
 - "publish: push" or "publish: prs from now on" changes the setting for the
   session and appends its header line.
 - "publish now", optionally naming `push` or `prs`, runs the publisher
-  once, outside the loop, over the project stack as the record stands. The
-  mode is the one the words name, else the setting, else `push` when the
-  setting is `off`. The target is `<project dir>/publish-now-<n>.md`, `n`
+  outside the loop, once per repository whose project stack as the record
+  stands is not `none`, in scope order. The mode is the one the words
+  name, else the setting, else `push` when the setting is `off`. For
+  basename `<b>` the target is `<project dir>/publish/<b>/now-<n>.md`, `n`
   the first number with no such file on disk; the exception path
-  `exception-publish-now-<n>.md` alike. Launch it as step 5 does, the HEAD
-  and branch check after it included, but append no record line: the
-  record still ends where the stop left it. Then STOP again at the stop it
-  was given at — surface that stop's lines again, plus the publisher's
-  result and target, or, for `ESCALATE` or a missing line, what step 5's
-  `ESCALATE` route surfaces — end turn; the user's next words answer that
-  stop. A cut-off "publish now" is not resumed: giving it again is safe,
+  `exception-now-<n>.md` there alike. Launch each as step 5 does, the
+  HEAD and branch check after it included, but append no record line: the
+  record still ends where the stop left it. An `unpushed`, `ESCALATE` or
+  missing line ends the run at that repository. Then STOP again at the
+  stop it was given at — surface that stop's lines again, plus each
+  publisher's result and target, or, for `ESCALATE` or a missing line,
+  what step 5's `ESCALATE` route surfaces — end turn; the user's next words
+  answer that stop. A cut-off "publish now" is not resumed: giving it again is safe,
   since the publisher creates only branches the remote lacks and looks up
   every PR before opening one.
 
@@ -629,12 +772,17 @@ It never stops the loop on its own.
 
 ### HEAD check (record)
 
-HEAD equals the last recorded `head` — on the latest `ended` line of any
-cycle, or `start head` when there is none — and `git symbolic-ref --short
-HEAD` prints that line's `branch`, or the base branch when there is no
-`ended` line → else STOP, name that commit and branch, end turn: the user
-checks it out; nobody else moves the repo. It runs on resume and before
-every cycle launch, so each cycle starts where the last one left the stack.
+In every repository of the scope: HEAD equals the last recorded `head` —
+taken from the last line of the record that carries a value for that
+repository, an `ended` line with an entry for it or its `scope added` line,
+whichever comes later in the record; with neither, its `start head` — and
+`git symbolic-ref --short HEAD` prints that line's `branch` for it, or its
+base branch when it was the header → else STOP, name the repository, that
+commit and branch, end turn: the user checks it out; nobody else moves the
+repositories. Record order decides, not line kind: a repository dropped and
+added again is checked against its new `scope added` line. It runs on
+resume and before every cycle launch, so each cycle starts where the last
+one left each stack.
 
 ### Never
 
@@ -643,10 +791,10 @@ user's chat word lifts any of them (**User directives**), save the one
 marked otherwise. **Destructive git** sets the bar for anything that
 deletes or rewrites: the action and its target named.
 
-- Touch the repo beyond reading it: `symbolic-ref`, `rev-parse`,
+- Touch any repository of the scope beyond reading it: `symbolic-ref`, `rev-parse`,
   `rev-list`, `merge-base`, `for-each-ref`, `check-ref-format`,
   `show-ref`, `status`. You never check out, commit, push, reset, or delete a branch,
-  a leftover included: the subagents own the repo for a cycle's duration,
+  a leftover included: the subagents own the repositories for a cycle's duration,
   and the user owns it between cycles.
 - Merge anything, anywhere, ever. No directive lifts this one: "nothing
   should be merged" is the user's own rule for the project.
@@ -665,15 +813,18 @@ deletes or rewrites: the action and its target named.
      file; the project ended first" — the user files them by hand, or
      starts the driver again, whose first plan is the build that files
      them;
-   - `git for-each-ref --format='%(refname:short) %(objectname:short)'
-     refs/heads/<prefix>/`, its output verbatim;
-   - the latest publish record path, if any;
-   - the HEAD range, start HEAD → HEAD;
+   - the `scope:` line, when the scope holds more than the primary;
+   - per repository of the scope, introduced by its path: `git -C <path>
+     for-each-ref --format='%(refname:short) %(objectname:short)'
+     refs/heads/<prefix>/`, its output verbatim, and its HEAD range, start
+     HEAD → HEAD;
+   - the path of the latest of each repository's **publish records**, if
+     any;
    - the open cycle's dir and session id, if one is open;
    - every directory matching `<ADR root>/*/*/??-<project slug>--*`,
      any date, that no `planned`{% if not gate %} or `plan written`{% endif %} line names — a cycle dir a cut-off plan
      made before the record could name it, the user's to delete;
-   - the resume command: `ccc launch project-orchestrator --cwd <repo>`,
-     naming the project dir.
+   - the resume command: `ccc launch project-orchestrator --cwd
+     <primary>`, naming the project dir; the record carries the scope.
 
    End turn.

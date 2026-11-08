@@ -681,9 +681,9 @@ def test_project_forester_scaffolding_by_autonomy(builds):
             assert "Digest mode: `written`, always" in flat, where
             plan = " ".join(_raw_section(body, "## Mode: plan").split())
             assert "A spike is not planned while" in plan, where
-            assert "would not build and has a tracker entry in the tree, verified read-only" in plan, where
+            assert "would not build and has a tracker entry in the tree of a repository of the scope, verified read-only" in plan, where
             assert "work the project still intends is not met by an entry" in plan, where
-            assert "`git ls-tree HEAD todo.d/ .todo.d/`" in plan, where
+            assert "`git -C <path> ls-tree HEAD todo.d/ .todo.d/`, in every repository of the scope" in plan, where
             assert "`<stack top>`" not in flat and "<stack top>:" not in flat, where
             assert "`- owed to the tree: <slug> — <entry text> (<where it was raised>)`" in flat, where
             assert "the marker appears nowhere else in a plan or a state" in flat, where
@@ -691,7 +691,7 @@ def test_project_forester_scaffolding_by_autonomy(builds):
             assert "Above the status line, and only then: the plan's `owed to the tree` lines" in flat, where
             assert "except the tracker entries a stopped build's request listed" in flat, where
             assert "rulings in the user's name that deferred, dropped or narrowed something" in flat, where
-            assert "`git ls-tree <cycle branch> todo.d/ .todo.d/`" in flat, where
+            assert "`git -C <path> ls-tree <cycle branch> todo.d/ .todo.d/`" in flat, where
             assert "names nothing for the user to decide" in flat, where
 
 
@@ -2374,17 +2374,37 @@ PREFIX_SETUP_PHRASES = (
     "`git show-ref --verify --quiet refs/heads/<that path>` must fail",
 )
 PLAIN_PREFIX_PHRASES = (
-    "**Cycle branch**, only with a branch prefix recorded: `<prefix>/<request slug>`, in the primary.",
+    "**Cycle branch**, only with a branch prefix recorded: `<prefix>/<request slug>`,"
+    " in every repository of the scope, in two passes.",
     "except the primary with a branch prefix recorded: its branch is created from HEAD either way",
+    "its launch branch is recorded as `detached` with the commit.",
+    "`git show-ref --verify --quiet refs/heads/<prefix>/<request slug>` must fail: the name is free.",
+    "→ **Return** every repository already branched, then STOP",
+    "This is the last setup step, and a stop in it returns every repository already branched,"
+    " so no setup stop leaves a branch behind.",
 )
 # The plain ship-shape text every chain role renders names the prefix only
-# as where the primary's commit lands.
-PLAIN_SHIP_BRANCH = "for the primary under a branch prefix, the branch the cycle creates at setup"
-# The plain orchestrator's setup stops a status routes on, and the scope
-# limit on the cycle branch.
+# as where each repository's commit lands.
+PLAIN_SHIP_BRANCH = "under a branch prefix, the branch the cycle creates in that repository"
+# The plain orchestrator's setup stops a status routes on.
 PLAIN_SETUP_STOPS = (
-    "a detached HEAD at setup without a branch prefix, a cycle branch that could not be created at setup",
-    "Another repository of the scope keeps the branch recorded at step 2.",
+    "a detached HEAD at setup without a branch prefix, a cycle branch that could not be created at setup,"
+    " a cycle branch **Return** could not delete",
+)
+# Return: the one procedure that deletes an empty cycle branch.
+PLAIN_RETURN = "then `git branch -d <prefix>/<request slug>`"
+PLAIN_RETURN_USES = (
+    "With a branch prefix recorded it is **Return**ed as it retires.",
+    "is **Return**ed before it leaves, at any stop; one kept with its commits leaves on its cycle branch.",
+    "a checkout that fails **Return**s the paths already branched.",
+    "(`git checkout --detach <commit>` for the primary when its launch branch was recorded `detached`)",
+    "`-d` refuses → STOP, quote it and name the repository, end turn.",
+)
+# A scope phrase under a prefix widens all or nothing.
+PLAIN_SCOPE_PHRASE_ATOMIC = (
+    "Several paths in one phrase → every check in every path before any checkout;",
+    "record none of the phrase's paths, relay nothing to anyone",
+    "or a branch-prefix check or checkout fails there, a scope phrase is refused as **Scope phrase** says",
 )
 PLAIN_PREFIX_ADOPT = (
     "with a branch prefix recorded, `git checkout -B <branch>` here",
@@ -2398,7 +2418,8 @@ def test_branch_prefix_is_taken_by_every_non_followup_chain(builds):
     launch words, and its orchestrator validates it. A stack chain names its
     work branch under it and hands it on; the designer names PR branches
     under it and the reviewer checks that. A plain chain creates one cycle
-    branch under it in the primary and protects that branch on `adopt`. The
+    branch under it in every repository of the scope, removes an empty one
+    with **Return**, and protects it on `adopt`. The
     follow-up chains keep their inherited names and never mention a prefix.
     """
     for build in builds.values():
@@ -2427,10 +2448,23 @@ def test_branch_prefix_is_taken_by_every_non_followup_chain(builds):
                     assert phrase in anomaly, f"{where}: {phrase}"
                 assert ("| **branch prefix** |" in flat) == prefixed, where
                 if not stack:
-                    assert "`<prefix>/<request slug>`, created at setup, when a branch prefix is recorded" in flat, where
+                    assert (
+                        "`<prefix>/<request slug>` in every repository, created at setup or when the repository"
+                        " joins the scope, when a branch prefix is recorded"
+                    ) in flat, where
                     assert "compare against.\n4. **Cycle branch**" in body, where
                 for phrase in PLAIN_SETUP_STOPS:
                     assert (phrase in flat) == (not stack), f"{where}: {phrase}"
+                assert "Another repository of the scope keeps the branch recorded at step 2." not in flat, where
+                assert flat.count(PLAIN_RETURN) == (0 if stack else 1), where
+                assert ("### Return" in body) == (not stack), where
+                for phrase in PLAIN_RETURN_USES + PLAIN_SCOPE_PHRASE_ATOMIC:
+                    assert (phrase in flat) == (not stack), f"{where}: {phrase}"
+                if not stack:
+                    name_free = setup.index("must fail: the name is free.")
+                    assert name_free < setup.index("before any branch exists.") < setup.index(
+                        "Then, in every repository in scope order, `git checkout --no-track -b"
+                    ), where
                 assert "a rebase in progress at setup" in flat, where
                 rebase = (
                     "A rebase or `git am` is in progress in the primary — `git rev-parse --git-path"
@@ -2476,15 +2510,80 @@ def _between(flat: str, start: str, end: str) -> str:
 
 
 def test_project_driver_launches_the_chain_with_its_prefix(builds):
-    """The inner orchestrator gets its request path and the prefix words and
-    nothing else; the driver resumes that orchestrator, never a grandchild,
-    and narrows no scope.
+    """The inner orchestrator gets its request path, the prefix words and the
+    scope's other repositories and nothing else; the driver resumes that
+    orchestrator, never a grandchild.
     """
     for where, flat, _ in _project_driver_bodies(builds):
-        assert '`ccc run orchestrator --cwd <repo> "<cycle dir>/request.md branch prefix: <prefix>"`' in flat, where
+        assert '`ccc run orchestrator --cwd <primary> "<cycle dir>/request.md branch prefix: <prefix>"`' in flat, where
+        assert "with ` scope: <path2> <path3>` appended when the scope holds more than the primary" in flat, where
+        assert '`"<cycle dir>/request.md branch prefix: <prefix> scope: <path2> <path3>"`' in flat, where
+        assert "The primary is never in the phrase." in flat, where
         assert "Nothing else in the prompt." in flat, where
         assert "never one of the orchestrator's own subagents" in flat, where
-        assert "drop from scope" not in flat, where
+
+
+def test_project_driver_carries_the_scope(builds):
+    """The driver keeps a scope of repositories: recorded in a `scope:`
+    header line with per-repository values as qualified lists, widened only
+    by the user's scope phrase, checked per repository after a build, and
+    published one repository per launch. A drop during a build narrows the
+    cycle, never the project; a drop between cycles is refused for a
+    repository that holds the project's output. The chain's orchestrator
+    keeps no project record. The plan launch hands the scope and no base
+    branch, which plan mode never reads.
+    """
+    for where, flat, _ in _project_driver_bodies(builds):
+        record = _between(flat, "## Driver record", "## State you track")
+        for phrase in (
+            "scope: <abs path>,<abs path>,…",
+            "scope added: <abs path> head <sha> branch <name>",
+            "scope dropped: <abs path>",
+            "is a qualified list: `<basename>=<value>` entries separated by `;`, in scope order",
+            "A value with no `=` is the primary's",
+            "a record with no `scope:` line is a scope of one",
+            "cycle <C> ended: shipped head <list> branch <list> stack <list>",
+        ):
+            assert phrase in record, f"{where}: {phrase}"
+        scope = _between(flat, "### Scope", "### Loop")
+        for phrase in (
+            "Only the user's words widen it",
+            "`scope: <path> (<branch>), <path> (<branch>)`",
+            "So is a repository whose `stack` or `branches` entries on any `ended` line name a ref",
+            "Its `leftover` entries do not refuse the drop",
+            "`drop from scope:` during a build is relayed and not recorded: it narrows the cycle, never the project",
+            "append `scope added:` and `scope:` as between cycles, *then* relay the whole utterance verbatim",
+            "A scope phrase is refused in your own words",
+            "an orchestrator `gate` or `ESCALATE` stop, or **Resume**'s stop on an open build.",
+            "an experimenter stop, or **Resume**'s stop on an open spike.",
+            "already in the project's scope, the primary excepted, is not new: it gets none of your checks"
+            " and no record, and is relayed with the rest",
+            "its basename contains no `=` or `;`; the base branch and the prefix contain no `;` or `,`",
+        ):
+            assert phrase in scope, f"{where}: {phrase}"
+        refusal = _between(scope, "*Between cycles*", "*During a build*")
+        assert "recorded refs" not in refusal, where
+        plan = _between(flat, "b. **Launch the plan.**", "- `done` → append")
+        assert "mode **plan**: + the scope, project dir" in plan, where
+        assert "base branch" not in plan, where
+        build = _between(flat, "**build:** `ccc run orchestrator", "**spike:**")
+        assert "(a) shipped:" in build and "(b) unchanged:" in build, where
+        publish = _between(flat, "5. **Publish**", "### Project commit")
+        for phrase in (
+            "One publisher launch per repository whose project stack is not `none`, in scope order",
+            "dir>/publish/<b>/c<C>.md`",
+            "the paths of its **publish records** already on disk",
+            "`ccc run publisher --cwd <that repository>`",
+            "the project's one remote name, for every repository",
+            "append `cycle <C> published: <b>=<target>`",
+        ):
+            assert phrase in publish, f"{where}: {phrase}"
+        resume = _between(flat, "3. **Resume.**", "4. **Project commit**")
+        assert "the last `scope:` line is the scope, none → the primary alone" in resume, where
+        assert "Loop step 5 at the next repository in scope order" in resume, where
+    for stem in REVIEW_CHAIN_STEMS:
+        for name, body in builds[stem].bodies("orchestrator"):
+            assert "scope added:" not in body, f"{stem}/{name}"
 
 
 def test_project_driver_never_list(builds):
@@ -2551,12 +2650,14 @@ def test_project_driver_checks_the_stack_from_git(builds):
     for where, flat, _ in _project_driver_bodies(builds):
         build = _between(flat, "**build:** `ccc run orchestrator", "**spike:**")
         for phrase in (
-            "`git symbolic-ref --short HEAD` prints the cycle branch, `<prefix>/<cycle dir basename>`",
-            "HEAD equals the pre-cycle HEAD — the cycle shipped nothing — and the cycle's `stack` is `none`",
-            "`git rev-parse HEAD^` equals the pre-cycle HEAD",
+            "(a) shipped: `git symbolic-ref --short HEAD` prints the cycle branch, `<prefix>/<cycle dir basename>`",
+            "`git rev-parse HEAD^` equals its pre-cycle HEAD",
             "`git rev-list --count <pre-cycle HEAD>..HEAD` prints `1`",
-            "the cycle's `stack` is the cycle branch",
-            "Anything else → STOP, name the branch, HEAD and the pre-cycle HEAD",
+            "its `stack` entry is the cycle branch",
+            "(b) unchanged: HEAD equals its pre-cycle HEAD, `git symbolic-ref --short HEAD` prints its pre-cycle"
+            " branch, and `git show-ref --verify --quiet refs/heads/<prefix>/<cycle dir basename>` fails",
+            "and its `stack` entry is `none`",
+            "Anything else in any repository → STOP, name the repository, its branch, HEAD and pre-cycle HEAD",
             "minus the recorded refs, plus the cycle's branch, `<prefix>/<cycle dir basename>`, if it exists",
             "you delete nothing",
         ):
@@ -2571,13 +2672,16 @@ def test_project_driver_checks_the_stack_from_git(builds):
             " refs/heads/<prefix>/<cycle dir basename>` fails and `git for-each-ref"
             " refs/heads/<prefix>/<cycle dir basename>/` prints nothing → else STOP, name the ref"
         )
-        assert head < clean < free < run.index("append `cycle <C> started:"), where
+        assert head < clean < free < run.index("Append `cycle <C> started:"), where
         assert "its name was free at launch, so the cycle created it" in build, where
         spike =_between(flat, "**spike:** `ccc run experimenter`", "4. **Digest.**")
         assert "spike namespace `<prefix>/spike-<cycle dir basename>/`" in spike, where
         assert "not among the recorded refs is under the spike namespace" in spike, where
         assert "`git status --porcelain --untracked-files=no` prints nothing" in spike, where
-        assert "The **recorded refs** are every ref on any `stack`, `branches` or `leftover` list" in flat, where
+        assert (
+            "A repository's **recorded refs** are every ref on its entries of any `stack`, `branches` or"
+            " `leftover` list"
+        ) in flat, where
 
 
 def test_project_driver_reads_only_its_record(builds):
@@ -2641,18 +2745,24 @@ def test_plan_reviewer_role_exactly_where_the_forester_decides(builds):
 
 
 def test_project_driver_setup_guards_the_prefix_and_sidecar(builds):
+    """Every repository of the scope passes the same checks at setup and when
+    it joins; the slug is checked once, against the ADR root.
+    """
     for where, flat, _ in _project_driver_bodies(builds):
         setup = _between(flat, "2. **New project.**", "3. **Resume.**")
+        assert "The scope's **Repository checks** (**Scope**) in every repository of the scope" in setup, where
+        assert "the slug holds no `--`" in setup, where
+        checks = _between(flat, "**Repository checks**, per repository", "**At every stop**")
         for phrase in (
             '`git check-ref-format --branch "<prefix>/x"` succeeds',
             "for every leading path of the prefix — `p1`, `p1/p2`, … through `<prefix>` itself —",
             "`git show-ref --verify --quiet refs/heads/<that path>` fails",
-            "the slug holds no `--`, and no path matches `<ADR root>/*/*/??-<slug>` or `<ADR root>/*/*/??-<slug>--*`",
             "`git for-each-ref refs/heads/<prefix>/` prints nothing",
-            "`git -C <ADR root> rev-parse --show-toplevel` succeeds and differs",
+            "`git -C <ADR root> rev-parse --show-toplevel` succeeds and differs from every repository's toplevel",
+            "No two repositories of the scope share a basename → STOP naming both",
             "detached HEAD) → STOP",
         ):
-            assert phrase in setup, f"{where}: {phrase}"
+            assert phrase in checks, f"{where}: {phrase}"
 
 
 def test_project_driver_head_check_is_one_rule_at_resume_and_launch(builds):
@@ -2663,7 +2773,10 @@ def test_project_driver_head_check_is_one_rule_at_resume_and_launch(builds):
     for where, flat, _ in _project_driver_bodies(builds):
         check = _between(flat, "### HEAD check (record)", "### Never")
         for phrase in (
-            "HEAD equals the last recorded `head` — on the latest `ended` line of any cycle, or `start head`",
+            "In every repository of the scope: HEAD equals the last recorded `head` — taken from the last line"
+            " of the record that carries a value for that repository",
+            "whichever comes later in the record; with neither, its `start head`",
+            "Record order decides, not line kind",
             "It runs on resume and before every cycle launch",
         ):
             assert phrase in check, f"{where}: {phrase}"
@@ -2691,13 +2804,19 @@ def test_project_driver_publish_now_returns_to_its_stop(builds):
         now = _between(flat, '- "publish now"', "### Project commit")
         for phrase in (
             "else `push` when the setting is `off`",
-            "`<project dir>/publish-now-<n>.md`, `n` the first number with no such file on disk",
+            "`<project dir>/publish/<b>/now-<n>.md`, `n` the first number with no such file on disk",
+            "An `unpushed`, `ESCALATE` or missing line ends the run at that repository.",
             "append no record line",
             "STOP again at the stop it was given at",
         ):
             assert phrase in now, f"{where}: {phrase}"
-        assert "every `publish-*` record path" in _between(flat, "4. **Digest.**", "5. **Publish**"), where
-        assert "every `publish-*` record path" in _between(flat, "5. **Publish**", '- "publish now"'), where
+        assert "the paths of its **publish records**" in _between(flat, "4. **Digest.**", "5. **Publish**"), where
+        # A repository's records are found by its own directory, never by a
+        # basename substring that a sibling's name can contain.
+        assert "carries `-<b>`" not in flat, where
+        records = _between(flat, "A repository's **publish records**", "- one **cycle dir**")
+        assert "the files in its publish dir not named `exception-*`" in records, where
+        assert "for the primary alone, the `publish-*.md` files directly in the project dir" in records, where
 
 
 def test_project_driver_end_lists_orphans_of_any_date(builds):
@@ -2860,11 +2979,11 @@ def test_project_forester_plans_and_digests(builds):
                 "`git for-each-ref refs/heads/<prefix>/<basename>/` prints nothing",
                 "`git for-each-ref refs/heads/<prefix>/spike-<basename>/` prints nothing",
                 "**Request assessment**, **Scope**, **Open questions**",
-                "`git log -1 --format=%B <cycle branch>`",
-                "whose branch is not in that stack shipped nothing and has no squash to read",
+                "`git -C <path> log -1 --format=%B <cycle branch>`",
+                "a repository whose stack lacks it shipped nothing this cycle and has no squash to read",
                 "that is neither in the stack nor a stopped cycle's leftover",
                 "> *Provenance: written by the project forester, a product-owner proxy; not the user.*",
-                "The stack is the list your prompt hands, never a scan of the refs.",
+                "A repository's stack is the list your prompt hands for it, never a scan of the refs.",
                 "**Next, probably**",
                 "around 4000 added lines",
                 "no merging",
@@ -2874,6 +2993,74 @@ def test_project_forester_plans_and_digests(builds):
             for section in ("Goal", "Branches", "Cycles", "Learned", "Remaining"):
                 assert f"**{section}** —" in flat, f"{where}: {section}"
             assert "**For the user** —" not in flat, where
+
+
+def test_project_roles_take_the_scope(builds):
+    """The project's roles take the driver's scope: the forester plans,
+    names cycle dirs and digests across every repository of it and writes
+    a request that ships one commit per repository the cycle changes; the
+    experimenter leaves every repository as found; the plan reviewer reads
+    the scope and flags a request that leaves it; the publisher takes one
+    repository per launch.
+    """
+    reviewed = 0
+    for stem in PROJECT_EMBEDS:
+        build = builds[stem]
+        reviewed += "plan-reviewer" in build.by_id
+        for name, body in build.bodies("project-forester"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            plan = " ".join(_raw_section(body, "## Mode: plan").split())
+            assert "Inputs: the scope (every repository's path, primary first)" in plan, where
+            assert "base branch" not in plan, where
+            digest = " ".join(_raw_section(body, "## Mode: digest").split())
+            assert "Inputs: the scope," in digest, where
+            assert "and per repository its base branch, its project stack bottom first" in digest, where
+            for phrase in (
+                "the branches it would produce must not be taken, in every repository of the scope",
+                "a hit in any repository means another slug",
+                "the cycle ships one commit per repository it changes",
+                "which the orchestrator creates in every repository of the scope",
+                "a repository the cycle leaves unchanged is retired with no commit",
+                "no work in a repository outside the scope",
+                "verified read-only on the cycle branch of the repository the entry names",
+                "summed over the repositories the cycle changes",
+                "left by a cycle run before the orchestrator deleted such branches on retirement",
+                "one block per repository of the scope, primary first",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            assert "no work in another repository" not in flat, where
+            assert "shipped as one squash on one branch" not in flat, where
+            section = " ".join(_raw_section(body, "## The project's scope").split())
+            for phrase in (
+                "only the user widens it",
+                "the four things: the repository; the change, concretely;"
+                " why no in-scope alternative is acceptable; and a paste-ready tracker entry",
+                "which repositories the cycle will change and why",
+                "`<repo basename>:<path>:<line>`",
+            ):
+                assert phrase in section, f"{where}: {phrase}"
+        for name, body in build.bodies("experimenter"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            inputs = " ".join(_raw_section(body, "## Inputs").split())
+            assert "the scope — every repository's path, primary first, each with its **launch branch** and **launch HEAD**" in inputs, where
+            assert "the repository (your cwd)" not in flat, where
+            assert "6. **Leave every repository as found.**" in flat, where
+            assert "in every repository of the scope, `git checkout <launch branch>`" in flat, where
+            assert "`spike-uncommitted-<repo basename>-<N>.patch`" in flat, where
+            assert "uses the same `<name>` in both" in flat, where
+        for name, body in build.bodies("plan-reviewer") if "plan-reviewer" in build.by_id else ():
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            inputs = " ".join(_raw_section(body, "## Inputs").split())
+            assert inputs.startswith("## Inputs The scope — every repository's path, primary first"), where
+            assert "Repo path" not in flat, where
+            assert "A request that changes a repository outside the scope your prompt hands" in flat, where
+            assert "`<repo basename>:<path>:<line>` when the scope holds more than one" in flat, where
+        publisher = build.by_id["publisher"]
+        assert "one repository per launch" in publisher.frontmatter["description"], stem
+    assert reviewed, "no project variant emits the plan reviewer"
 
 
 PUBLISHER_FORGEJO_TOOLS = {f"mcp__forgejo__forgejo_{name}" for name in ("list_prs", "get_pr", "open_pr")}
@@ -2966,11 +3153,14 @@ def test_experimenter_never_bypasses_hooks(builds):
             checks = flat.index("**The project's checks'**")
             patch = flat.index("spike-uncommitted-<N>.patch")
             assert scan < checks < patch, where
-            clean = flat.index("**Check the tree.** `git status --porcelain` — untracked files included — prints anything → escalate")
+            clean = flat.index(
+                "**Check the trees.** `git status --porcelain` — untracked files included — "
+                "prints anything in any repository of the scope → escalate"
+            )
             assert clean < flat.index("git checkout --no-track -b") < patch, where
             for phrase in (
                 "git checkout --no-track -b <namespace><name>",
-                "Never touch a branch outside the spike namespace, never push, never merge",
+                "Never touch a branch outside the spike namespace in any repository, never push, never merge",
                 "`git status --porcelain --untracked-files=no` prints nothing",
                 "every subject prefixed `spike:`",
             ):

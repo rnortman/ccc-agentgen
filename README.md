@@ -291,12 +291,15 @@ variants take no prefix: their inherited branches keep their names.
 
 The plain chains — `review-chain`, `-auto`, `-lite`, `-planner*` and
 `-split*` — take the same `branch prefix: <p>` words. With them the
-orchestrator creates one branch, `<p>/<request slug>`, in the primary
-repository at setup, after the same prefix checks, and the ship squash
-lands on it; the branch checked out at launch is never touched, and a
-detached HEAD at launch is no stop. A repository added by a scope phrase
-keeps its own launch branch. Without the words the cycle lands on the
-checked-out branch, as before.
+orchestrator creates a branch `<p>/<request slug>` in every repository in
+scope — at setup, after the same prefix checks and a check that the name
+is free, or when a scope phrase adds the repository — and each ship squash
+lands on its repository's branch. The branch checked out at launch is
+never moved, and a detached primary HEAD at launch is no stop. A
+repository that ships nothing — retired unchanged, or dropped without
+commits — has its empty cycle branch deleted and its launch branch checked
+out again. Without the words the cycle lands on the checked-out branch, as
+before.
 
 `review-chain-stack-followup` and `review-chain-stack-followup-auto` run a
 second cycle over a stack whose PRs are open and reviewed on the code host.
@@ -659,7 +662,9 @@ cycle runs.
    slug**, and the goal: a brief in chat, a path to a spec document, or
    both. Options: `branch prefix: <p>` (default: the slug), `remote:
    <name>` (default `origin`), `publish: off|push|prs` (default `off`),
-   `--count N` (cycles), `--until HH:MM`.
+   `--count N` (cycles), `--until HH:MM`, and a scope phrase — `in scope:`
+   followed by one or more repository paths — for a project that spans
+   more than the launch repository (**Several repositories** below).
 3. Check out the branch the stack should start from before launching: the
    checked-out branch is the base, and the driver never moves HEAD.
 
@@ -736,6 +741,28 @@ pre-cycle HEAD and records it; the **project stack** is those branches in
 cycle order. A branch is never moved once its cycle shipped it: a
 correction to an earlier cycle lands as a new cycle on top.
 
+**Several repositories.** A scope phrase at launch — `in scope: <path>
+<path>` — makes the launch repository the primary and each path's
+toplevel a sibling; setup runs every repository check (attached HEAD, no
+rebase in progress, the prefix free) in each, and refuses the ADR root's
+repository and two checkouts sharing a basename. The project then keeps
+one stack per repository: each cycle's orchestrator branches every
+repository in scope at `<p>/<cycle dir basename>`, squashes the ones the
+design changes, and retires the others with their empty branch deleted and
+their launch branch checked out again, so no branch is left behind where
+nothing shipped. Pins between in-scope repositories and the pin stop work
+as in [Repositories in scope](#repositories-in-scope); with `publish: off`
+the dependency's squash the pin stop names exists only locally. The driver
+record writes each repository's values as `<basename>=<value>` entries,
+publishing runs one publisher launch per repository with a stack, under the
+one `remote:` name, into that repository's own `publish/<basename>/` in
+the project dir, and every driver stop surfaces a `scope:` line. A scope
+phrase at a driver stop between cycles, or at a stop inside a build,
+widens the project; `drop from scope: <path>` at a driver stop between
+cycles narrows it, refused for a repository that already holds stack or
+spike branches. Codex subagents need the siblings writable: see [Operator
+configuration](#operator-configuration).
+
 The embedded chain never pushes, `-auto` included: a forester-approved
 squash ships unpushed, and only the publisher pushes, under `publish:`.
 
@@ -751,8 +778,8 @@ at all: the branches are pushed and the record says no tool reached the
 host. A stack branch once published and since deleted on the host — a PR
 you merged with its branch deleted — is recorded as gone and never pushed
 again. To open PRs on Forgejo, set `[agents.publisher] harness =
-"claude"` in your preference file. Spike branches and a cycle branch that
-shipped nothing are never pushed. Nothing is merged, by any role, ever. A push the harness
+"claude"` in your preference file. Spike branches are never pushed; a
+cycle branch that shipped nothing no longer exists after the cycle. Nothing is merged, by any role, ever. A push the harness
 denies or the remote rejects stops the driver with the command to run by
 hand; `continue` goes on without it. At any stop, "publish now" (or
 "publish now prs") publishes the stack once, whatever the setting, and
@@ -769,9 +796,10 @@ branch otherwise. An open cycle is resumed with `resume: <words>`, or
 closed as stopped with `close`. Run one driver per project at a time.
 
 **What it leaves.** The driver never deletes a branch. Delete by hand, when
-you are done with them: the spike branches, a cycle branch that shipped
-nothing, and a stopped cycle's leftover branches — its cycle branch among
-them — which the stop names. This workflow creates no work branches. The driver commits the project dir in the
+you are done with them: the spike branches and a stopped cycle's leftover
+branches — its cycle branch among them — which the stop names. A cycle
+branch that shipped nothing is removed by the cycle's own orchestrator; one
+left by a project run before that change is yours to delete. This workflow creates no work branches. The driver commits the project dir in the
 sidecar at every stop, and every cycle dir a build's orchestrator does not
 commit itself.
 

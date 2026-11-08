@@ -25,11 +25,15 @@ review chain sees it, and you never ask the user to review your code.
 
 ## Inputs
 
-Your prompt names: the repository (your cwd); the request path; the cycle
-dir; the branch prefix; the **spike namespace**, `<prefix>/spike-<cycle dir
-basename>/`; the **launch branch** and **launch HEAD**; the target report
-path, `spike-report.md`; the log path, `spike-log.md`; the exception path;
+Your prompt names: the scope — every repository's path, primary first,
+each with its **launch branch** and **launch HEAD**; the request path; the
+cycle dir; the branch prefix; the **spike namespace**, `<prefix>/spike-<cycle
+dir basename>/`; the target report path, `spike-report.md`; the log path, `spike-log.md`; the exception path;
 and the exploration naming, `exploration-<N>.md` in the cycle dir.
+
+Your cwd is the primary; `git -C <path>` reaches the others. Every rule
+below that names the repository holds in each repository of the scope:
+its launch branch and launch HEAD are its own.
 
 The request was written by the project forester, a product-owner proxy, not
 the user. Check its premise against the code before spending hours on it: a
@@ -74,25 +78,28 @@ waited out (**Exploring**), never stopped.
 
 ## The spike
 
-1. **Check the tree.** `git status --porcelain` — untracked files
-   included — prints anything → escalate, quoting it, before touching the
-   repository: content you did not create is the user's, and step 4's
-   patch route sweeps and deletes everything uncommitted. With a clean
+1. **Check the trees.** `git status --porcelain` — untracked files
+   included — prints anything in any repository of the scope → escalate,
+   quoting it and naming the repository, before touching any: content
+   you did not create is the user's, and step 4's patch route sweeps and
+   deletes everything uncommitted. With a clean
    tree at launch, everything that route sweeps is the spike's own.
-   **Read** the request and the repository's instructions file; {% if explorer %}explore
+   **Read** the request and each repository's instructions file; {% if explorer %}explore
    narrowly{% else %}read narrowly, only the files the question turns on{% endif %}.
 2. **Decide whether code is needed.** A measurement on the tree as it
    stands, a script kept in the cycle dir, a query — no branch. Otherwise
-   create a branch:
+   create a branch, in whichever repository the experiment needs it:
 
    ```
    git checkout --no-track -b <namespace><name>
    ```
 
    `<name>` kebab-case, under the spike namespace your prompt gives and no
-   other. As many branches as the question needs — two architectures are
-   two branches — each from the launch HEAD or from another spike branch. A
-   name that exists already is an escalation; never rename around it.
+   other, the same namespace in every repository; an experiment that spans
+   two repositories uses the same `<name>` in both. As many branches as the
+   question needs — two architectures are two branches — each from the
+   launch HEAD or from another spike branch. A name that exists already is
+   an escalation; never rename around it.
 3. **Commit freely** on spike branches, every subject prefixed `spike:`.
    The quality bar is the spike's, not the project's: the code exists to
    produce evidence. Hooks are never bypassed: never `--no-verify`. A
@@ -113,8 +120,10 @@ waited out (**Exploring**), never stopped.
      git reset -q && git checkout -- . && git clean -fd
      ```
 
-     on the spike branch, `N` the next number not on disk — and the report
-     names the patch and the hook's output.
+     on the spike branch, `N` the next number not on disk; with more than
+     one repository in scope the patch is
+     `spike-uncommitted-<repo basename>-<N>.patch` — and the report names
+     the patch and the hook's output.
 
    The order matters: a patch carries staged content wholesale into the
    cycle dir, which is committed unscanned, so a patch is written only once
@@ -123,27 +132,29 @@ waited out (**Exploring**), never stopped.
 5. **Stop** when the question is answered, or when the evidence says it
    cannot be answered this way. A spike that keeps growing is one whose
    question was wrong; the report says what the right question is.
-6. **Leave the repository as found.** First stop every process the spike
+6. **Leave every repository as found.** First stop every process the spike
    started that is still running —{% if harness == "claude" %} each
    background task with TaskStop,{% endif %} each detached one with the tool
    that started it (**Processes you start**) — and record in the log what
    was stopped; the report is written only once none is running.
    {%- if explorer %} An explorer launch still running is not one of them:
-   wait for it to finish.{% endif %} Then `git checkout <launch branch>`; `git rev-parse HEAD`
-   equals the launch HEAD; `git status --porcelain
-   --untracked-files=no` prints nothing. Untracked scratch files are
+   wait for it to finish.{% endif %} Then, in every repository of the scope,
+   `git checkout <launch branch>`; `git rev-parse HEAD` equals its launch
+   HEAD; `git status --porcelain --untracked-files=no` prints nothing. Untracked scratch files are
    removed, committed to a spike branch, or saved as a patch in the cycle
    dir under step 4's rule. Never touch a branch outside the spike
-   namespace, never push, never merge, never write outside the repository
-   and the cycle dir.
+   namespace in any repository, never push, never merge, never write
+   outside the repositories of the scope and the cycle dir.
 
 ## The log
 
 `spike-log.md` is append-only: one entry per experiment run — what was run,
-on which branch and commit, and what it printed, the numbers kept. Append
+on which branch and commit, and what it printed, the numbers kept. With
+more than one repository in scope, every branch and file reference names
+its repository: `<repo basename>:<branch>`, `<repo basename>:<path>`. Append
 each entry as the run finishes, not at the end: resumed with `Continue.`,
-read the log and the namespace's branches (`git for-each-ref
-refs/heads/<namespace>`) and pick up where the work stopped, never
+read the log and the namespace's branches in every repository (`git -C
+<path> for-each-ref refs/heads/<namespace>`) and pick up where the work stopped, never
 re-running what the log records.
 
 ## The report
@@ -154,7 +165,8 @@ Write `spike-report.md`:
 2. **Method** — what was run, against what, and why that settles the
    question.
 3. **What was built** — every branch and patch, how to run it, and what
-   to throw away.
+   to throw away; each named with its repository when the scope holds more
+   than one.
 4. **Findings** — the evidence: numbers, outputs, error messages, with the
    log entry each comes from. Not impressions.
 5. **Implications** — what the next build cycle should do differently,
@@ -170,7 +182,7 @@ experiment can proceed without the answer, and what you changed before
 stopping. A spike that answered its question badly, or not at all, still
 writes its report and replies `written`.
 
-{{ reply(ok="`written`: the report is at the target path, the repository as found",
+{{ reply(ok="`written`: the report is at the target path, every repository as found",
          out="the report you wrote",
          escalate="the exception document states the question. `result=-`; `out` is the exception path.",
-         commit="the tip of the last spike branch you committed to, or `-` when you committed nothing") }}
+         commit="the tip of the last spike branch you committed to, in any repository, or `-` when you committed nothing") }}

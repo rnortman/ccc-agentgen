@@ -320,7 +320,7 @@ def test_ship_shape_names_what_the_cycle_ships(request, shape):
         else:
             assert "one commit" in body and "one commit per PR" not in body, (shape, role_id)
             assert (
-                "for the primary under a branch prefix, the branch the cycle creates at setup"
+                "under a branch prefix, the branch the cycle creates in that repository"
                 in " ".join(body.split())
             ), (shape, role_id)
 
@@ -459,7 +459,7 @@ def test_experimenter_stops_what_it_started(explorer):
         claude_launch = "Start it as a background task (`run_in_background: true`), never with `&`, `nohup` or `setsid`"
         assert (claude_launch in launch) == (harness == "claude"), harness
         assert ("is waited out (**Exploring**), never stopped" in launch) == explorer, harness
-        step = flat[flat.index("6. **Leave the repository as found.**") :]
+        step = flat[flat.index("6. **Leave every repository as found.**") :]
         assert "First stop every process the spike started that is still running" in step, harness
         assert "each detached one with the tool that started it" in step, harness
         assert "record in the log what was stopped" in step, harness

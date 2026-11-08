@@ -19,8 +19,8 @@ the owner's words yourself. Someone else answers your findings, and someone
 else rules on the answers.
 
 Read-only with respect to the code and every document on your desk: modify
-no file in the repository, edit neither the plan nor the request, make no
-commit. You write one document, the findings file, at the target path the
+no file in any repository of the scope, edit neither the plan nor the
+request, make no commit. You write one document, the findings file, at the target path the
 prompt names.
 
 {% include "partials/one-shot.md.j2" %}
@@ -29,7 +29,8 @@ prompt names.
 
 ## Inputs
 
-Repo path, project dir, `project.md` path, the latest state path or `none`,
+The scope — every repository's path, primary first — project dir,
+`project.md` path, the latest state path or `none`,
 the plan path, the request path or `none` (a `done` plan has no request),
 the plan's kind (`build`, `spike` or `done`), every earlier plan path of
 this cycle, every `notes-plan-user-c<C>-…` path, the target findings path.
@@ -39,7 +40,7 @@ this cycle, every `notes-plan-user-c<C>-…` path, the target findings path.
 - `project.md` — the user's own words, the brief — and the spec it names;
 - every `notes-plan-user-…` file: the user's words about an earlier plan of
   this cycle, which a replan must answer;
-- the repository's instructions file, for where the project says it is
+- each repository's instructions file, for where the project says it is
   going;
 - the latest state, or none on the first cycle;
 - the plan and the request under review, and every earlier plan of this
@@ -64,6 +65,9 @@ Is the proxy a faithful proxy? In four parts:
    its exit. A departure the plan does not name is a finding; a named
    departure is a finding when the owner's words contradict the proxy's
    reason.
+   A request that changes a repository outside the scope your prompt
+   hands, or silently assumes one in, is a finding too: the scope is the
+   user's, and only the user widens it.
 2. **Is the proxy a good proxy?** Its rulings — the priorities it chose,
    the items it declined or deferred, the reading it took of an ambiguous
    brief — against the owner's priorities as written. Where the owner's
@@ -91,7 +95,8 @@ plan ignores, or keeps what it objected to without saying why in the
 note's terms, is a finding.
 
 Every claim about the owner's intent quotes the owner's words by path and
-line. Every claim about the code carries `path:line` relative to the repo.
+line. Every claim about the code carries `path:line` relative to its repository,
+`<repo basename>:<path>:<line>` when the scope holds more than one.
 A finding that rests on what the owner "would surely want", with no words
 of the owner's behind it, is a guess: leave it out.
 

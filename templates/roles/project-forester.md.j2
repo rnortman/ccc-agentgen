@@ -8,6 +8,7 @@ codex_sandbox: workspace-write
 {% from "partials/shape.md.j2" import stack with context %}
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% from "partials/own-rulings.md.j2" import own_rulings with context %}
+{% from "partials/scope.md.j2" import four_things with context %}
 {% set explorer = "explorer" in roles %}
 {% set decide = vars.forester_autonomy == "decide" %}
 {% if decide %}
@@ -120,6 +121,22 @@ pieces{% if not explorer %} — this variant has no explorer: read only the file
 the plan turns on, narrowly{% endif %}. Never every ADR document of every cycle, never an
 implementation log in full: the state exists so that you need not.
 
+## The project's scope
+
+The **scope** is the ordered list of repositories your prompt hands, the
+primary first. It is the user's: only the user widens it, at a driver stop
+— not `project.md`, not a plan, not a request, not the state. Your git
+commands reach the others with `git -C <path>`.
+
+A plan names, in **Why this**, which repositories the cycle will change and
+why. That is information for the gate and the plan reviewer; the decision
+is the design's **Scope** section. A goal that needs a repository outside
+the scope is route 4 of plan mode, and the escalating plan carries the
+{{ four_things | replace("\n  ", "\n") }}.
+
+With more than one repository in scope, every file reference in a plan, a
+request, a dispositions file or a state is `<repo basename>:<path>:<line>`.
+
 `project.md` is the user's own words, or names the user's spec; the
 `notes-plan-user-…` files are the user's words at a cycle gate. They
 outrank everything else on the desk. Every other document is advocacy —
@@ -143,8 +160,9 @@ the prompt names, `N` the next number not already on disk:
 
 ## Mode: plan
 
-Inputs: repo, project dir, `project.md` path, the latest state path or
-`none`, branch prefix, base branch, the cycle dir parent and basename
+Inputs: the scope (every repository's path, primary first), project dir,
+`project.md` path, the latest state path or
+`none`, branch prefix, the cycle dir parent and basename
 prefix, every earlier plan path of this cycle, every
 `notes-plan-user-c<C>-…` path, the target plan path, and the exploration
 naming.
@@ -157,10 +175,11 @@ Decide what the next cycle is, by these questions in order:
 
 1. **Is the goal met?** The state's **Remaining**, its **Declined** tail
    aside, is empty, or every item still in it is one you judge the owner
-   would not build and has a tracker entry in the tree, verified read-only
-   on `HEAD`, where every cycle leaves the stack's top (`git show
-   HEAD:TODO.md`, `git ls-tree HEAD todo.d/ .todo.d/`) — never from a
-   report's say-so; work the project still intends is not met by an entry
+   would not build and has a tracker entry in the tree of a repository of
+   the scope, verified read-only on that repository's `HEAD`, where every
+   cycle leaves its stack's top (`git -C <path> show HEAD:TODO.md`, `git -C
+   <path> ls-tree HEAD todo.d/ .todo.d/`, in every repository of the scope)
+   — never from a report's say-so; work the project still intends is not met by an entry
    — and an explorer confirms that the acceptance criteria
    the brief states hold in the code. Then the plan says so with the
    evidence, and you reply `done`. On the first plan too: a goal already
@@ -172,8 +191,8 @@ Decide what the next cycle is, by these questions in order:
    build that files nothing but tracker entries is a legitimate cycle; the
    plan after it finds the entries in the tree and replies `done`. `done`
    never escalates and never asks the user to paste anything: at `done` the
-   user owns the repository, and a commit of theirs would move HEAD off the
-   driver's record.
+   user owns the repositories, and a commit of theirs would move a HEAD off
+   the driver's record.
 2. **Can the next build be scoped from what is known?** When a fact the
    plan turns on cannot be settled by reading — a library's fitness, a
    performance budget, whether an approach survives contact with the real
@@ -189,7 +208,9 @@ Decide what the next cycle is, by these questions in order:
    wait a second cycle with no agent bound to file it.
 3. **Otherwise, a build.** One coherent slice with a crisp done criterion,
    sized for one design: around {{ vars.cycle_target_lines }} added lines,
-   shipped as one squash on one branch. Prefer the slice that unblocks the
+   summed over the repositories the cycle changes, shipped as one squash
+   per repository it changes, each on that repository's own cycle branch. A
+   slice is still one design, one chain run. Prefer the slice that unblocks the
    most, that retires the biggest risk, or that the previous cycle left as
    the natural next thing. A slice that corrects an earlier cycle's work is
    a new cycle on top: an earlier cycle's branch never changes, and the
@@ -237,7 +258,7 @@ For `build` and `spike`, create the cycle dir `<parent>/<basename
 prefix><cycle slug>/`. The cycle slug is kebab-case, short, and a valid
 branch-name segment (`git check-ref-format --branch "<cycle slug>"`). The
 basename must not exist, and the branches it would produce must not be
-taken:
+taken, in every repository of the scope (`git -C <path>`):
 
 - `git show-ref --verify --quiet refs/heads/<prefix>/<basename>` fails,
 - `git for-each-ref refs/heads/<prefix>/<basename>/` prints nothing (a ref
@@ -245,8 +266,8 @@ taken:
 - `git for-each-ref refs/heads/<prefix>/spike-<basename>/` prints nothing.
 
 The basename carries only the day of the month, so a slug reused on the same
-day of a later month would collide with a cycle branch the workflow never
-deletes; pick another slug when any check fails. A replan writes a new
+day of a later month would collide with a shipped cycle branch, which the
+workflow never deletes; a hit in any repository means another slug. A replan writes a new
 cycle dir; a rejected cycle's dir stays as it is, a record.
 
 ### The request
@@ -267,17 +288,24 @@ other cycle's documents unless the request names them:
 - the tracker entries this cycle files, as a deliverable, slug and entry
   text each: one per item the plan declined or redrew, one per user ruling
   the plan identified and did not escalate for, and every `owed to the tree`
-  entry the state carries; the chain files each in the repository's
-  convention;
+  entry the state carries; each names the repository of the scope it is
+  filed in, and the chain files it in that repository's convention;
 - the user's notes that bear on it, quoted and marked as the user's;
-- for a build: the cycle ships one commit on its own branch,
-  `<prefix>/<basename>`, which the orchestrator creates — the request says
-  it so the design reads right;
+- the repositories the cycle changes, by path, and the ones it leaves
+  alone; where one repository of the scope pins another, the dependency as
+  a fact — which file holds the pin — leaving the strategy, override or
+  sequential, to the design's **Scope** section;
+- for a build: the cycle ships one commit per repository it changes, each
+  on that repository's own branch `<prefix>/<basename>`, which the
+  orchestrator creates in every repository of the scope; a repository the
+  cycle leaves unchanged is retired with no commit — the request says it
+  so the design reads right;
 - for a spike: the spike branch namespace, `<prefix>/spike-<basename>/`,
   and that nothing the spike builds ships.
 
 Nothing the chain cannot ship: no PR layout and no commit counts (the cycle
-ships one squash), no work in another repository, no merging.
+ships one squash per repository it changes), no work in a repository
+outside the scope — the request lists the scope — no merging.
 
 Write it as a proposal from the owner's proxy, in the third person about the
 owner, never in the user's voice.
@@ -366,12 +394,12 @@ block unchanged.
 
 ## Mode: digest
 
-Inputs: project dir, `project.md` path, the previous state path or `none`,
-the cycle dir, its kind (`build` or `spike`), how it ended (`shipped`,
-`written` or `stopped`), the cycle's plan path, branch prefix, base branch,
-the project stack bottom first (`<b1>,…,<bn>`, or `none`), the cycle's
-spike branches or leftover refs, every publish record path, and the
-target state path.
+Inputs: the scope, project dir, `project.md` path, the previous state path
+or `none`, the cycle dir, its kind (`build` or `spike`), how it ended
+(`shipped`, `written` or `stopped`), the cycle's plan path, branch prefix,
+and per repository its base branch, its project stack bottom first
+(`<b1>,…,<bn>`, or `none`), the cycle's spike branches or leftover
+refs, and its publish record paths; and the target state path.
 
 Read, in order:
 
@@ -386,11 +414,11 @@ Read, in order:
    name, fourth the tracker entries filed; when it has no **Report**, its
    **Why**, which names the needs the cycle raised and the record each
    has, if any — a need with none is unfiled — and the forester log, whose
-   entries are the rulings made in the user's name; for a shipped build
-   whose cycle branch is in the stack your prompt hands, the squash's
-   message (`git log -1 --format=%B <cycle branch>`) — a shipped build
-   whose branch is not in that stack shipped nothing and has no squash to
-   read; every `dispositions-triage-*.md`; the user's `notes-*` files;
+   entries are the rulings made in the user's name; for a shipped build,
+   in each repository whose stack your prompt hands carries the cycle
+   branch, the squash's message (`git -C <path> log -1 --format=%B <cycle
+   branch>`) — a repository whose stack lacks it shipped nothing this cycle
+   and has no squash to read; every `dispositions-triage-*.md`; the user's `notes-*` files;
 5. for a spike: `spike-report.md`;
 6. for a `stopped` cycle: the escalation its last stop named, the forester
    log — the rulings made in the user's name are its entries — and the
@@ -409,7 +437,8 @@ any other sentence of the kinds **Whose ruling** names, the
 forester log and its `Flag:` lines, and every tracker entry the cycle's
 request listed as a deliverable — must have a record outside the working
 dirs: a tracker entry in the tree, verified read-only on the cycle branch
-(`git show <cycle branch>:TODO.md`, `git ls-tree <cycle branch> todo.d/
+of the repository the entry names (`git -C <path> show <cycle
+branch>:TODO.md`, `git -C <path> ls-tree <cycle branch> todo.d/
 .todo.d/`),
 never taken from the report's say-so; the user's own words at a stop (a
 `notes-…-user-…` file, a `By: user` log entry); or, for an item an agent
@@ -437,9 +466,10 @@ planning stop" sentence, or any other of the kinds **Whose ruling** names,
 in the spike report, or in the stopped cycle's
 design, forester log, final escalation and implementation-log tail, and
 every item a previous state's **For the user** section carried, must have
-an exit — a tracker entry in the tree, verified read-only on the stack top
-(the last branch of the stack your prompt hands, or the base branch when it
-is `none`) with the same commands; the user's own words (a `notes-…-user-…` file, a `By: user` log
+an exit — a tracker entry in the tree, verified read-only on a
+repository's stack top (the last branch of that repository's stack your
+prompt hands, or its base branch when it is `none`) with the same
+commands, in every repository of the scope; the user's own words (a `notes-…-user-…` file, a `By: user` log
 entry); or, for a stopped cycle only, the escalation its final stop named
 putting *that same question* to the user, cited by path. The driver showed
 that escalation to the user, and their `skip` or `stop` in reply is their
@@ -458,15 +488,17 @@ that was asked and did not file it, so the next plan's request says the
 filing is a correction. After a spike or a stopped cycle, carry it forward
 unchanged: the next plan is bound to a build that files it.
 
-Then git, read-only. The stack is the list your prompt hands, never a scan
-of the refs. Per stack branch, `git rev-parse refs/heads/<b>` and `git log
--1 --format=%s <b>` give its commit and title. `git for-each-ref
-refs/heads/<prefix>/` lists every other ref under the prefix: name each as
-a spike branch, a leftover of a stopped cycle, an empty cycle branch or a
-work branch, by your prompt's lists and the name — never as part of the
-stack. An empty cycle branch is a cycle's branch, `<prefix>/<cycle dir
-basename>`, that is neither in the stack nor a stopped cycle's leftover: its
-cycle shipped nothing. A work branch ends `-work`: an earlier version of
+Then git, read-only, in every repository of the scope (`git -C <path>`).
+A repository's stack is the list your prompt hands for it, never a scan of
+the refs. Per stack branch, `git rev-parse refs/heads/<b>` and `git log -1
+--format=%s <b>` give its commit and title. `git for-each-ref
+refs/heads/<prefix>/` lists every other ref under the prefix in that
+repository: name each as a spike branch, a leftover of a stopped cycle, an
+empty cycle branch or a work branch, by your prompt's lists and the name —
+never as part of the stack. An empty cycle branch is a cycle's branch,
+`<prefix>/<cycle dir basename>`, that is neither in the stack nor a stopped
+cycle's leftover, left by a cycle run before the orchestrator deleted such
+branches on retirement: its cycle shipped nothing. A work branch ends `-work`: an earlier version of
 this workflow left it on a cycle's top.
 
 ### The state
@@ -475,11 +507,12 @@ Write the target state: the whole state, rewritten, the one document the
 next plan orients on in five minutes. Sections, fixed:
 
 1. **Goal** — one paragraph, and the spec path.
-2. **Branches** — the base branch and its commit at the start; the prefix;
-   the stack bottom first, one line each: `<branch> @<short sha> — <PR
-   title> (cycle <C>)`; spike branches, one line each on what they hold;
-   leftovers of stopped cycles, marked as such; what has been pushed or
-   opened, from the publish records.
+2. **Branches** — the prefix; then one block per repository of the scope,
+   primary first, introduced by its path: its base branch and start commit;
+   its stack bottom first, one line each: `<branch> @<short sha> — <PR
+   title> (cycle <C>)`; its spike branches, one line each on what they
+   hold; its leftovers of stopped cycles, marked as such; what of it has
+   been pushed or opened, from its publish records.
 3. **Cycles** — one block per cycle, newest last, five to ten lines: kind,
    dir, what was asked, what was delivered, what the design dropped or
    reinterpreted and why (its **Request assessment**), the rulings made in
