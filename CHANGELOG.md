@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Fable pins move to Claude Fable 5.2, Sonnet pins to Sonnet 5.5.** Each
+  role the variants pinned to `claude-fable-5-1[1M]` (the designers,
+  foresters and forester commentators, the triage sketcher, contrarian and
+  site remover, the project forester and plan reviewer) now runs
+  `claude-fable-5-2[1M]`, and the prepass reviewers pinned to
+  `claude-sonnet-5` now run `claude-sonnet-5-5`. Preference files under
+  `<ccc-dir>/prefs/` carry their own pins; update them and re-run
+  `agentgen deploy`.
 - **`project-burndown` and `-auto` can span several repositories.** Name
   them at launch with a scope phrase — `in scope: <path> <path>` — and the
   launch repository is the primary, each path a sibling. Setup checks every
@@ -62,7 +70,7 @@
   `project-burndown` is unchanged: you already read every plan at its
   cycle gate.
   - The `plan-reviewer` is pinned like the project forester:
-    `claude-fable-5-1[1M]`, `gpt-6-astra` on Codex.
+    `claude-fable-5-2[1M]`, `gpt-6-astra` on Codex.
   - The driver record gains two line kinds, `cycle <C> plan written: …`
     and `cycle <C> plan review escalated: …`; the review's documents live
     in the project dir as `notes-plan-review-c<C>-g<G>.md`,

@@ -202,8 +202,8 @@ RECREATED_DELTA_RULES = (
 KNOWN_MODELS = {
     "claude-opus-5-5[1M]",
     "claude-opus-4-6[1M]",
-    "claude-sonnet-5",
-    "claude-fable-5-1[1M]",
+    "claude-sonnet-5-5",
+    "claude-fable-5-2[1M]",
 }
 KNOWN_CODEX_MODELS = {"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
 
@@ -1470,7 +1470,7 @@ def test_forester_commentator_cannot_reach_the_code(builds):
 def test_site_remover_frontmatter_pins(builds):
     """The remover reads code and judges what a comment means: pinned like the sketcher."""
     remover = builds[TRIAGE_STEM].by_id["site-remover"].frontmatter
-    assert remover["model"] == "claude-fable-5-1[1M]"
+    assert remover["model"] == "claude-fable-5-2[1M]"
     assert remover["codex_model"] == "gpt-6-sol"
 
 
