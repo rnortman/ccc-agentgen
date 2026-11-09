@@ -34,7 +34,7 @@ or, when the user says so, for the rest of the session:
   checkout fails there, a scope phrase is refused as **Scope phrase** says;
 - narrow the scope — `drop from scope: <path>` at any stop. The primary is
   refused by name: it is the work tree you were launched in. A shipped
-  repository is refused by name: it left the scope by shipping. Any other
+  repository is refused by name: its tree is the user's now. Any other
   repository whose HEAD is at its original base leaves the scope at once. One whose
   HEAD has moved is not dropped silently: state its HEAD and original base
   in one line and ask once — `restore` (reset it to its original base, then
@@ -42,9 +42,9 @@ or, when the user says so, for the rest of the session:
   without commits — HEAD at its original base, or after `restore` — is
   **Return**ed before it leaves, at any stop; one kept with its commits
   leaves on its cycle branch. A drop at a ship-gate stop also strikes the repository
-  from the recorded keys, as **Ship gate** says. A repository otherwise
-  leaves the scope by shipping, or by being retired unchanged at the ship
-  gate.
+  from the recorded keys, as **Ship gate** says. Nothing else
+  removes a repository from the scope: one the cycle never changes stays in
+  it to the closing stop, which lists it `unchanged`.
 {% endif %}
 
 Carry it out as stated and say in one line what you did. A standing

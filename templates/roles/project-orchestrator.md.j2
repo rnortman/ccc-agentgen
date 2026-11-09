@@ -618,8 +618,8 @@ write to before answering.
      the cycle branch; or
      (b) unchanged: HEAD equals its pre-cycle HEAD, `git symbolic-ref
      --short HEAD` prints its pre-cycle branch, and `git show-ref --verify
-     --quiet refs/heads/<prefix>/<cycle dir basename>` fails — retired
-     unchanged, or dropped without commits, its empty cycle branch deleted
+     --quiet refs/heads/<prefix>/<cycle dir basename>` fails — unchanged
+     at the cycle's end, or dropped without commits, its empty cycle branch deleted
      by the orchestrator — and its `stack` entry is `none`.
      Anything else in any repository → STOP, name the repository, its
      branch, HEAD and pre-cycle HEAD, end turn: the user restores it;

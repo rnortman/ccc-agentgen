@@ -2394,7 +2394,9 @@ PLAIN_SETUP_STOPS = (
 # Return: the one procedure that deletes an empty cycle branch.
 PLAIN_RETURN = "then `git branch -d <prefix>/<request slug>`"
 PLAIN_RETURN_USES = (
-    "With a branch prefix recorded it is **Return**ed as it retires.",
+    "with a branch prefix recorded, **Return** every unshipped repository of the scope, primary first;"
+    " a `-d` refusal stops as **Return** says.",
+    "a drop (**User directives**) and the closing stop (**Ship gate** step 7)",
     "is **Return**ed before it leaves, at any stop; one kept with its commits leaves on its cycle branch.",
     "a checkout that fails **Return**s the paths already branched.",
     "(`git checkout --detach <commit>` for the primary when its launch branch was recorded `detached`)",
@@ -2656,6 +2658,7 @@ def test_project_driver_checks_the_stack_from_git(builds):
             "its `stack` entry is the cycle branch",
             "(b) unchanged: HEAD equals its pre-cycle HEAD, `git symbolic-ref --short HEAD` prints its pre-cycle"
             " branch, and `git show-ref --verify --quiet refs/heads/<prefix>/<cycle dir basename>` fails",
+            "unchanged at the cycle's end, or dropped without commits, its empty cycle branch deleted by the orchestrator",
             "and its `stack` entry is `none`",
             "Anything else in any repository → STOP, name the repository, its branch, HEAD and pre-cycle HEAD",
             "minus the recorded refs, plus the cycle's branch, `<prefix>/<cycle dir basename>`, if it exists",
@@ -3021,11 +3024,11 @@ def test_project_roles_take_the_scope(builds):
                 "a hit in any repository means another slug",
                 "the cycle ships one commit per repository it changes",
                 "which the orchestrator creates in every repository of the scope",
-                "a repository the cycle leaves unchanged is retired with no commit",
+                "a repository the cycle leaves unchanged ships no commit and its empty cycle branch is deleted at the cycle's end",
                 "no work in a repository outside the scope",
                 "verified read-only on the cycle branch of the repository the entry names",
                 "summed over the repositories the cycle changes",
-                "left by a cycle run before the orchestrator deleted such branches on retirement",
+                "left by a cycle run before the orchestrator deleted such branches at the cycle's end",
                 "one block per repository of the scope, primary first",
             ):
                 assert phrase in flat, f"{where}: {phrase}"
@@ -3868,9 +3871,33 @@ def test_non_stack_orchestrators_ship_per_repository(builds):
                 "in every unshipped repository of the scope",
                 "struck from the recorded `order=`",
                 "requires the ADR directory in a separate repository",
+                "Then the loop over the due repositories; none due → step 7.",
+                "The recorded `order=` still names a repository → its first entry, step 0. Otherwise → step 7.",
+                "**Return** every unshipped repository of the scope, primary first;",
+                "Nothing else removes a repository from the scope",
+                "A repository the keys do not name stays in the scope, is HEAD-checked like any other and may be"
+                " the subject of a step-6 round; a commit there is recorded by **HEAD check** and fails **Key check**"
+                " on the gate's next entry, which step 7 makes before the cycle ends.",
+                "An in-scope repository whose HEAD never moved is not named in `order=` and stays in the scope;"
+                " the closing stop lists it `unchanged`.",
+                "7. First, in every unshipped repository of the scope, before any is touched: `git rev-parse HEAD`"
+                " not its recorded HEAD → **Repo anomaly**, naming it, and step 7 again once it is repaired;"
+                " recorded HEAD not its original base → the gate's entry procedure, whose **Key check** fails on it.",
+                "`<path>: unchanged` for every unshipped repository of the scope, whose HEAD step 7 found at its"
+                " original base",
+                "Each `<branch>` is the repository's current branch: at the closing stop, the launch branch for a"
+                " repository **Return**ed at step 7.",
             )
             for phrase in phrases:
                 assert (phrase in flat) == (not stack), f"{where}: {phrase}"
+            if not stack:
+                step7 = flat[flat.index("7. First, in every unshipped repository") :]
+                assert (
+                    step7.index("before any is touched")
+                    < step7.index("**Return** every unshipped")
+                    < step7.index("Then **Artifact commit**")
+                ), where
+                assert "resume step 7" not in flat, where
             assert "ship=" not in flat, where
             assert "A moved HEAD in a shipped repository" not in flat, where
             ship = _section(body, "### Ship gate")
@@ -4158,9 +4185,50 @@ def test_forester_ship_gate_checks_the_keys_against_the_scope(builds):
                 assert outcome in mode, where
 
 
+def test_forester_modes_name_the_scope(builds):
+    """Every forester mode's inputs name the scope, except in the stack chains,
+    which have none; repo mode also names the repository concerned.
+    """
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        stack = _is_stack(build)
+        if "forester" not in build.by_id:
+            continue
+        for name, body in build.bodies("forester"):
+            for mode in ("design", "triage", "scan", "ship", "repo"):
+                where = f"{stem}/{name}: {mode}"
+                section = " ".join(_raw_section(body, f"## Mode: {mode}").split())
+                inputs = section[section.index("Inputs:") :]
+                inputs = inputs[: inputs.index(". ")]
+                assert ("the scope" in inputs) == (not stack), where
+            repo = " ".join(_raw_section(body, "## Mode: repo").split())
+            assert ("the scope, the repository concerned, its branch" in repo) == (not stack), f"{stem}/{name}"
+
+
+RETIREMENT_PHRASES = (
+    "**Retirement.**",
+    "shipped or retired",
+    "retired `unchanged`",
+    "retired unchanged",
+    "retired at the ship gate",
+    "deleted such branches on retirement",
+    "as it retires",
+)
+
+
+def test_no_role_retires_a_repository(builds):
+    """An unchanged repository stays in the scope to the closing stop; no role
+    describes it leaving earlier.
+    """
+    for name, body in _all_bodies(builds):
+        flat = " ".join(body.split())
+        for phrase in RETIREMENT_PHRASES:
+            assert phrase not in flat, f"{name}: {phrase}"
+
+
 def test_standard_payload_carries_the_scope(builds):
-    """Every launch carries the scope; the forester's document gates do not,
-    and only its ship gate gets the log.
+    """Every launch carries the scope, the forester's and the commentator's
+    included; only the forester's ship gate gets the log.
     """
     for stem in REVIEW_CHAIN_STEMS:
         build = builds[stem]
@@ -4173,8 +4241,13 @@ def test_standard_payload_carries_the_scope(builds):
                 continue
             gate = _section(body, "### Forester gate")
             assert "− log path except in ship mode" in gate, where
-            if not stack:
-                assert "− the scope, except in repo mode, which gets the one repository concerned" in gate, where
+            assert "− the scope" not in gate, where
+            assert ("− round base and HEAD" in gate) == stack, where
+            if "forester-commentator" in build.by_id:
+                commentary = _section(body, "### Commentary")
+                assert "− log path" in commentary, where
+                assert ("− round base and HEAD" in commentary) == stack, where
+                assert "− the scope" not in commentary, where
             flat = " ".join(body.split())
             for mode in ("mode design", "mode triage", "mode scan"):
                 start = flat.find(f"**Forester gate**, {mode}")

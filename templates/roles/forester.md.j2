@@ -168,8 +168,8 @@ converged say the question is the user's, not that a third note will land.
 
 A design or delta has cleared its review chain and reached the user gate.
 
-Inputs: working dir, request path, design path — or delta path with the
-frozen design and prior deltas — reviewer notes, dispositions and judge
+Inputs: working dir, {% if not stack %}the scope, {% endif %}request path, design path — or
+delta path with the frozen design and prior deltas — reviewer notes, dispositions and judge
 verdicts for this review, any escalation verdict, every user{% if decide %} and userproxy{% endif %}
 notes path, forester log, target ruling path{% if decide %}, `G`, target userproxy notes
 path{% endif %}{% if followup %}, every `pr-comments-<K>.md` and every `pr-posted-<K>.md`
@@ -274,8 +274,8 @@ A post-freeze escalation reached the point where the user would rule: the
 designer's triage ruling names a user-judgement call. (A design-review
 escalation arrives at the design gate instead, as its verdict.)
 
-Inputs: working dir, request path, effective design, the triage dispositions,
-triggering documents, every user{% if decide %} and userproxy{% endif %} notes path,
+Inputs: working dir, {% if not stack %}the scope, {% endif %}request path, effective design,
+the triage dispositions, triggering documents, every user{% if decide %} and userproxy{% endif %} notes path,
 forester log, target ruling path{% if decide %}, `G`, target userproxy notes path{% endif %}.
 
 {% if decide %}
@@ -301,8 +301,8 @@ yours, and the brief says the user must rule on it.
 
 The round-close scanner passed a round and wrote its report for the user.
 
-Inputs: working dir, request path, effective design, the scan report(s)
-since your last scan gate, every user{% if decide %} and userproxy{% endif %} notes path, forester
+Inputs: working dir, {% if not stack %}the scope, {% endif %}request path, effective design,
+the scan report(s) since your last scan gate, every user{% if decide %} and userproxy{% endif %} notes path, forester
 log, target ruling path{% if decide %}, target userproxy notes path{% endif %}.
 
 The scanner already decided the round continues; it reports what an owner
@@ -326,8 +326,8 @@ The final round passed review; the user would approve the {% if stack %}stack{% 
 Inputs: working dir, request path, effective design, the implementation log,
 every carried path — scan reports, triage rulings — every
 user{% if decide %} and userproxy{% endif %} notes path, forester log, target ruling path{% if decide %}, target userproxy notes path{% endif %}{% if stack %}, and 
-{{ stack_input() }} — so the ruling can name the PRs{% else %}, the repository
-being shipped and its position (`ship 1 of 2: <X>`), the recorded `order=` and
+{{ stack_input() }} — so the ruling can name the PRs{% else %}, the scope, the
+repository being shipped and its position (`ship 1 of 2: <X>`), the recorded `order=` and
 `pins=`, and the pending pins, with the recorded `next=`{% endif %}. Not the diff:
 whether the code is right was the review chain's job; whether the project
 should own what it built is yours.
@@ -445,8 +445,8 @@ commit that does not descend from the recorded one, HEAD is detached with
 history the branch lacks or sits on another branch, or a role that never
 commits did. The orchestrator will not guess; you rule as the owner would.
 
-Inputs: working dir, branch, recorded HEAD, current HEAD and attachment
-state, the role and status line of the launch that returned, the repairs on
+Inputs: working dir, {% if not stack %}the scope, the repository concerned, its {% endif %}branch,
+recorded HEAD, current HEAD and attachment state, the role and status line of the launch that returned, the repairs on
 the table (`adopt`, `restore`, or only one), forester log, target ruling
 path. No documents: this is the one mode where you look at the tree —
 `git log`, `git status`, `git diff` between the two states — to learn what

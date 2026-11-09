@@ -440,7 +440,8 @@ sequence cannot run there.
 At every stop after setup, when the scope holds more than the primary, the
 surfaced lines include one line stating it back: `scope: <path> (<branch>),
 <path> (<branch>)` — the user sees what the cycle may write to before
-answering.
+answering. Each `<branch>` is the repository's current branch: at the
+closing stop, the launch branch for a repository **Return**ed at step 7.
 {% endif %}
 
 ### Design
@@ -716,8 +717,8 @@ content:
 Record the keys as they arrive, unchecked, replacing the previous round's;
 they are checked once, at **Ship gate** entry (**Key check**), against the
 scope and the HEADs as they stand after the final round's review. An
-in-scope repository whose HEAD never moved is not named in `order=` and is
-retired at the ship gate.
+in-scope repository whose HEAD never moved is not named in `order=` and
+stays in the scope; the closing stop lists it `unchanged`.
 {% endif %}
 {% if stack %}
 
@@ -962,17 +963,15 @@ held again it runs the entry procedure, in this order:
     repository `order=` does not; a pair's Y comes before its X in
     `order=` (in every pair X precedes Y); a pending pin's Y is not in
     `order=`.
-- **Retirement.** Every unshipped in-scope repository that is not due and
-  whose HEAD is at its original base is **retired**: it leaves the scope
-  with no gate, no squash and no changelog run, and the closing stop lists
-  it as `<path>: unchanged`. With a branch prefix recorded it is
-  **Return**ed as it retires.
 - **Pending pins**, in `order=` order of Y: an unanswered pair → step 3's
   stop for its X; an answered pair → step 4's **Pin step** for it.
-- Then the loop over the due repositories.
+- Then the loop over the due repositories; none due → step 7.
 
 A due repository therefore always has commits, and no empty range is ever
-squashed. The check is mechanical: whether the keys match the design's
+squashed. A repository the keys do not name stays in the scope, is
+HEAD-checked like any other and may be the subject of a step-6 round; a
+commit there is recorded by **HEAD check** and fails **Key check** on the
+gate's next entry, which step 7 makes before the cycle ends. The check is mechanical: whether the keys match the design's
 **Scope** section is {% if fg_ship %}the forester's question at step 0, and {% endif %}the triage designer's on a
 key failure.
 
@@ -1049,7 +1048,7 @@ For each due repository X, in order:
    the design, its input is the user's own words, and its done criterion is
    the project's full check.
 5. The recorded `order=` still names a repository → its first entry, step
-   0. Every repository shipped or retired → step 7.
+   0. Otherwise → step 7.
 6. Changes requested instead, at any ship point → capture the request ({% if autoship %}the userproxy notes, {% endif %}the
    user's document, or chat directives verbatim to a fresh notes file).
    Every change request, whatever it asks for, goes to `designer` **delta**
@@ -1058,15 +1057,24 @@ For each due repository X, in order:
    bump implementation `R`. The round may touch any unshipped repository; a
    shipped one is not reopened — a change there is a new cycle. The pending
    pins survive the round, and its end enters the gate afresh.
-7. **Artifact commit** — the **Stop commit** of the shipped end, when the
-   artifact repo is not the repo: after the squashes{% if changelog %}, the changelogs{% endif %}, any push
+7. First, in every unshipped repository of the scope, before any is
+   touched: `git rev-parse HEAD` not its recorded HEAD → **Repo anomaly**,
+   naming it, and step 7 again once it is repaired; recorded HEAD not its
+   original base → the gate's entry procedure, whose **Key check** fails on
+   it. Then, with a branch prefix recorded, **Return** every unshipped
+   repository of the scope, primary first; a `-d` refusal stops as
+   **Return** says. Then **Artifact commit** —
+   the **Stop commit** of the shipped end, when the artifact repo is not the
+   repo: after the squashes{% if changelog %}, the changelogs{% endif %}, any push
    already made, the last action before the cycle's closing
    stop. A push touches no artifact; a post-cycle push commits nothing{% if eli5 %}, a
    post-cycle rendering (**Rendering on request**) does{% endif %}.
 8. STOP: surface {% if fg_ship %}the latest forester ship document path and {% endif %}every repository as a fact, one line
    each, primary first — `<path>: <branch> at <HEAD>, pushed to origin`,
-   `<path>: <branch> at <HEAD>, unpushed` or `<path>: unchanged` — and, for
-   each path in the recorded `next=`, one line `next: a follow-up cycle in
+   `<path>: <branch> at <HEAD>, unpushed`, or `<path>: unchanged` for every
+   unshipped repository of the scope, whose HEAD step 7 found at its
+   original base —
+   and, for each path in the recorded `next=`, one line `next: a follow-up cycle in
    <path> — its request is the design's **Scope** entry for <path>`; never
    as a request or an offer. That line is the stop's own words, where the
    user reads the result, whether or not anyone reads {% if fg_ship %}the ship document{% else %}any document{% endif %}. End turn.
@@ -1213,8 +1221,8 @@ when its launch branch was recorded `detached`), then `git branch -d
 refuses anything but a branch with no commits beyond its original base, so
 no state loses work. `-d` refuses → STOP, quote it and name the repository,
 end turn. Used by **Setup** step 4, **Scope phrase**, a drop (**User
-directives**) and retirement (**Ship gate**); without a branch prefix it
-does nothing.
+directives**) and the closing stop (**Ship gate** step 7); without a
+branch prefix it does nothing.
 {% endif %}
 
 ### Repo anomaly
@@ -1492,8 +1500,8 @@ Parameters: mode, id, the documents on the table. `ccc run forester`: + mode,
 + id, + `forester-log.md`, + every user notes{% if decide %} and userproxy notes{% endif %} path, + the
 mode's documents, + target `forester-<mode>-<id>.md`{% if decide %}, + target
 `userproxy-notes-<mode>-<id>.md`, + for design and triage `G` and the cap
-{{ vars.forester_gate_rounds }}{% endif %}. − log path except in ship mode, − {% if stack %}round base and
-HEAD{% else %}the scope, except in repo mode, which gets the one repository concerned{% endif %}: it reads documents, not code. Carry {% if decide %}both targets{% else %}the target{% endif %}.
+{{ vars.forester_gate_rounds }}{% endif %}. − log path except in ship mode{% if stack %}, − round base and
+HEAD{% endif %}: it reads documents, not code. Carry {% if decide %}both targets{% else %}the target{% endif %}.
 
 {% if decide %}
 Route on `result`. `approve` (design, ship) and `noted` (scan) continue as
@@ -1512,8 +1520,8 @@ the user gate proceeds as written.
 
 Parameter: the step id `<step>`. `ccc run forester-commentator` → target
 `commentary-<step>.md`: + the wave's notes path(s), + every user{% if decide %} and
-userproxy{% endif %} notes path{% if forester %}, + `forester-log.md` where it exists yet{% endif %}. − log path, − round base and
-HEAD, − plan paths: it reads the findings and the spec, nothing else. Runs
+userproxy{% endif %} notes path{% if forester %}, + `forester-log.md` where it exists yet{% endif %}. − log path{% if stack %}, − round base and
+HEAD{% endif %}, − plan paths: it reads the findings and the spec, nothing else. Runs
 once per wave with findings, before its respond step; never on a rework
 step. Its file goes to that step's responder and to the judge.
 {% endif %}

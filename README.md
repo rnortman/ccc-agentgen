@@ -296,7 +296,7 @@ scope — at setup, after the same prefix checks and a check that the name
 is free, or when a scope phrase adds the repository — and each ship squash
 lands on its repository's branch. The branch checked out at launch is
 never moved, and a detached primary HEAD at launch is no stop. A
-repository that ships nothing — retired unchanged, or dropped without
+repository that ships nothing — unchanged at the cycle's end, or dropped without
 commits — has its empty cycle branch deleted and its launch branch checked
 out again. Without the words the cycle lands on the checked-out branch, as
 before.
@@ -419,13 +419,14 @@ another one pins is squashed (and, in `-auto`, pushed off `main`), the
 cycle stops in every autonomy: `Waiting: the shipped reference of <X> for
 the pin in <Y>`. Ship it, answer with the reference, and the implementer
 restores the pin to it, runs the dependent's full check and commits; then
-the dependent ships. An in-scope repository the cycle never changed is
-retired as `unchanged`. The closing stop lists every repository. Once a
-repository has shipped, the orchestrator stops watching its HEAD: shipping
-it is yours, and it cannot be dropped from the scope. At a ship-gate stop,
-`drop from scope:` abandons a repository not yet shipped (`restore` resets
-its commits away first); a dependent whose dependency you drop goes to
-triage.
+the dependent ships. An in-scope repository the cycle never changed stays
+in scope to the end — a ship-gate change request may still send work
+there. The closing stop lists every repository, an unchanged one as
+`unchanged`. Once a repository has shipped, the orchestrator stops
+watching its HEAD: shipping it is yours, and it cannot be dropped from the
+scope. At a ship-gate stop, `drop from scope:` abandons a repository not
+yet shipped (`restore` resets its commits away first); a dependent whose
+dependency you drop goes to triage.
 
 The stack chains (`review-chain-stack*`) stay in one repository: they
 refuse a scope phrase, and a change needed elsewhere is a `TODO.md` entry
@@ -748,8 +749,8 @@ rebase in progress, the prefix free) in each, and refuses the ADR root's
 repository and two checkouts sharing a basename. The project then keeps
 one stack per repository: each cycle's orchestrator branches every
 repository in scope at `<p>/<cycle dir basename>`, squashes the ones the
-design changes, and retires the others with their empty branch deleted and
-their launch branch checked out again, so no branch is left behind where
+design changes and, at the cycle's end, deletes the others' empty branches
+and checks their launch branches out again, so no branch is left behind where
 nothing shipped. Pins between in-scope repositories and the pin stop work
 as in [Repositories in scope](#repositories-in-scope); with `publish: off`
 the dependency's squash the pin stop names exists only locally. The driver

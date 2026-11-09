@@ -298,8 +298,9 @@ other cycle's documents unless the request names them:
 - for a build: the cycle ships one commit per repository it changes, each
   on that repository's own branch `<prefix>/<basename>`, which the
   orchestrator creates in every repository of the scope; a repository the
-  cycle leaves unchanged is retired with no commit — the request says it
-  so the design reads right;
+  cycle leaves unchanged ships no commit and its empty cycle branch is
+  deleted at the cycle's end — the request says it so the design reads
+  right;
 - for a spike: the spike branch namespace, `<prefix>/spike-<basename>/`,
   and that nothing the spike builds ships.
 
@@ -498,7 +499,7 @@ empty cycle branch or a work branch, by your prompt's lists and the name —
 never as part of the stack. An empty cycle branch is a cycle's branch,
 `<prefix>/<cycle dir basename>`, that is neither in the stack nor a stopped
 cycle's leftover, left by a cycle run before the orchestrator deleted such
-branches on retirement: its cycle shipped nothing. A work branch ends `-work`: an earlier version of
+branches at the cycle's end: its cycle shipped nothing. A work branch ends `-work`: an earlier version of
 this workflow left it on a cycle's top.
 
 ### The state

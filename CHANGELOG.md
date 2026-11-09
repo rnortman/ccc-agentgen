@@ -34,12 +34,20 @@
   only, leaving a sibling added by `in scope:` on whatever branch it had
   checked out. Now the cycle branch is created in every repository of the
   scope, at setup or when the repository joins. A repository the cycle
-  ships nothing to — retired unchanged at the ship gate, or dropped with no
+  ships nothing to — unchanged at the cycle's end, or dropped with no
   commits — gets its empty cycle branch deleted (`git branch -d`, which
   refuses anything that holds a commit) and its launch branch checked out
   again. A single-repository chain sees the difference only when its cycle
   ships nothing: the empty `<p>/<request slug>` branch no longer stays
   behind. Without a branch prefix nothing changes.
+- **A repository in scope that a cycle does not change stays in scope
+  through the ship gate.** A change request at the ship gate can now send
+  work to it without the cycle asking you to bring it into scope again;
+  under a branch prefix its empty cycle branch is deleted at the cycle's
+  end instead of on entering the ship gate. The forester and the
+  forester-commentator now receive the scope on every launch, so the
+  forester no longer takes a multi-repository cycle for a scope of one.
+  Nothing to do on upgrade.
 
 - **`project-burndown-auto` reviews every plan before the cycle runs.** A
   new role, the `plan-reviewer`, reads the project forester's plan and
