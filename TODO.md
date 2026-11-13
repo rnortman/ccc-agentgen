@@ -65,6 +65,44 @@ site scan — a path exclude, a rule on the token's form, or scanning comment
 syntax only — and which one is the user's decision on how the tool should
 read a tree.
 
+## `auto-forester-definitions-over-their-size-budget`
+
+The `-auto` forester and project-forester definitions grew when the user proxy
+and the shared rule **What you may rule** were added, and the streamlining
+that was to pay for the growth was not done. The request behind that change
+floated stronger forester wording at an unchanged size, paid for by
+streamlining elsewhere, as a trade it was unsure was worth making; its design
+estimated under 250 words of growth each.
+Rendered, `wc -w`, before → after:
+
+- `review-chain-auto/forester.md`: 8467 → 8937 (+470)
+- `review-chain-stack-auto/forester.md`: 8018 → 8486 (+468)
+- `project-burndown-auto/forester.md`: 8553 → 9023 (+470)
+- `project-burndown-auto/project-forester.md`: 7967 → 8643 (+676)
+
+The work is a streamlining pass over the decide renderings of
+`templates/roles/forester.md.j2` and `templates/roles/project-forester.md.j2`,
+with the partials they include, that brings each rendered definition back to
+at most its "before" size without weakening **What you may rule** or the
+stop-answer rules. About 350 of the added words are the shared rule
+(`templates/partials/proxy-authority.md.j2`), which replaced a criteria list
+of about 150; the rest is stop-answer inputs, the stop-answer paragraph, the
+report line, the plan's **Rulings** and the respond-mode paragraph. The room
+to cut is mostly elsewhere, in the older paragraphs of the forester template,
+each of which records a rule an earlier incident added — so the pass has to
+weigh those rules, and say which still earn their words, not just trim prose.
+
+## `todo-burndown-auto-driver-stops-reach-the-user`
+
+In `todo-burndown-auto` the units run with the user proxy at the embedded
+chain's stops, but the burndown driver's own stops still go straight to the
+user: the triage forester's `ESCALATE` at selection and at a follow-up, and
+the `incomplete` close (`burndown-orchestrator.md.j2`). The driver also has
+no `attended` word of its own, so a unit can be made attended only at one of
+its relayed stops. Giving the driver the user proxy means a reply table per
+stop and a decision on whether a user proxy may skip a unit or retry an
+incomplete close on the user's behalf.
+
 ## `triage-commands-read-past-lint-errors`
 
 Only `attempt-close` and `prune --write` refuse a tracker with error-level

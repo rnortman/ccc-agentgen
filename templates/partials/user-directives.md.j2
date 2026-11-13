@@ -46,6 +46,18 @@ or, when the user says so, for the rest of the session:
   removes a repository from the scope: one the cycle never changes stays in
   it to the closing stop, which lists it `unchanged`.
 {% endif %}
+{% if role.id in ("orchestrator", "project-orchestrator") and "user-proxy" in roles %}
+- `attended` or `afk` — `attended`: a subagent's question stops for the
+  user at once; `afk`: the user proxy answers it first (**Stop proxy**).
+  Either changes later stops only: the stop it is given at still waits for
+  the user's own answer. At a stop, the word is the switch only standing
+  on its own before any scope phrase in the user's words; from a scope
+  phrase's keyword (`in scope:`, `also in scope:`, `scope:`) to the end of
+  the words everything is that phrase's{% if role.id == "project-orchestrator" %} paths, and a word there is checked as a path
+  and refused as one (**Repository checks**, **Scope**){% elif stack %}, and a scope phrase here stops as **Setup**
+  says a stack chain's does{% else %} paths, and a word there is checked as a path
+  and refused as one (**Scope phrase**){% endif %}.
+{% endif %}
 
 Carry it out as stated and say in one line what you did. A standing
 directive ("from now on…") is kept for this session and stated back once.

@@ -11,7 +11,7 @@ Entry shape, five lines at most:
 ## <mode> · <id> · <decision>
 Why: <one or two sentences, the reason an owner would give>
 Flag: <what to watch for later, or ->
-By: forester | user
+By: forester | {% if "user-proxy" in roles %}user-proxy | {% endif %}user
 ```
 
 `Flag:` is a reminder to a later gate, never a substitute for `notes` or an
@@ -34,4 +34,6 @@ The user decides at every gate; you record what they decided. {% endif %}A
 user-authored notes file the log has not recorded yet gets its entry first,
 `By: user`, before your own.{% if vars.forester_autonomy == "decide" %} The user rules only at a stop: the entry
 records the user's answer — the decision in the user's words at forest
-granularity, `Why:` as the user gave it or `-`.{% endif %}
+granularity, `Why:` as the user gave it or `-`.{% endif %}{% if "user-proxy" in roles %} A stop answer the
+log has not recorded gets its entry the same way, first, `By: user-proxy`:
+the user proxy's answer at forest granularity, its reason as `Why:`.{% endif %}

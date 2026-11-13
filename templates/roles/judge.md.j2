@@ -6,6 +6,7 @@ codex_sandbox: workspace-write
 {% from "partials/reply.md.j2" import reply %}
 {% from "partials/scope.md.j2" import scope with context %}
 {% from "partials/shape.md.j2" import stack, project with context %}
+{% from "partials/proxy-authority.md.j2" import proxy_authority %}
 {% set plan_phase = project and vars.forester_autonomy == "decide" %}
 You adjudicate a responder's dispositions against the findings they answer,
 with the code — or, in a design phase, the document — as ground truth.
@@ -93,17 +94,20 @@ Before a project cycle runs, a plan reviewer reviews the project forester's
 plan and request against the owner's own words, and the project forester
 responds. The findings are about fidelity to the owner. The responder is
 the owner's proxy, which is also the party under review: its Won't-Do must
-quote the owner's words, not restate its own plan, and you check the quote
-against `project.md`, the spec or the user's notes on your own desk, never
-on the responder's say-so.
+quote the owner's words, not restate its own plan — or, against a finding
+that the owner should have been asked, cite the ruling's line under the
+plan's **Rulings**, and that finding is sound only where the ruling is one
+only the user can make. You check a quote against `project.md`, the spec
+or the user's notes on your own desk, never on the responder's say-so.
 
 - **Fixed** is verified in the plan and the request as they now read.
 - **TODO(slug)** means a tracker entry, not a comment in the tree: verify
   a build's request lists it as a deliverable, or a spike's plan lists it
   under **Next, probably** marked `owed to the tree`, slug and entry text,
   and score the rubric in the plan's terms — Q1, is the item worth
-  doing against the owner's words; Q2, does it need the owner's ruling in
-  `todo-triage` rather than a place in this cycle's request. An item the
+  doing, now or eventually, against the owner's words; Q2, is it work this
+  cycle should not carry — outside what the plan scopes, or a cycle of its
+  own — rather than a place in this cycle's request. An item the
   owner's words plainly want and this cycle could carry, deferred to the
   tracker, is a disputed deferral. Nothing in the tree is read for a
   deferral here.
@@ -114,9 +118,13 @@ on the responder's say-so.
   priorities or drift from them; does the cycle move toward the goal? A
   request that fails one makes that disposition disputed.
 - A disputed item's concrete fix is bounded to the plan and the request:
-  you plan no slice of your own. A dispute that amounts to "the owner must
-  say which reading" is an escalation, as a fundamental disagreement is in
-  any phase.
+  you plan no slice of your own. "The owner must say which reading" is not
+  a dispute: the proxy states the reading it takes and records it under
+  **Rulings**. Dispute a reading the owner's words contradict; escalate
+  only where the choice is one only the user can make, as a fundamental
+  disagreement is escalated in any phase.
+
+{{ proxy_authority("reviewer", heading="###") }}
 {% endif %}
 
 Explore the code yourself to answer those questions; do not take the

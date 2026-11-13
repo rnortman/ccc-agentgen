@@ -204,7 +204,9 @@ have their own quick start in [TODO triage and burndown](#todo-triage-and-burndo
    the end of each implementation round, and at the ship gate, each a
    question you answer in chat. In an `-auto` variant the forester answers
    those stops instead and you come back to its ship ruling, which closes
-   with the report; see
+   with the report; a forester escalation goes to a user proxy first, so
+   an `-auto` run stops for you only on what a user proxy could not answer
+   or on the workflow's own checks. See
    [Choosing a variant](#choosing-a-variant).
 
 ## Choosing a variant
@@ -215,7 +217,7 @@ project workflows.
 | Variant | What it is | CLIs |
 | --- | --- | --- |
 | `review-chain` | The full chain, one `implementer` role | Claude or Codex |
-| `review-chain-auto` | `review-chain` with the forester deciding the stops | Claude or Codex |
+| `review-chain-auto` | `review-chain` with the forester deciding the stops and a user proxy answering its escalations | Claude or Codex |
 | `review-chain-lite` | A shorter chain on cheaper models | Claude or Codex |
 | `review-chain-split` | Implementer split into planner, Claude supervisor, Codex coder | Claude and Codex |
 | `review-chain-split-auto` | `review-chain-split` with the forester deciding | Claude and Codex |
@@ -484,8 +486,34 @@ both working from documents, never code:
   maintain, fit to the request), not dispositions. Its one tool set is
   `write`, so it holds `Read` and `Write` only and cannot reach the code.
 
+- `user-proxy` — in every `-auto` variant, stands at a stop an agent
+  raised while you are away. It writes one **stop answer**,
+  `stop-answer-k<K>.md` in a cycle or `stop-answer-c<C>-<n>.md` in a
+  project, opening with a provenance line that says it is not your words:
+  either an answer — the ruling, why, and what undoing it would cost — or,
+  under **For the user**, the one thing only you can give. It answers
+  whenever some next step is both plausibly productive and undoable; it
+  passes the stop up when the question needs something only you hold (a
+  repository brought into scope, a shipped reference, access), a step
+  that cannot be undone, or when no way forward is productive. In the
+  review chain a forester `ESCALATE` in any mode goes to it first; on
+  `answered` the forester gate runs again with the answer, and a second
+  `ESCALATE` from that gate before it clears stops for you. The cycle's closing stop lists
+  every stop answer. Say `attended` at any stop to have every later
+  subagent question stop for you at once, `afk` to put the user proxy back;
+  a launch by path can carry `attended` directly after the `request.md`
+  path (`<dir>/request.md attended branch prefix: …`). Unattended is the
+  default.
+
+The deciding foresters, the user proxy, the plan reviewer and the judge's
+plan phase share one rule for what a proxy may decide in your place,
+**What you may rule** (`proxy-authority`): anything a later cycle can
+undo. Doubt about what you want is not a reason to stop; a ruling is
+recorded where you can overrule it afterwards, and no tracker entry asks
+you to confirm one.
+
 Shared partials: `forestry` (the owner's perspective), `desk` (what is read),
-`forester-log`, `forester-escalation`, `userproxy`.
+`forester-log`, `forester-escalation`, `userproxy`, `proxy-authority`.
 
 Every role ends its reply with one line the orchestrator routes on:
 
@@ -607,7 +635,8 @@ option for machine-readable output.
   chain whole — `review-chain` or `review-chain-auto` — because the inner
   orchestrator resolves its roles from the same `agents_dir`. In the plain
   variant the inner chain's gates are relayed to you; in `-auto` its forester
-  holds them. At every relayed gate the driver also shows what
+  holds them, and a user proxy answers the forester's escalations before
+  any reaches you; the burndown driver's own stops still come to you. At every relayed gate the driver also shows what
   `todo-triage attempt-close --dry-run` would record, so the ship gate
   reveals entries the cycle would leave in `TODO.md`. A unit whose cycle
   reports shipped with entries still listed closes `incomplete` and the
@@ -711,6 +740,27 @@ written to `notes-plan-user-c<C>-g<G>.md` and the forester plans again;
 `skip` (not at a responder's stop) runs the plan as it stands. The
 embedded chain's forester then holds its gates as in `review-chain-auto`.
 
+**Stop proxy (`-auto`).** A stop one of the driver's own agents raises —
+a plan, responder or judge escalation, a plan reviewer that wrote no
+line, a spike escalation, a digest that did not write, a publisher
+escalation — goes first to the `user-proxy`, which writes
+`stop-answer-c<C>-<n>.md` in the project dir. Its answer is acted on as
+yours would be: the stopped agent is resumed with fixed words naming the
+file, or the stop's own word (`skip`, `retry`) is taken; at the judge's
+stop an answer means a replan. Every later plan, review, judge and digest
+launch of the cycle gets the stop answers, named as the user proxy's. At
+most `user_proxy_stops_per_cycle` (3) stops per cycle are answered so;
+after that, and for whatever the user proxy passes up, the stop is yours.
+A build's own stops are not put to it (the cycle's user proxy already
+stood there), nor are a rejected push, a HEAD or ref check, setup or the
+end. The record gains `attended: yes|no` and, per stop, `cycle <C> stop
+answered: <step> <path>` or `cycle <C> stop passed up: <step> <path>`;
+**End** lists every such line and every cycle's `stop-answer-k*.md`. `attended` at launch or at any stop makes
+the driver's and every later cycle's agent questions stop for you; `afk`
+reverses it; a project in flight with no `attended:` line is unattended.
+Each plan records its rulings under **Rulings**, where you overrule them
+afterwards.
+
 **The state document.** After every cycle the forester digests it into
 `state-c<C>.md`: the goal, the branches, one short block per cycle, what
 was learned, and what remains. It is rewritten whole each time and kept to
@@ -791,7 +841,8 @@ setting.
 append-only record, and the only file it reads back. Launch the driver
 again naming the project dir: it re-enters where the record ends — the
 plan, the cycle gate, a plan escalation, a stop in the plan review, the
-digest or the publish — once
+digest or the publish, including one the user proxy had answered when the
+session was lost — once
 HEAD is where the last cycle left it; it stops naming the commit and
 branch otherwise. An open cycle is resumed with `resume: <words>`, or
 closed as stopped with `close`. Run one driver per project at a time.

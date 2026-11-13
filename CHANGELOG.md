@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- **`-auto` runs stop for you far less.** Every `-auto` variant gains a
+  `user-proxy` role that stands at a stop an agent raised before it reaches
+  you. In the review chain a forester escalation, in any mode, goes to it
+  first; when it answers, the forester gate runs again with the answer,
+  and a second escalation from that gate before it clears stops for you,
+  however many rounds of notes come between. In
+  `project-burndown-auto` the driver's own agent stops — plan, plan
+  review, judge, spike, digest and publisher — go to it, up to
+  `user_proxy_stops_per_cycle` (3) per cycle. Stops the workflow raises
+  from its own checks (a HEAD or ref check, a rejected push, a pin stop,
+  setup, a launch that could not be recovered) still stop for you.
+  - Each answer is one file, `stop-answer-k<K>.md` in a cycle's working
+    dir or `stop-answer-c<C>-<n>.md` in a project dir, saying what it
+    ruled and what undoing it would cost. A cycle's closing stop lists
+    them; the project driver's end lists every `stop answered` and `stop
+    passed up` line of its record and every cycle's `stop-answer-k*.md`.
+  - Say `attended` at any stop to have later subagent questions stop for
+    you at once, `afk` to put the user proxy back. A launch by path can
+    carry `attended` directly after the `request.md` path; a project
+    takes `attended` as a launch option. The default is unattended.
+  - The foresters, the plan reviewer and the judge's plan phase share one
+    rule for what a proxy may rule in your place: anything a later cycle
+    can undo. The forester no longer escalates on cost or on doubt about
+    what you want, the project forester records its rulings under a new
+    **Rulings** section of each plan instead of filing tracker entries
+    that ask you to confirm them, and "the owner was not asked" is no
+    longer a plan-review finding.
+  - The project driver record gains `attended:` lines and `cycle <C> stop
+    answered:` / `stop passed up:` lines. A project in flight resumes
+    unchanged: a record with no `attended:` line is unattended, and the
+    per-cycle count starts at 0.
+  - Preference files may pin `[agents.user-proxy]`.
 - **Fable pins move to Claude Fable 5.2, Sonnet pins to Sonnet 5.5.** Each
   role the variants pinned to `claude-fable-5-1[1M]` (the designers,
   foresters and forester commentators, the triage sketcher, contrarian and

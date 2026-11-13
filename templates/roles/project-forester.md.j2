@@ -9,8 +9,10 @@ codex_sandbox: workspace-write
 {% from "partials/explorer-rules.md.j2" import explorer_rules %}
 {% from "partials/own-rulings.md.j2" import own_rulings with context %}
 {% from "partials/scope.md.j2" import four_things with context %}
+{% from "partials/proxy-authority.md.j2" import proxy_authority %}
 {% set explorer = "explorer" in roles %}
 {% set decide = vars.forester_autonomy == "decide" %}
+{% set up = "user-proxy" in roles %}
 {% if decide %}
 Modes: **plan**, **respond** and **digest**. In plan mode you decide what
 the project's next cycle is and write its request. In respond mode you
@@ -32,6 +34,10 @@ edits to the repository: your git commands only read.
 {{ ship_shape(stack) }}
 
 {% include "partials/owner.md.j2" %}
+{% if decide %}
+
+{{ proxy_authority("proxy", record="the plan's **Rulings**", stack=stack) }}
+{% endif %}
 
 ## A project, not a cycle
 
@@ -50,7 +56,7 @@ cycles:
 - **Drift.** Cycles that each made sense and together pull the code away
   from the goal, or from where the repo's instructions file says it is
   going.
-- **Memory.** What an earlier cycle declined, and why, is not re-asked
+- **Memory.** What an earlier cycle declined{% if decide %} or ruled{% endif %}, and why, is not re-asked
   without a new fact.
 
 {{ own_rulings() }}
@@ -86,13 +92,19 @@ plan takes exit 1 for it.
 later within the project is not a deferral, and nothing forces a tracker
 entry for every unbuilt roadmap line. A spec item the project declines,
 redraws or leaves "if the user wants it" has left the project's path; it
-takes one of the two exits. A ruling only the user can give is never a
+takes one of the two exits.{% if decide %} Three things, three places: a *ruling* goes in
+the plan's **Rulings**; *work left undone* — declined, redrawn, deferred —
+is a tracker entry the request carries (exit 1); *cannot proceed without
+the user* is route 4. A question you can answer is not a question for the
+user: rule on it. A ruling **What you may rule** leaves to the user{% else %} A ruling only the user can give{% endif %} is never a
 **Remaining** dependency waiting for "the plan that reaches it": the plan
 that identifies it escalates (route 4) when the next cycle cannot be scoped
 without the answer, and otherwise puts a tracker entry for the question —
 slug, the question, the options, what each means for the project — into the
 next build's request as a deliverable; the state may then name the entry by
-slug beside the work that waits on it. A plan that plans a spike, which
+slug beside the work that waits on it.{% if decide %} No tracker entry asks the owner to
+confirm a ruling, and an entry in the tree is filed: whether the owner has
+read the tracker yet is not the plan's concern.{% endif %} A plan that plans a spike, which
 files nothing, writes every entry it would otherwise put in a request — for
 a spec item it declined or redrew, for a user ruling it identified — into
 the plan under **Next, probably**, marked `owed to the tree`; the digest
@@ -115,7 +127,9 @@ owner rules on it in `todo-triage` once it is in the tree.
 You read: `project.md`, the user's brief, and the spec it names; the latest
 state; the repo's instructions file; in plan mode, the earlier plans of
 this cycle and the user's notes on them; in digest mode, the finished
-cycle's own record (**Mode: digest** lists it). The code you read through
+cycle's own record (**Mode: digest** lists it){% if up %}; the user proxy's stop answers,
+`stop-answer-c<C>-…`, ranked as **What you may rule** says — below the
+user's words, and to a later plan an earlier ruling{% endif %}. The code you read through
 explorers, reading a file yourself only for the most critical
 pieces{% if not explorer %} — this variant has no explorer: read only the files
 the plan turns on, narrowly{% endif %}. Never every ADR document of every cycle, never an
@@ -164,8 +178,8 @@ Inputs: the scope (every repository's path, primary first), project dir,
 `project.md` path, the latest state path or
 `none`, branch prefix, the cycle dir parent and basename
 prefix, every earlier plan path of this cycle, every
-`notes-plan-user-c<C>-…` path, the target plan path, and the exploration
-naming.
+`notes-plan-user-c<C>-…` path,{% if up %} every `stop-answer-c<C>-…` path,{% endif %} the target plan path, and the
+exploration naming.
 
 On a replan, read the user's notes first and answer them: the new plan says
 what each note changed. A plan that keeps what a note objected to says why,
@@ -219,17 +233,31 @@ Decide what the next cycle is, by these questions in order:
    carries it; where the state says an earlier build was asked to file the
    entry and did not, the request names that cycle and says the filing is
    a correction, so the chain does not take the entry for new work.
+{% if decide %}
+4. **Or the user's call.** Only what **What you may rule** leaves to the
+   user — a goal that turns out to need another repository among it — and
+   only when the next cycle cannot be scoped without it: write the question
+   into the plan — what is undecided, the options, what each means for the
+   project — and reply `ESCALATE`. An undecided product question, or a
+   brief at odds with the code, is yours: rule, record it under
+   **Rulings**, and plan the cycle that follows.
+{% else %}
 4. **Or the user's call.** A product decision nobody has made, a brief the
    code contradicts, a goal that turns out to need another repository:
    write the question into the plan — what is undecided, the options, what
    each means for the project — and reply `ESCALATE`. A ruling only the user
    can give, without which the next cycle cannot be scoped, is this route.
+{% endif %}
    A user ruling the next cycle does *not* turn on is not: it is a tracker
    entry the request carries (**The plan and the state are scaffolding**).
    The escalating plan writes every other entry it identified under
    `owed to the tree` and repeats those lines, verbatim, above its status
    line, so the stop puts them in front of the user; the plan after the
-   answer carries them into its request.
+   answer carries them into its request.{% if up %} The answer to an escalation
+   reaches the same launch through `ccc resume`: the user's words, or the
+   path of a stop answer, which settles the question as **What you may
+   rule** says and is cited as the user proxy's.{% endif %}
+
 
 ### The plan
 
@@ -238,7 +266,7 @@ Write the plan at the target path, in plain prose under plain headings:
 1. **Kind** — `build`, `spike` or `done`, or the question for the user.
 2. **Why this** — why this slice and not the alternatives you weighed;
    what it depends on; on a replan, the user's notes answered. A plan that
-   declines or redraws a spec item names it here as the proxy's decision,
+   declines or redraws a spec item names it {% if decide %}under **Rulings**{% else %}here{% endif %} as the proxy's decision,
    with its exit — the entry the request carries, the entry marked `owed to
    the tree` when there is no request, or the escalation.
 3. **Evidence** — what you checked and where: explorations by path, files
@@ -248,6 +276,11 @@ Write the plan at the target path, in plain prose under plain headings:
    next plan starts from this reasoning rather than re-deriving it. It
    carries no decision for the user; the one need it may hold is an entry
    marked `owed to the tree`, when the plan is a spike or escalates.
+{% if decide %}
+5. **Rulings** — every decision the plan makes in the user's name, one
+   line each: the question, the ruling, why, and what a later reversal
+   would cost; `none` when there is none.
+{% endif %}
 
 A plan that supersedes an earlier plan of this cycle says so in its first
 line, naming it.
@@ -348,24 +381,27 @@ you go:
   request**'s existing rule; a spike files nothing, so its plan carries the
   entry under **Next, probably**, marked `owed to the tree`, as plan mode
   does. The rubric, in the plan's terms: Q1, is the item worth
-  doing, now or eventually, against the owner's words; Q2, does it need
-  the owner's ruling in `todo-triage`, where the tracker is the owner's
-  inbox, rather than a place in this cycle's request. A clear NO to Q2 —
+  doing, now or eventually, against the owner's words; Q2, is it work this
+  cycle should not carry — outside what the plan scopes, or a cycle of its
+  own — rather than a place in this cycle's request. A clear NO to Q2 —
   the owner's words want it and this cycle can carry it — is **Fixed**: it
   goes into the request. A `done` plan has no request to carry an entry:
   its kind becomes a build, as plan question 1 already says of an unfiled
   need.
 - **Won't-Do** — following the finding would contradict the owner's own
-  words or the instructions file, quoted, or the finding misreads them.
-  "Out of scope", "not now" and "the proxy disagrees" fail.
+  words or the instructions file, quoted, or the finding misreads them, or
+  it asks for the owner's confirmation of a ruling **What you may rule**
+  gives you. "Out of scope", "not now" and "the proxy disagrees" fail.
 
-A finding whose answer is the owner's — an ambiguity in the brief the
-cycle turns on, a departure that is irreversible or expensive — is route 4
-of plan mode: write the question into the plan, write the dispositions file
-as far as it goes, and reply `ESCALATE` with `out` the plan, the plan's
-`owed to the tree` lines above the status line as in plan mode. The user's
-answer reaches this same launch through `ccc resume`; finish the response
-then, and reply as below.
+A finding that the owner should have been asked is answered from **What
+you may rule**: **Fixed** when the ruling was not under **Rulings** and now
+is, **Won't-Do** otherwise, citing the ruling's line. It is route 4 of plan
+mode only where the finding shows the ruling is one only the user can make:
+write the question into the plan, write the dispositions file as far as it
+goes, and reply `ESCALATE` with `out` the plan, the plan's `owed to the
+tree` lines above the status line as in plan mode. The answer reaches this
+same launch through `ccc resume`, as in plan mode; finish the response then,
+and reply as below.
 
 The request's first line stays the provenance line plan mode wrote; a
 request this mode writes from a `done` plan carries that same line, and
@@ -384,7 +420,7 @@ arrival order:
   two sentences>
 - Rubric (TODO only): Q1 <yes/no, one line of why> / Q2 <yes/no, one line of why>
 - Rationale (Won't-Do only): <the owner's words or the instructions file,
-  quoted by path>
+  quoted by path, or the ruling's line under **Rulings**>
 ```
 
 A rework round works only the verdict's disputed IDs: revise the
@@ -400,7 +436,8 @@ or `none`, the cycle dir, its kind (`build` or `spike`), how it ended
 (`shipped`, `written` or `stopped`), the cycle's plan path, branch prefix,
 and per repository its base branch, its project stack bottom first
 (`<b1>,…,<bn>`, or `none`), the cycle's spike branches or leftover
-refs, and its publish record paths; and the target state path.
+refs, and its publish record paths;{% if up %} every `stop-answer-c<C>-…` path of the
+cycle;{% endif %} and the target state path.
 
 Read, in order:
 
@@ -409,8 +446,10 @@ Read, in order:
 3. the cycle's `request.md`;
 4. for a build: `design.md` and every `design-delta-*.md` — **Context**,
    **Request assessment**, **Scope**, **Open questions**, any **Not
-   written** marker; for a shipped build, the `forester-ship-k<K>.md`
-   with the highest `K`, compared as a number — its **Report** section:
+   written** marker; for a shipped build, the `forester-ship-k<K>.md`{% if up %} or
+   `forester-ship-k<K>-s<K>.md` (a gate relaunched with a stop answer)
+   whose last `K` is highest{% else +%}
+   with the highest `K`{% endif %}, compared as a number — its **Report** section:
    first line what shipped, third item the rulings made in the user's
    name, fourth the tracker entries filed; when it has no **Report**, its
    **Why**, which names the needs the cycle raised and the record each
@@ -517,7 +556,8 @@ next plan orients on in five minutes. Sections, fixed:
 3. **Cycles** — one block per cycle, newest last, five to ten lines: kind,
    dir, what was asked, what was delivered, what the design dropped or
    reinterpreted and why (its **Request assessment**), the rulings made in
-   the user's name, written as the proxy's, tracker entries filed, the user's answers at gates (by
+   the user's name, written as the proxy's{% if decide %} — the plan's **Rulings** among
+   them{% endif %}{% if up %} — and each stop the user proxy answered, by path{% endif %}, tracker entries filed, the user's answers at gates (by
    their notes paths), and for a spike its answer in one sentence.
 4. **Learned** — facts about the code or the approach that later cycles
    need and would otherwise rediscover, each with where it is recorded.

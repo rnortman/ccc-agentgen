@@ -115,25 +115,49 @@ PROJECT_SEQUENCING_WORDING = (
 # In `-auto` the judge also adjudicates the plan review, a phase the plain
 # variant's cycle gate makes the user's.
 PROJECT_PLAN_PHASE = (
-    "## Plan phase Before a project cycle runs, a plan reviewer reviews the project forester's plan and"
-    " request against the owner's own words, and the project forester responds. The findings are about"
-    " fidelity to the owner. The responder is the owner's proxy, which is also the party under review:"
-    " its Won't-Do must quote the owner's words, not restate its own plan, and you check the quote"
-    " against `project.md`, the spec or the user's notes on your own desk, never on the responder's"
-    " say-so. - **Fixed** is verified in the plan and the request as they now read. - **TODO(slug)**"
-    " means a tracker entry, not a comment in the tree: verify a build's request lists it as a"
-    " deliverable, or a spike's plan lists it under **Next, probably** marked `owed to the tree`, slug"
-    " and entry text, and score the rubric in the plan's terms — Q1, is the item"
-    " worth doing against the owner's words; Q2, does it need the owner's ruling in `todo-triage` rather"
-    " than a place in this cycle's request. An item the owner's words plainly want and this cycle could"
-    " carry, deferred to the tracker, is a disputed deferral. Nothing in the tree is read for a deferral"
-    " here. - A request the responder wrote — the review ran on a `done` plan, and a disposition turned"
-    " it into a build or a spike — was never reviewed: put the reviewer's questions to it yourself,"
-    " against the owner's words on your desk. Is it what the owner wanted; does it contradict the"
-    " owner's priorities or drift from them; does the cycle move toward the goal? A request that fails"
-    " one makes that disposition disputed. - A disputed item's concrete fix is bounded to the plan and the request: you plan no slice"
-    ' of your own. A dispute that amounts to "the owner must say which reading" is an escalation, as a'
-    " fundamental disagreement is in any phase. "
+    "## Plan phase Before a project cycle runs, a plan reviewer reviews the project forester's plan "
+    "and request against the owner's own words, and the project forester responds. The findings are "
+    "about fidelity to the owner. The responder is the owner's proxy, which is also the party under "
+    "review: its Won't-Do must quote the owner's words, not restate its own plan — or, against a "
+    "finding that the owner should have been asked, cite the ruling's line under the plan's "
+    '**Rulings**, and that finding is sound only where the ruling is one only the user can make. You '
+    "check a quote against `project.md`, the spec or the user's notes on your own desk, never on the "
+    "responder's say-so. - **Fixed** is verified in the plan and the request as they now read. - "
+    "**TODO(slug)** means a tracker entry, not a comment in the tree: verify a build's request lists "
+    "it as a deliverable, or a spike's plan lists it under **Next, probably** marked `owed to the "
+    "tree`, slug and entry text, and score the rubric in the plan's terms — Q1, is the item worth "
+    "doing, now or eventually, against the owner's words; Q2, is it work this cycle should not carry "
+    "— outside what the plan scopes, or a cycle of its own — rather than a place in this cycle's "
+    "request. An item the owner's words plainly want and this cycle could carry, deferred to the "
+    'tracker, is a disputed deferral. Nothing in the tree is read for a deferral here. - A request '
+    'the responder wrote — the review ran on a `done` plan, and a disposition turned it into a build '
+    "or a spike — was never reviewed: put the reviewer's questions to it yourself, against the "
+    "owner's words on your desk. Is it what the owner wanted; does it contradict the owner's "
+    'priorities or drift from them; does the cycle move toward the goal? A request that fails one '
+    "makes that disposition disputed. - A disputed item's concrete fix is bounded to the plan and the"
+    ' request: you plan no slice of your own. "The owner must say which reading" is not a dispute: '
+    'the proxy states the reading it takes and records it under **Rulings**. Dispute a reading the '
+    "owner's words contradict; escalate only where the choice is one only the user can make, as a "
+    'fundamental disagreement is escalated in any phase. ### What the proxy may rule The user chose a'
+    ' workflow that runs without them. The proxy rules in their place on anything a later cycle can '
+    'undo: which reading of an ambiguous brief holds, a product decision nobody has made, a priority,'
+    ' a design choice, a deferral. Work under git on branches nobody has merged can be undone, so '
+    "almost every decision here is the proxy's. A wrong ruling costs rework; a stop costs every hour "
+    'until the user returns. - Only the user: a thing only they hold — a repository brought into '
+    'scope, a tracker entry filed outside it, a shipped reference, access; a step that cannot be '
+    'undone from the repositories in scope and that the request did not evidently authorise; and the '
+    'case where no way forward the proxy can name is both plausibly productive and undoable. Work so '
+    'far off the rails that nothing the proxy can send back would right it is that case. What a '
+    'ruling costs is not: cost is weighed in the ruling and written in its record. - A stop answer is'
+    " the user proxy's document, written at a stop in the user's place. It settles the question it "
+    "answers for the agent that asked and the step that stopped, as the user's answer there would. To"
+    " every later reader it is a recorded ruling: cited as the user proxy's, never as the user's; "
+    "outranked by the user's own words; revisited, like any earlier ruling, on a new fact. That the "
+    'user was not asked, has not confirmed a ruling, or has not yet read where it is recorded is not '
+    "a finding and not a consequence; a ruling is at fault when the user's own words contradict it, "
+    "when it is not recorded as the proxy's, or when it is one only the user can make. A stop answer "
+    "is held to the same sentence: a plan that rests on one the user's own words contradict is a "
+    'finding against the plan. '
 )
 PROJECT_JUDGE_WORDING = (
     (
@@ -183,6 +207,7 @@ STAGE_VOCABULARY = {
     "comment-rewriter": ("sweep",),
     "pr-assembler": ("pr-assembler", "assembl", "stack", "pr-done", "pr-r<", "fixup", "restack", "review base"),
     "pr-liaison": ("liaison", "pr-comments", "pr-posted", "pr-publish", "followup", "re-created", "inherited"),
+    "user-proxy": ("user-proxy", "user proxy", "stop-answer", "attended", "afk", "stop proxy"),
 }
 
 # The stack's open-PR rule, one wording shared by the designer and the
@@ -247,6 +272,8 @@ RESULTS = {
     "triage-forester": {"ruled", "selected", "nothing"},
     "project-forester": {"build", "spike", "done", "written"},
     "plan-reviewer": {"findings", "no-findings"},
+    # One token in every variant: a stop's own reply words come from the prompt.
+    "user-proxy": {"answered"},
     "experimenter": {"written"},
     "publisher": {"published", "pushed", "unpushed"},
     # Interactive: the user reads the turn, the line only keeps the grammar closed.
@@ -1383,6 +1410,17 @@ def test_blocked_priority_is_explained_to_forester_and_clerk(builds):
         assert "blocked on … [P<n>]" in flat, filename
 
 
+# How the digest and the triage forester pick a cycle's last ship document:
+# with the user proxy, a relaunched gate's `-s<K>` id ranks by its last `K`.
+SHIP_DOCUMENT_PICK = {
+    False: "`forester-ship-k<K>.md` with the highest `K`, compared as a number",
+    True: (
+        "`forester-ship-k<K>.md` or `forester-ship-k<K>-s<K>.md` (a gate relaunched with a stop answer)"
+        " whose last `K` is highest, compared as a number"
+    ),
+}
+
+
 def test_forester_select_mode_offers_chains_and_combined_units(builds):
     """The forester reads `unlocks`, knows the closure rule `attempt` enforces,
     and is told to combine entries that share ground into one cycle.
@@ -1394,7 +1432,7 @@ def test_forester_select_mode_offers_chains_and_combined_units(builds):
             assert ("every `blocked_on` item of every follower must be resolved or in the"
                     " selection") in flat, filename
             assert "overlapping `site_dirs`" in flat, filename
-            assert "`forester-ship-k<K>.md` with the highest `K`, compared as a number" in flat, filename
+            assert SHIP_DOCUMENT_PICK["user-proxy" in builds[stem].variant.roles] in flat, filename
             assert "work ordered in a repository other than the one the chain runs in" in flat, filename
             assert "the designer carries into its **Scope** section" in flat, filename
             assert "the other candidates are the unit's other remaining entries" in flat, filename
@@ -2516,10 +2554,11 @@ def test_project_driver_launches_the_chain_with_its_prefix(builds):
     scope's other repositories and nothing else; the driver resumes that
     orchestrator, never a grandchild.
     """
-    for where, flat, _ in _project_driver_bodies(builds):
-        assert '`ccc run orchestrator --cwd <primary> "<cycle dir>/request.md branch prefix: <prefix>"`' in flat, where
+    for where, flat, variant in _project_driver_bodies(builds):
+        word = "attended " if "user-proxy" in variant.roles else ""
+        assert f'`ccc run orchestrator --cwd <primary> "<cycle dir>/request.md {word}branch prefix: <prefix>"`' in flat
         assert "with ` scope: <path2> <path3>` appended when the scope holds more than the primary" in flat, where
-        assert '`"<cycle dir>/request.md branch prefix: <prefix> scope: <path2> <path3>"`' in flat, where
+        assert f'`"<cycle dir>/request.md {word}branch prefix: <prefix> scope: <path2> <path3>"`' in flat, where
         assert "The primary is never in the phrase." in flat, where
         assert "Nothing else in the prompt." in flat, where
         assert "never one of the orchestrator's own subagents" in flat, where
@@ -2745,6 +2784,446 @@ def test_plan_reviewer_role_exactly_where_the_forester_decides(builds):
         roles = build.variant.roles
         expected = "project-orchestrator" in roles and _decide(build.variant)
         assert ("plan-reviewer" in roles) == expected, stem
+
+
+def test_user_proxy_role_exactly_where_the_forester_decides(builds):
+    """The user proxy stands at the stops of every variant whose forester
+    decides, and its words reach no other variant, in a body or a description.
+    """
+    for stem, build in builds.items():
+        roles = build.variant.roles
+        assert ("user-proxy" in roles) == _decide(build.variant), stem
+        if "user-proxy" not in roles:
+            _assert_no_vocabulary(build, STAGE_VOCABULARY["user-proxy"])
+
+
+# The proxies' rule, in each voice, and the role-specific phrases it must carry.
+PROXY_AUTHORITY_HEADING = "## What you may rule"
+REVIEWER_AUTHORITY_HEADING = "## What the proxy may rule"
+STOP_ANSWER_RANK = "cited as the user proxy's, never as the user's"
+# The provenance rule's attribution example names the forester's notes, not the role.
+PROVENANCE_PROXY_EXAMPLE = "\"the proxy's notes\""
+
+
+def test_user_proxy_answers_unless_only_the_user_can(builds):
+    """One document, the stop answer: answered whenever a next step is both
+    productive and undoable, passed up otherwise, never called "the proxy".
+    """
+    seen = 0
+    for build in builds.values():
+        if "user-proxy" not in build.by_id:
+            continue
+        stack = "pr-assembler" in build.by_id and "planner" not in build.by_id
+        for name, body in build.bodies("user-proxy"):
+            seen += 1
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert body.count(PROXY_AUTHORITY_HEADING) == 1, where
+            assert REVIEWER_AUTHORITY_HEADING not in body, where
+            assert STOP_ANSWER_RANK in flat, where
+            assert "A ruling's record is the stop answer itself." in flat, where
+            assert "A recommendation is a decision." in flat, where
+            assert "Doubt about what the user wants is not a reason to stop." in flat, where
+            assert "What a ruling costs is not" in flat, where
+            for phrase in ("irreversible or expensive", "greatly balloon", "the owner's inbox"):
+                assert phrase not in flat, f"{where}: {phrase}"
+            if stack:
+                assert "a tracker entry filed in another repository, access" in flat, where
+                assert "brought into scope" not in flat, where
+            else:
+                assert (
+                    "a repository brought into scope, a tracker entry filed outside it, a shipped"
+                    " reference, access" in flat
+                ), where
+            order = [
+                flat.index("Is what the stop asks for one that **What you may rule** leaves to the user? Pass it up."),
+                flat.index("Then it has an answer: the author's recommendation"),
+                flat.index("name the smallest step that keeps the work moving and can be undone"),
+                flat.index("Nothing: pass it up."),
+            ]
+            assert order == sorted(order), where
+            assert "You spawn no explorers and read no code." in flat, where
+            assert SPAWNING_PARTIAL_SENTINEL not in body, where
+            assert "never at a `notes-…-user-…` path" in flat, where
+            for section in ("**Stop**", "**Answer**", "**Undo**", "**For the user**"):
+                assert section in flat, f"{where}: {section}"
+            assert "## Who you write for" in body, where
+            assert "a pointer to where the escalation carries the four things: the repository" in flat, where
+            # Never "the proxy": that name belongs to the foresters.
+            assert "the proxy" not in flat.replace(PROVENANCE_PROXY_EXAMPLE, "").lower(), where
+            reply = " ".join(reply_section(body).split())
+            assert "copied from the prompt" in reply, where
+            assert "`status=ESCALATE` — you pass the stop up" in reply, where
+    assert seen, "no shipped variant emits the user proxy"
+
+
+def test_proxies_rule_what_a_later_cycle_can_undo(builds):
+    """A deciding forester of either kind carries **What you may rule** with
+    its own record, and none of the exits it replaces; an advising one keeps
+    the advising text and never hears of the user proxy.
+    """
+    records = {
+        "forester": "A ruling's record is your forester log entry, which the report lists when the cycle ships.",
+        "project-forester": "A ruling's record is the plan's **Rulings**.",
+    }
+    seen = set()
+    for build in builds.values():
+        decide = _decide(build.variant)
+        for role_id, record in records.items():
+            if role_id not in build.by_id:
+                continue
+            seen.add((role_id, decide))
+            for name, body in build.bodies(role_id):
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                whose = " ".join(_raw_section(body, "## Whose ruling").split())
+                if decide:
+                    assert body.count(PROXY_AUTHORITY_HEADING) == 1, where
+                    assert record in flat and STOP_ANSWER_RANK in flat, where
+                    if role_id == "project-forester":
+                        assert ONLY_THE_USER_PROXY in flat, where
+                    for phrase in ("irreversible or expensive", "greatly balloon", "the owner's inbox"):
+                        assert phrase not in flat, f"{where}: {phrase}"
+                    assert "is the reason for the entry" not in whose, where
+                    assert "an answer the user gave at a stop" in whose, where
+                    assert (
+                        "A stop answer is the user proxy's: cited as the user proxy's, never as"
+                        ' "the user\'s decision".'
+                    ) in whose, where
+                    assert "Whether the owner wants a thing is yours to rule" in whose, where
+                    assert "it is an escalation only where **What you may rule** leaves it to the user" in whose, where
+                else:
+                    assert "What you may rule" not in flat, where
+                    assert "user proxy" not in flat.lower(), where
+                    assert (
+                        '"the proxy is not sure the owner wants it" is the reason for the entry, not against'
+                        " it: the tracker is the owner's inbox"
+                    ) in whose, where
+                    assert "where the departure is irreversible or expensive, an escalation" in whose, where
+    assert seen == {(r, d) for r in records for d in (True, False)}, seen
+
+
+def test_forester_rules_by_stop_answers(builds):
+    """The deciding cycle forester takes every stop answer as an input, rules
+    a relaunched gate by one, logs it as the user proxy's and lists it in
+    the report; a gate cap does not say the question is the user's.
+    """
+    for build in builds.values():
+        if "forester" not in build.by_id:
+            continue
+        decide = _decide(build.variant)
+        for name, body in build.bodies("forester"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert ("By: forester | user-proxy | user" in body) == decide, where
+            assert ("By: forester | user\n" in body) == (not decide), where
+            assert "say the question is the user's" not in flat, where
+            if not decide:
+                assert "Where the departure is irreversible or expensive" not in flat, where
+                continue
+            assert "converged say a third note will not land" in flat, where
+            assert "Where the departure cannot be undone, escalate instead, as **What you may rule** says." in flat, where
+            assert "A logged ruling is a decision, not a caveat." in flat, where
+            assert "A ruling you would want the user to re-examine" not in flat, where
+            assert "**A stop answer.** When the prompt names a stop answer as the answer to your escalation" in flat, where
+            assert "never the same question" in flat, where
+            assert "A stop answer the log has not recorded gets its entry the same way, first, `By: user-proxy`" in flat, where
+            for mode in ("## Mode: design", "## Mode: triage", "## Mode: scan", "## Mode: ship"):
+                section = " ".join(_raw_section(body, mode).split())
+                assert "every stop answer path" in section, f"{where}: {mode}"
+            report = " ".join(_raw_section(body, "## The report").split())
+            assert "Every `By: user-proxy` entry is listed, always" in report, where
+            assert "the stop answer's path" in report, where
+            assert "only for what **What you may rule** leaves to the user" in reply_section(body), where
+
+
+def test_project_forester_rules_and_records_under_rulings(builds):
+    """The deciding project forester rules a product question instead of
+    escalating it, records every ruling under **Rulings**, and answers a
+    finding that the owner was not asked from **What you may rule**.
+    """
+    route_4_old = ("A product decision nobody has made", "a brief the code contradicts")
+    for stem in (PROJECT_STEM, PROJECT_AUTO_STEM):
+        build = builds[stem]
+        decide = _decide(build.variant)
+        for name, body in build.bodies("project-forester"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            plan = " ".join(_raw_section(body, "## Mode: plan").split())
+            route_4 = plan[plan.index("4. **Or the user's call.**") : plan.index("### The plan")]
+            if not decide:
+                for phrase in route_4_old:
+                    assert phrase in route_4, f"{where}: {phrase}"
+                assert "**Rulings**" not in flat and "stop-answer" not in flat, where
+                continue
+            for phrase in route_4_old:
+                assert phrase not in route_4, f"{where}: {phrase}"
+            assert "Only what **What you may rule** leaves to the user" in route_4, where
+            assert "is yours: rule, record it under **Rulings**, and plan the cycle that follows" in route_4, where
+            assert "the path of a stop answer" in route_4, where
+            assert "5. **Rulings** — every decision the plan makes in the user's name" in plan, where
+            assert "What an earlier cycle declined or ruled, and why, is not re-asked" in flat, where
+            assert "Three things, three places" in flat, where
+            assert "No tracker entry asks the owner to confirm a ruling" in flat, where
+            respond = " ".join(_raw_section(body, "## Mode: respond").split())
+            assert "Q2, is it work this cycle should not carry" in respond, where
+            assert "it asks for the owner's confirmation of a ruling **What you may rule** gives you" in respond, where
+            assert "A finding that the owner should have been asked is answered from **What you may rule**" in respond, where
+            assert "or the ruling's line under **Rulings**" in respond, where
+            assert flat.count("every `stop-answer-c<C>-…` path") == 2, where
+            assert "each stop the user proxy answered, by path" in flat, where
+
+
+def test_user_proxy_frontmatter_pins(builds):
+    """Pinned as its variant's forester is; it spawns nobody."""
+    for build in builds.values():
+        if "user-proxy" not in build.by_id:
+            continue
+        front, forester = build.by_id["user-proxy"].frontmatter, build.by_id["forester"].frontmatter
+        assert front["model"] == forester["model"] == "claude-fable-5-2[1M]", build.stem
+        assert front["codex_model"] == forester["codex_model"] == "gpt-6-astra", build.stem
+
+
+# The orchestrator's sections a stop answer may be named in: it goes to
+# forester gates and the closing stop, never to a designer, worker, reviewer
+# or judge launch.
+STOP_ANSWER_SECTIONS = {
+    "## Information boundary",
+    "## Artifacts and their names",
+    "## State you track",
+    "### Ship gate — final round only",
+    "### Forester gate",
+    "### Stop proxy",
+}
+
+
+def _sections_naming(body: str, phrase: str) -> set[str]:
+    parts = re.split(r"\n(?=#{2,4} )", body)
+    return {part.split("\n", 1)[0] for part in parts if phrase in part.lower()}
+
+
+def test_orchestrator_puts_a_forester_escalation_to_the_user_proxy(builds):
+    """Every forester `ESCALATE` meets the user proxy unless the cycle is
+    attended or the gate already had its answer; the answer goes back to a
+    relaunched gate and nowhere else, and the closing stop lists it.
+    """
+    seen = set()
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        proxy = "user-proxy" in build.variant.roles
+        for name, body in build.bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            if not proxy:
+                for phrase in ("Stop proxy", "stop answer", "stop-answer", "`attended`", "`afk`"):
+                    assert phrase not in flat, f"{where}: {phrase}"
+                continue
+            seen.add(_is_stack(build))
+            stop = _section(body, "### Stop proxy")
+            for phrase in (
+                "A forester `ESCALATE`, in any mode",
+                "when **attended** is `yes`, or when the escalating gate's mode is among the **answered"
+                " gates**: a gate gets one stop answer until it clears, however many rounds of notes follow it.",
+                "the target joins the stop answers and the gate's mode the answered gates",
+                "`ccc run user-proxy`: + the gate's mode, + the forester's ruling path, named as the escalation",
+                "+ every stop answer path, + target `stop-answer-k<K>.md`",
+                "The prompt lists no reply words.",
+                "at a design or triage gate `G` = 1",
+                "id the escalated gate's id followed by `-s<K>`",
+                "its `ESCALATE`, and any later one from a gate of its mode before that mode clears, takes"
+                " the stop at once",
+                "surfacing the user proxy's target path as well when the file exists",
+                "`status=ESCALATE`, `out` the forester's ruling",
+                "never joins the carried paths",
+            ):
+                assert phrase in stop, f"{where}: {phrase}"
+            gate = _section(body, "### Forester gate")
+            assert "+ every stop answer path, + the mode's documents" in gate, where
+            assert "`ESCALATE` → **Stop proxy**; its stop: STOP, surface the ruling path" in gate, where
+            repo = _section(body, "### Repo anomaly")
+            assert "`ESCALATE` → **Stop proxy**; its stop: STOP" in repo, where
+            if _forester_gate(build.variant, "triage"):
+                triage = _section(body, "### Triage — every post-freeze stop")
+                assert "The gate's `ESCALATE` → **Stop proxy**; its stop: STOP" in triage, where
+            assert "| user-proxy | `answered` | — | — |" in flat, where
+            assert "| **attended** | `yes` when **Setup** step 1 recorded the word, else `no` |" in flat, where
+            assert "| **stop answers** | none |" in flat, where
+            # The bound outlives the relaunch: a gate's notes rounds after an
+            # answer reach the cap again, and its next escalation is the user's.
+            assert (
+                "| **answered gates** | none | a gate's mode joins when the user proxy answers its escalation"
+                " (**Stop proxy**); it leaves when a gate of that mode clears"
+            ) in flat, where
+            assert "`stops answered by the user proxy: <path> …`" in flat, where
+            assert ", the `stops answered by the user proxy:` line" in flat, where
+            assert "Transcribe the forester's words or the user proxy's" in flat, where
+            assert _sections_naming(body, "stop answer") <= STOP_ANSWER_SECTIONS, where
+            naming = _raw_section(body, "## Artifacts and their names")
+            naming = " ".join(naming.split())
+            assert "- User proxy: `stop-answer-k<K>.md`, one per stop it took." in naming, where
+            assert "takes the escalated gate's id followed by `-s<K>`" in naming, where
+            assert "a document's last `K` orders it among its mode's as they were written" in naming, where
+            assert (
+                "Neither a `userproxy-` path nor a `stop-answer-` path is ever a user's words, and a"
+                " `notes-…-user-…` path is never an agent's."
+            ) in naming, where
+            assert "`userproxy-notes-<mode>-<id>.md`, written only when its gate's result is `notes`." in naming
+            setup = _between(flat, "### Setup", "2. A rebase")
+            assert (
+                "may also carry the bare word `attended`, in one position only: directly after the"
+                " `request.md` path"
+            ) in setup, where
+            assert "A chat request is never searched for the word" in setup, where
+            if not _is_stack(build):
+                assert "`<dir>/request.md attended branch prefix: <prefix> scope: <path2>`" in setup, where
+                assert "checked and refused as a path (**Scope phrase**)" in setup, where
+            directives = _section(body, "## User directives")
+            assert "- `attended` or `afk` — `attended`: a subagent's question stops for the user" in directives
+            assert "the word is the switch only standing on its own before any scope phrase" in directives, where
+    assert seen == {True, False}, seen
+
+
+PROJECT_STOP_TABLE = (
+    "| plan | 2b, plan `ESCALATE`, missing line or failed `out` check | — |",
+    "| review | 2c.1, reviewer wrote no line | skip |",
+    "| respond | 2c.2, respond `ESCALATE`, missing line or failed `out` check | — |",
+    "| judge | 2c.3, judge `ESCALATE`, missing line, round-2 `rework` | skip |",
+    "| spike | 3, spike `ESCALATE` or missing line | skip |",
+    "| digest | 4, digest not `written` | retry |",
+    "| publish | 5, publisher `ESCALATE` or missing line | retry, skip |",
+)
+
+
+def test_project_driver_puts_agent_stops_to_the_user_proxy(builds):
+    """Each agent-raised stop of the driver's own meets the user proxy first,
+    with the user's words at that stop as its only other replies; a build's
+    stops and the workflow's own checks stay the user's.
+    """
+    seen = set()
+    for where, flat, variant in _project_driver_bodies(builds):
+        proxy = "user-proxy" in variant.roles
+        seen.add(proxy)
+        if not proxy:
+            for phrase in ("Stop proxy", "user proxy", "stop-answer", "`attended`", "`afk`"):
+                assert phrase not in flat, f"{where}: {phrase}"
+            continue
+        stop = _section(flat, "### Stop proxy")
+        for row in PROJECT_STOP_TABLE:
+            assert row in stop, f"{where}: {row}"
+        cap = variant.vars["user_proxy_stops_per_cycle"]
+        for phrase in (
+            f"when **attended** is `no` and `P` is below {cap}",
+            "+ every `stop-answer-c*.md` in the project dir, + the stop's reply words from the table",
+            # The file ordinal counts every stop put to the user proxy, the cap
+            # counts answers: a passed-up stop's file is never overwritten.
+            "target `<project dir>/stop-answer-c<C>-<n>.md`, `n` one more than the record's"
+            " `cycle <C> stop answered` and `cycle <C> stop passed up` lines together, so no"
+            " target is reused; `P` counts answers alone.",
+            "`P` += 1; append `cycle <C> stop answered: <step> <target>`",
+            '`ccc resume <id> "The user proxy answered this stop on the user\'s behalf; its answer is at'
+            " <path>. Act on it as the user's answer to this stop and attribute it to the user proxy.\"`",
+            "`answered` at the judge's stop, which resumes nobody → `G` += 1, step 2b",
+            "append `cycle <C> stop passed up: <step> <target>`",
+            "a build's `gate` or `ESCALATE` (the cycle's own user proxy stood there)",
+            "the publisher's `unpushed`",
+        ):
+            assert phrase in stop, f"{where}: {phrase}"
+        for step in ("plan", "review", "respond", "judge", "spike", "publish"):
+            assert f"**Stop proxy** (`{step}`); its stop: STOP" in flat, f"{where}: {step}"
+        assert "Anything else → **Stop proxy** (`digest`); its stop, and an unrecovered launch's: STOP" in flat
+        build_stops = _between(flat, "- `gate` → the orchestrator ended its turn", "**spike:**")
+        assert "Stop proxy" not in build_stops and "user proxy" not in build_stops, where
+        unpushed = _between(flat, "- `unpushed` → STOP", "**Stop proxy** (`publish`)")
+        assert "Stop proxy" not in unpushed[: unpushed.rindex("- `ESCALATE`")], where
+        assert "| user-proxy | `answered` |" in flat, where
+        assert "`ESCALATE` goes to the user, through **Stop proxy** where it applies" in flat, where
+        assert "`attended` (default absent)" in flat, where
+        assert "the request path, ` attended`, the prefix words, the scope phrase, in that order" in flat, where
+        assert "and nothing after the scope phrase" in flat, where
+        assert "in that order, the scope phrase last, its paths running to the end" in flat, where
+        assert "relay the user's words whole and verbatim with the rest" in flat, where
+        assert "and refused as one (**Repository checks**, **Scope**)" in flat, where
+        record = _between(flat, "## Driver record", "## State you track")
+        for line in (
+            "attended: yes | no",
+            "cycle <C> stop answered: <step> <stop answer path>",
+            "cycle <C> stop passed up: <step> <stop answer path>",
+            "a record with none is `no`",
+        ):
+            assert line in record, f"{where}: {line}"
+        assert "`stop answered` and `stop passed up` lines skipped, decides where the loop re-enters" in flat
+        assert "| **P** | 0, or on resume the count of cycle `C`'s `stop answered` lines |" in flat, where
+        assert flat.count("every `stop-answer-c<C>-…` path") == 4, where
+        assert "grep -E 'stop (answered|passed up): ' <project dir>/driver-record.md`" in flat, where
+        assert '"stops the project\'s user proxy took in your name"' in flat, where
+        # A build's own stop answers sit in its cycle dir, never in the record.
+        assert (
+            "for the cycle dir of every `started` line of the record, the paths `ls <cycle"
+            " dir>/stop-answer-k*.md` prints, verbatim"
+        ) in flat, where
+        assert '"stops a cycle\'s user proxy took in your name" — whatever way the cycle ended' in flat
+        assert "and the stop answer paths an `ls` of each cycle dir prints;" in flat, where
+        assert (
+            "Whatever stop the loop re-enters below also surfaces, verbatim, every `stop answered` and"
+            " `stop passed up` line of cycle `C` after that last line"
+        ) in flat, where
+    assert seen == {True, False}, seen
+    for stem in PROJECT_EMBEDS:
+        build = builds[stem]
+        if "user-proxy" in build.variant.roles:
+            assert build.variant.vars["user_proxy_stops_per_cycle"] == 3, stem
+
+
+# The "only the user" bullet as the deciding forester reads it (no stack) and
+# as the plan reviewer and the judge read it: the same rule, subject aside.
+ONLY_THE_USER_PROXY = (
+    "- Only the user: a thing only they hold — a repository brought into scope, a tracker entry"
+    " filed outside it, a shipped reference, access; a step that cannot be undone from the"
+    " repositories in scope and that the request did not evidently authorise; and the case where no"
+    " way forward you can name is both plausibly productive and undoable. Work so far off the rails"
+    " that nothing you can send back would right it is that case. What a ruling costs is not: cost"
+    " is weighed in the ruling and written in its record."
+)
+ONLY_THE_USER_REVIEWER = ONLY_THE_USER_PROXY.replace(" you can ", " the proxy can ")
+
+
+def test_plan_review_and_judge_hold_the_proxy_to_its_rule(builds):
+    """The plan reviewer and the judge's plan phase carry the reviewer voice:
+    that the owner was not asked is never a finding, and a reading the proxy
+    stated is no dispute.
+    """
+    for stem, build in builds.items():
+        if "plan-reviewer" in build.by_id:
+            for name, body in build.bodies("plan-reviewer"):
+                where = f"{stem}/{name}"
+                flat = " ".join(body.split())
+                assert body.count(REVIEWER_AUTHORITY_HEADING) == 1, where
+                assert flat.index(REVIEWER_AUTHORITY_HEADING) < flat.index("## Your one question"), where
+                assert STOP_ANSWER_RANK in flat, where
+                assert ONLY_THE_USER_REVIEWER in flat, where
+                for phrase in (
+                    "Never that the owner was not asked.",
+                    "Whether a tracker entry has reached the owner's triage, or a stack has been pushed",
+                    "never asks for an escalation unless the finding shows the ruling is one only the user can make",
+                    "the owner's to overrule afterwards, from the plan's **Rulings**",
+                    "is checked against the plan's **Rulings**",
+                    "every `stop-answer-c<C>-…` path, the target findings path",
+                ):
+                    assert phrase in flat, f"{where}: {phrase}"
+                for phrase in ("irreversible or expensive", "greatly balloon", "the owner's inbox"):
+                    assert phrase not in flat, f"{where}: {phrase}"
+        if "judge" not in build.by_id:
+            continue
+        plan_phase = "project-orchestrator" in build.by_id and _decide(build.variant)
+        for name, body in build.bodies("judge"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert ("### What the proxy may rule" in flat) == plan_phase, where
+            if plan_phase:
+                assert ONLY_THE_USER_REVIEWER in flat, where
+            if plan_phase:
+                assert '"the owner must say which reading" is an escalation' not in flat.lower(), where
+                assert "does it need the owner's ruling in `todo-triage`" not in flat, where
 
 
 def test_project_driver_setup_guards_the_prefix_and_sidecar(builds):
@@ -3332,6 +3811,7 @@ def test_provenance_line_is_uniform(builds):
                 "forester": 1 if autonomy == "decide" else 0,
                 "project-forester": 1,
                 "project-orchestrator": 1,
+                "user-proxy": 1,
             }.get(role.id, 0)
             for name, body in build.bodies(role.id):
                 where = f"{build.stem}/{name}"
@@ -3579,10 +4059,14 @@ def test_forester_never_passes_a_gate_by_writing_it_down(builds):
             assert "a **Request assessment** item the gate accepted" not in ship, where
             if decide:
                 assert "Approving and mentioning it is the one thing you may not do." in ship, where
-                trigger = "a TODO filed in another repository" if stack else (
-                    "a repository brought into scope, a TODO filed outside it, a shipped reference"
+                holds = "a tracker entry filed in another repository, access" if stack else (
+                    "a repository brought into scope, a tracker entry filed outside it, a shipped reference, access"
                 )
-                assert f"the cycle needs something only the user can give — {trigger} — and no stop has asked for it" in flat, where
+                assert f"Only the user: a thing only they hold — {holds};" in flat, where
+                assert (
+                    "a thing only the user holds that the cycle needs and no stop has asked for is"
+                    " escalated when you find it"
+                ) in flat, where
             else:
                 assert "**Unsettled** names such a need" not in ship, where
                 assert "A brief whose **Recommendation** is approve names no need" in ship, where
@@ -3733,7 +4217,8 @@ def test_ship_launch_carries_next_key(builds):
             shape = "Its first sentence names the decision the user is being asked to make"
             if decide:
                 assert shape in escalating and opener not in escalating, where
-                assert "- a ruling you cannot stand behind" in escalating, where
+                assert "a ruling you cannot stand behind" not in escalating, where
+                assert "only for what **What you may rule** leaves to the user" in escalating, where
             else:
                 seen = True
                 assert opener in escalating and shape not in escalating, where
@@ -3794,7 +4279,7 @@ def test_report_closes_the_last_ship_document(builds):
                 seen.add(role_id)
                 where = f"{build.stem}/{name}"
                 flat = " ".join(body.split())
-                assert "`forester-ship-k<K>.md` with the highest `K`, compared as a number" in flat, where
+                assert SHIP_DOCUMENT_PICK["user-proxy" in build.variant.roles] in flat, where
                 assert "forester-report" not in flat, where
                 if role_id == "triage-forester":
                     assert "when it has no **Report**, or there is none" in flat, where
@@ -4255,3 +4740,12 @@ def test_standard_payload_carries_the_scope(builds):
                     continue
                 launch = flat[start : flat.index(".", flat.index("`", start + 30))]
                 assert "log path" not in launch, f"{where}: {mode}"
+
+
+def test_readme_names_the_user_proxy_and_its_switch():
+    """The README tells an operator what stops an `-auto` run and how to
+    change it: the role, the two words, the per-cycle cap.
+    """
+    flat = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+    for phrase in ("`user-proxy`", "`attended`", "`afk`", "`user_proxy_stops_per_cycle` (3)", "`proxy-authority`"):
+        assert phrase in flat, phrase

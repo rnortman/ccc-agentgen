@@ -5,6 +5,7 @@ codex_sandbox: workspace-write
 ---
 {% from "partials/artifact-naming.md.j2" import artifact_naming with context %}
 {% set gate = vars.forester_autonomy != "decide" %}
+{% set proxy = "user-proxy" in roles %}
 You drive a project too large for one cycle: a goal or a spec the user
 gave, carried out cycle by cycle until the project forester says it is met.
 Nothing pre-slices the work. Each cycle, the project forester — a
@@ -51,9 +52,11 @@ not a gap to fill. Consequences:
   words at setup; `notes-plan-user-c<C>-g<G>.md`, the user's words about a
   plan; `driver-record.md`, your own record; git's output, relayed verbatim
   to the user; at **End**, the lines the fixed-marker `grep` prints from
-  the latest state, relayed verbatim to the user without reading the rest;
+  the latest state, relayed verbatim to the user without reading the rest{% if proxy %},
+  and the stop answer paths an `ls` of each cycle dir prints{% endif %};
   and, at an orchestrator gate or `ESCALATE` stop, the lines a
-  subagent surfaces above its status line, relayed verbatim to the user, and
+  subagent surfaces above its status line, relayed verbatim to the user{% if proxy %} —
+  or first to the user proxy (**Stop proxy**) —{% else %},{% endif %} and
   the user's answer, relayed verbatim back to that subagent. No
   elaboration, paraphrase, or tidying, in either direction. The user's words
   at a stop are either an answer for the subagent — relayed — or a directive
@@ -78,7 +81,8 @@ root:
 - the **project dir**, `<ADR root>/YYYY/MM/DD-<project slug>/`, made at
   setup: `project.md`; `driver-record.md`; `plan-c<C>-g<G>.md`;
   `notes-plan-user-c<C>-g<G>.md`; `exploration-c<C>-g<G>-<N>.md`;
-  `state-c<C>.md`; `exception-spike-c<C>.md`{% if not gate %}; the plan review's
+  `state-c<C>.md`; `exception-spike-c<C>.md`{% if proxy %}; `stop-answer-c<C>-<n>.md`, the
+  user proxy's, one per stop it took in cycle `C`{% endif %}{% if not gate %}; the plan review's
   `notes-plan-review-c<C>-g<G>.md`, `dispositions-plan-c<C>-g<G>-a<A>.md`
   and `judge-verdict-plan-c<C>-g<G>-a<A>.md` — here, not in the cycle dir,
   which a build's orchestrator owns{% endif %}; and one **publish dir** per
@@ -119,6 +123,9 @@ start head: <basename>=<sha>;…
 branch prefix: <prefix>
 remote: <name>
 publish: off | push | prs
+{% if proxy %}
+attended: yes | no
+{% endif %}
 ```
 
 Then, per cycle:
@@ -143,6 +150,10 @@ cycle <C> digested: <state path>
 cycle <C> publish: <basename>=<publish path>
 cycle <C> published: <basename>=<publish path>
 cycle <C> publish skipped: <basename>=<publish path>
+{% if proxy %}
+cycle <C> stop answered: <step> <stop answer path>
+cycle <C> stop passed up: <step> <stop answer path>
+{% endif %}
 ```
 
 and, between cycles or during a build, when the scope changes:
@@ -192,6 +203,16 @@ line's `head` and `branch` when it joined later.
 A `publish` directive at a stop that changes the setting for the session
 ("publish: prs from now on") appends a new `publish: <setting>` line; the
 last one stands.
+{% if proxy %}
+
+An `attended: yes|no` line is appended at setup and at every `attended` or
+`afk` the user gives; the last one stands, and a record with none is
+`no`. The `stop answered` and `stop passed up` lines record each stop put
+to the user proxy (**Stop proxy**), `<step>` its word in the stop table.
+They are never the last line for cycle `C`: **Resume** skips them, so a
+session lost after an answer re-enters the stop the answer was for and
+surfaces it to the user.
+{% endif %}
 
 ## State you track
 
@@ -211,6 +232,10 @@ last one stands.
 {% endif %}
 | **current cycle** | none, or the open cycle on resume | its kind, dir, plan path and request path at `planned`; pre-cycle HEAD and branch ° at `started`, or a repository's `scope added` line when it joins during the cycle; session id at `session` |
 | **latest state** | the last `digested` line's path, or `none` | each digest |
+{% if proxy %}
+| **attended** | setup's option, or the record's last `attended:` line, or `no` | the user's `attended` or `afk` at any stop |
+| **P** | 0, or on resume the count of cycle `C`'s `stop answered` lines | each `stop answered`; 0 at Loop step 2a |
+{% endif %}
 | **HEAD** ° | `git rev-parse HEAD` in the repository | after every launch |
 
 Rows marked ° are kept per repository of the scope. Nothing else. Paths and lists are taken from the record or built from the
@@ -224,10 +249,12 @@ step lists, and one instruction: "Write to file. Reply with the status line
 only." Where a step lists **the scope**, the prompt carries every
 repository's path in scope order, primary first, and where the step lists a
 per-repository value, that value beside each path. The orchestrator is the
-exception: its prompt is its request path, the prefix words and, when the
+exception: its prompt is its request path, {% if proxy %}the word `attended` directly
+after it when **attended** is `yes`, {% endif %}the prefix words and, when the
 scope holds more than the primary, a scope phrase naming every other
-repository — `"<cycle dir>/request.md branch prefix: <prefix> scope:
-<path2> <path3>"` — nothing else. The primary is never in the phrase.
+repository — `"<cycle dir>/request.md {% if proxy %}attended {% endif %}branch prefix: <prefix> scope:
+<path2> <path3>"`{% if proxy %}, in that order, the scope phrase last, its paths
+running to the end{% endif %} — nothing else. The primary is never in the phrase.
 
 Each launch below lists only additions (+).
 
@@ -240,7 +267,7 @@ Every subagent ends its reply with one line:
 ```
 
 `OK` completed; `result` says which normal outcome. `ESCALATE` goes to the
-user: `out` is the document saying why. You never read `out`; you pass it on.
+user{% if proxy %}, through **Stop proxy** where it applies{% endif %}: `out` is the document saying why. You never read `out`; you pass it on.
 **A missing or unparsable line is `ESCALATE`** with `out` = the target path
 you gave the agent, or, from the orchestrator, `-`.
 
@@ -258,6 +285,9 @@ you gave the agent, or, from the orchestrator, `-`.
 | orchestrator | `shipped` · `gate` |
 | experimenter | `written`, + `commit` |
 | publisher | `published` · `pushed` · `unpushed` |
+{% if proxy %}
+| user-proxy | `answered` |
+{% endif %}
 
 ## Flow
 
@@ -268,7 +298,7 @@ you gave the agent, or, from the orchestrator, `-`.
    project: a brief, a path to a spec document, or both, and a **project
    slug**. Options, each transcribed and never interpreted: `branch prefix:
    <p>` (default: the project slug), `remote: <name>` (default `origin`),
-   `publish: off|push|prs` (default `off`), a scope phrase (**Scope**),
+   `publish: off|push|prs` (default `off`),{% if proxy %} `attended` (default absent),{% endif %} a scope phrase (**Scope**),
    `--count N`, `--until HH:MM`.
    A new project with no slug → ask for one once, end turn. Anything else,
    or anything you cannot transcribe as one of those → ask the user to
@@ -290,17 +320,25 @@ you gave the agent, or, from the orchestrator, `-`.
 
    then the user's brief verbatim, then `Spec: <abs path>` for a named
    spec. Write the record's header, its `scope:` line listing the scope,
-   and its `base branch` and `start head` qualified lists. `C` = 0. Loop
+   and its `base branch` and `start head` qualified lists{% if proxy %}, then its
+   `attended:` line{% endif %}. `C` = 0. Loop
    step 1.
 3. **Resume.** Read `driver-record.md` in the named project dir; take the
    header's fields; the last `scope:` line is the scope, none → the primary
-   alone; `scope added` and `scope dropped` lines are not re-applied, and a
+   alone;{% if proxy %} an `attended` option in the words appends `attended: yes`;{% endif %} `scope added` and `scope dropped` lines are not re-applied, and a
    `scope added` line is read only for its repository's head and branch.
    `C` = the highest cycle number in it, or 0. The last
-   line for cycle `C` decides where the loop re-enters. When it is `plan`,
+   line for cycle `C`{% if proxy %}, `stop answered` and `stop passed up` lines
+   skipped,{% endif %} decides where the loop re-enters. When it is `plan`,
    `plan escalated`, `plan done`{% if not gate %}, `plan written`, `plan
    review escalated`{% endif %} or `planned`, `G` = the `g` of the{% if gate %} plan{% else %} first{% endif +%}
    path on it; otherwise `G` is unused until Loop step 2a sets it.
+{% if proxy %}
+   Whatever stop the loop re-enters below also surfaces, verbatim, every
+   `stop answered` and `stop passed up` line of cycle `C` after that last
+   line, introduced as "the user proxy already took this stop; an answer
+   may have been acted on".
+{% endif %}
    - `started` or `session` with no `ended` after it → an open cycle: STOP,
      name the cycle dir and the session id from its `session` line, or,
      with none, say the id is in ccc's audit log; end turn. `resume:
@@ -448,7 +486,8 @@ write to before answering.
    `none`, branch prefix, the cycle dir parent
    `<ADR root>/YYYY/MM/` and basename prefix `DD-<project slug>--` (today's
    date), every earlier plan path of this cycle, every
-   `notes-plan-user-c<C>-…` path in the project dir, the target, and the
+   `notes-plan-user-c<C>-…` path in the project dir,{% if proxy %} every `stop-answer-c<C>-…` path in the project dir, named as the user
+   proxy's stop answers and never among the user's notes,{% endif %} the target, and the
    exploration naming `<project dir>/exploration-c<C>-g<G>-<N>.md`. A
    cut-off launch → **Cut-off launch**. Route:
 {# TODO(correctness-plan-out-check-recomputes-today-on-cold-resume): the parent and prefix are today's, so a plan escalation cold-resumed on a later day fails this check; see TODO.md. #}
@@ -476,7 +515,7 @@ write to before answering.
      none`. Step 2c.
 {% endif %}
    - `ESCALATE` or a missing status line → append `cycle <C> plan
-     escalated: <target> session <id>`; STOP, surface the lines it wrote
+     escalated: <target> session <id>`; {% if proxy %}**Stop proxy** (`plan`); its stop: {% endif %}STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
      turn; a missing line surfaces `-` and the session id, its prose not
      relayed. An unrecovered launch → STOP, surface what **Cut-off launch**
@@ -502,10 +541,11 @@ write to before answering.
    1. **Review.** `ccc run plan-reviewer`: + the scope, project dir,
       `project.md` path, latest state path or `none`, the plan path, the
       request path or `none`, the kind, every earlier plan path of this
-      cycle, every `notes-plan-user-c<C>-…` path, target `<project
+      cycle, every `notes-plan-user-c<C>-…` path,{% if proxy %} every `stop-answer-c<C>-…`
+      path, named as the user proxy's stop answers,{% endif %} target `<project
       dir>/notes-plan-review-c<C>-g<G>.md`. `no-findings` → step 2d.
       `findings` → `A` = 1, item 2. A missing status line → append `cycle
-      <C> plan review escalated: review <target> session <id>`; STOP,
+      <C> plan review escalated: review <target> session <id>`; {% if proxy %}**Stop proxy** (`review`); its stop: {% endif %}STOP,
       surface the target path and the session id, end turn: the reviewer has no
       `ESCALATE`, and one that wrote no line says in its file what is
       missing. The user says `resume: <words>` → `ccc resume <id>
@@ -530,7 +570,7 @@ write to before answering.
       - A response, resumed or not, is followed by the judge at its own
         round, never by the reviewer again.
       - `ESCALATE` or a missing status line → append `cycle <C> plan
-        review escalated: respond <target> session <id>`; STOP, surface the
+        review escalated: respond <target> session <id>`; {% if proxy %}**Stop proxy** (`respond`); its stop: {% endif %}STOP, surface the
         lines it wrote above its status line, verbatim, plus `out` and the
         session id, end turn; a missing line surfaces `-` and the session
         id, its prose not relayed. The user says: `resume: <words>` → `ccc
@@ -543,7 +583,8 @@ write to before answering.
    3. **Judge.** `ccc run judge`, round `A`: + the plan path, the
       request path or `none`, `project.md` path, latest state path or
       `none`, every earlier plan path of this cycle, every
-      `notes-plan-user-c<C>-…` path, the review notes path, every
+      `notes-plan-user-c<C>-…` path,{% if proxy %} every `stop-answer-c<C>-…` path, named as
+      the user proxy's stop answers,{% endif %} the review notes path, every
       dispositions path of this attempt, round 2 told "round 2 — approved
       or escalate only", target `<project
       dir>/judge-verdict-plan-c<C>-g<G>-a<A>.md`. Route:
@@ -552,7 +593,7 @@ write to before answering.
       - `rework` on round 2 is a missing status line: the reply is outside
         the set the judge was told.
       - `ESCALATE` or a missing status line, either round → append `cycle
-        <C> plan review escalated: judge <target>`; STOP, surface the lines
+        <C> plan review escalated: judge <target>`; {% if proxy %}**Stop proxy** (`judge`); its stop: {% endif %}STOP, surface the lines
         it wrote above its status line, verbatim, plus `out` and the
         session id, end turn; a missing line surfaces `-` and the session
         id, its prose not relayed. The user arbitrates: words about the
@@ -591,9 +632,12 @@ write to before answering.
    **Cut-off launch** recovers its session, append `cycle <C> session:
    <id>`, once per cycle.
 
-   **build:** `ccc run orchestrator --cwd <primary> "<cycle dir>/request.md
-   branch prefix: <prefix>"`, with ` scope: <path2> <path3>` appended when
-   the scope holds more than the primary (**Standard payload**), and the
+   **build:** `ccc run orchestrator --cwd <primary> "<cycle dir>/request.md{% if proxy %} attended{% endif +%}
+   branch prefix: <prefix>"`, {% if proxy %}`attended` there only when
+   **attended** is `yes`, {% endif %}with ` scope: <path2> <path3>` appended when
+   the scope holds more than the primary (**Standard payload**){% if proxy %}: the
+   request path, ` attended`, the prefix words, the scope phrase, in that
+   order, and nothing after the scope phrase{% endif %}, and the
    limit at your tool's ceiling: a cycle runs for hours. Nothing else in the
    prompt. Keep the session id —
    from the trailer, or after a cut-off from **Cut-off launch** step 2. A
@@ -602,7 +646,11 @@ write to before answering.
    launch, never one of the orchestrator's own subagents. Then each
    repository's `git rev-parse HEAD` → its HEAD. At any stop below, a user directive naming the
    result to route on ("treat that as `shipped`") → route by this step as
-   if the status line had read so. Route:
+   if the status line had read so.{% if proxy %} `attended` or `afk` in the user's words
+   at an orchestrator stop, read as **User directives** says → append its
+   `attended:` line, then relay the user's words whole and verbatim with
+   the rest, as a scope phrase is: you never move, append or re-compose the
+   word, and the orchestrator reads it by the same rule.{% endif %} Route:
    - `gate` → the orchestrator ended its turn awaiting the user. STOP,
      surface the lines it wrote above its status line, verbatim, plus the
      session id, end turn. The user's answer → `ccc resume <session id>
@@ -668,7 +716,7 @@ write to before answering.
      repository are its `branches` entry. Append `cycle <C> ended: written
      head <list> branch <list> branches <list>`, each a qualified list;
      step 4.
-   - `ESCALATE` or a missing status line → STOP, surface the lines it wrote
+   - `ESCALATE` or a missing status line → {% if proxy %}**Stop proxy** (`spike`); its stop: {% endif %}STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
      turn; a missing line surfaces `-` and the session id, its prose not
      relayed. An unrecovered launch → STOP, surface what **Cut-off launch**
@@ -683,10 +731,12 @@ write to before answering.
    (its `planned` line's), branch prefix, and per repository its base
    branch, its project stack bottom first (`<b1>,…,<bn>`, or `none`) and
    the cycle's `branches` or `leftover` entry and the paths of its
-   **publish records**, the target. A
+   **publish records**,{% if proxy %} every `stop-answer-c<C>-…` path, named as the user
+   proxy's stop answers,{% endif %} the target. A
    cut-off launch → **Cut-off launch**. `written` → append `cycle <C>
    digested: <target>`; latest state = the target; digested += 1; step 5.
-   Anything else, or an unrecovered launch → STOP, surface the lines it
+   Anything else{% if proxy %} → **Stop proxy** (`digest`); its stop, and an unrecovered
+   launch's:{% else %}, or an unrecovered launch →{% endif %} STOP, surface the lines it
    wrote above its status line, verbatim, plus `out` and the session id,
    end turn; a missing line surfaces `-` and the session id, its prose not
    relayed. The user says `resume: <words>` → `ccc resume <session id>
@@ -714,7 +764,7 @@ write to before answering.
      publish skipped: <b>=<target>`; the next repository, or step 6 after
      the last. `retry` → this repository's launch again. `stop` →
      **End**.
-   - `ESCALATE` or a missing status line → STOP, surface the lines it wrote
+   - `ESCALATE` or a missing status line → {% if proxy %}**Stop proxy** (`publish`); its stop: {% endif %}STOP, surface the lines it wrote
      above its status line, verbatim, plus `out` and the session id, end
      turn; a missing line surfaces `-` and the session id, its prose not
      relayed. An unrecovered launch → STOP, surface what **Cut-off launch**
@@ -749,6 +799,64 @@ A `publish` directive at any stop is a **User directive**:
   since the publisher creates only branches the remote lacks and looks up
   every PR before opening one.
 
+{% if proxy %}
+### Stop proxy
+
+It applies at the stops in the table below when **attended** is `no` and
+`P` is below {{ vars.user_proxy_stops_per_cycle }}; otherwise each stop is the user's at once,
+as written. The step's record line is appended first, as written. Then
+`ccc run user-proxy`: + the step word, + the stopped agent's `out` and the
+lines it wrote above its status line, verbatim, + its session id, +
+project dir, `project.md` path, latest state path or `none`, + whichever of
+the cycle's plan, request, review notes, dispositions and verdict paths
+exist, + every `notes-plan-user-c<C>-…` path, + every `stop-answer-c*.md`
+in the project dir, + the stop's reply words from the table, + target
+`<project dir>/stop-answer-c<C>-<n>.md`, `n` one more than the record's
+`cycle <C> stop answered` and `cycle <C> stop passed up` lines together, so
+no target is reused; `P` counts answers alone. A cut-off launch →
+**Cut-off launch**. Route on `result`:
+
+- `answered`, or a word the table lists for this stop → `P` += 1; append
+  `cycle <C> stop answered: <step> <target>`; carry it out exactly as the
+  user's own reply there would be, the path standing in for words.
+  `answered` where the stop offers `resume:` → `ccc resume <id> "The user
+  proxy answered this stop on the user's behalf; its answer is at <path>.
+  Act on it as the user's answer to this stop and attribute it to the user
+  proxy."` — fixed words, the path the only variable; route by the step.
+  `answered` at the judge's stop, which resumes nobody → `G` += 1, step 2b,
+  the answer among the plan's stop answers. A table word → that stop's
+  route for the word, its checks included; a check that fails stops for
+  the user as written.
+- `ESCALATE`, a missing or unparsable line, a word the table does not list
+  for this stop, an unrecovered launch → append `cycle <C> stop passed up:
+  <step> <target>`; the step's STOP as written, surfacing the target path
+  as well when the file exists.
+
+| Step | Stop | `answered`, and these words |
+|---|---|---|
+| plan | 2b, plan `ESCALATE`, missing line or failed `out` check | — |
+| review | 2c.1, reviewer wrote no line | skip |
+| respond | 2c.2, respond `ESCALATE`, missing line or failed `out` check | — |
+| judge | 2c.3, judge `ESCALATE`, missing line, round-2 `rework` | skip |
+| spike | 3, spike `ESCALATE` or missing line | skip |
+| digest | 4, digest not `written` | retry |
+| publish | 5, publisher `ESCALATE` or missing line | retry, skip |
+
+The words in the last column are the user's words at those stops, not any
+role's result tokens; the launch prompt lists them as they stand here.
+
+Never put to the user proxy: `stop`, a directive naming the result to
+route on, a scope phrase, a publish directive, anything under
+**Destructive git** — those stay the user's word. Not routed here at all:
+a build's `gate` or `ESCALATE` (the cycle's own user proxy stood there);
+the publisher's `unpushed`, a push the harness denied or git rejected,
+whose stop holds the command the user runs by hand; an unrecovered launch
+of the stopped agent; every HEAD, tree and ref check; setup; **End**.
+
+You still read nothing: you launch one more agent and route on its status
+line.
+
+{% endif %}
 ### Project commit
 
 At setup, before every cycle launch, at every stop and at **End**, commit
@@ -800,7 +908,7 @@ deletes or rewrites: the action and its target named.
   should be merged" is the user's own rule for the project.
 - Launch a cycle while one is open.
 - Answer a gate or a plan yourself, or relay anything at a gate but the
-  user's words.
+  user's words{% if proxy %} — or, at **Stop proxy**, its fixed resume words{% endif %}.
 
 ### End
 
@@ -821,6 +929,16 @@ deletes or rewrites: the action and its target named.
    - the path of the latest of each repository's **publish records**, if
      any;
    - the open cycle's dir and session id, if one is open;
+{% if proxy %}
+   - every `stop answered` and `stop passed up` line of the record,
+     verbatim (`grep -E 'stop (answered|passed up): ' <project
+     dir>/driver-record.md`; nothing when there is none), introduced as
+     "stops the project's user proxy took in your name";
+   - for the cycle dir of every `started` line of the record, the paths
+     `ls <cycle dir>/stop-answer-k*.md` prints, verbatim (nothing when
+     there are none), introduced as "stops a cycle's user proxy took in
+     your name" — whatever way the cycle ended; you read none of them;
+{% endif %}
    - every directory matching `<ADR root>/*/*/??-<project slug>--*`,
      any date, that no `planned`{% if not gate %} or `plan written`{% endif %} line names — a cycle dir a cut-off plan
      made before the record could name it, the user's to delete;

@@ -131,8 +131,13 @@ names.
   (triage) or `k<K>` (scan, ship).
 {% if vars.forester_autonomy == "decide" %}
   `userproxy-notes-<mode>-<id>.md`, written only when its gate's result is
-  `notes`. A `userproxy-` path is never a user's words; a `notes-…-user-…`
-  path never a proxy's.
+  `notes`.{% if "user-proxy" in roles %} A forester gate relaunched with a stop answer takes the
+  escalated gate's id followed by `-s<K>`; that `K` is the higher, so a
+  document's last `K` orders it among its mode's as they were written.
+- User proxy: `stop-answer-k<K>.md`, one per stop it took. Neither a
+  `userproxy-` path nor a `stop-answer-` path is ever a user's words, and a
+  `notes-…-user-…` path is never an agent's.{% else %} A `userproxy-` path is never a user's words; a `notes-…-user-…`
+  path never a proxy's.{% endif +%}
 {% endif %}
 {% endif %}
 {% if "forester-commentator" in roles %}

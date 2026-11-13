@@ -99,3 +99,7 @@ codex_effort = "low"
 [roles.pr-liaison]
 model = "claude-opus-5-5[1M]"
 effort = "medium"
+
+[roles.user-proxy]
+model = "claude-fable-5-2[1M]"
+codex_model = "gpt-6-astra"

@@ -87,3 +87,7 @@ model = "claude-fable-5-2[1M]"
 effort = "low"
 codex_model = "gpt-6-astra"
 codex_effort = "low"
+
+[roles.user-proxy]
+model = "claude-fable-5-2[1M]"
+codex_model = "gpt-6-astra"

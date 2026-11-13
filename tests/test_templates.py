@@ -48,6 +48,7 @@ ALL_VARS = {
     "forester_gates": ["design", "triage", "scan", "ship"],
     "forester_gate_rounds": 2,
     "cycle_target_lines": 4000,
+    "user_proxy_stops_per_cycle": 3,
 }
 
 # Roles the lite shape drops, exercising the `{% if "<id>" in roles %}` pruning
@@ -259,6 +260,7 @@ PROVENANCE_READERS = {
     "sketcher",
     "contrarian",
     "plan-reviewer",
+    "user-proxy",
     "judge",
     "workflow-scanner",
     "eli5-explainer",
@@ -376,6 +378,14 @@ def test_forester_defaults_rule_only_when_deciding(full, advise):
     advising = _body(advise, "forester")
     assert DEFAULTS_RULE not in advising
     assert "userproxy" not in advising
+
+
+def test_project_driver_reads_its_stop_cap_from_the_knob(full):
+    """The cap the driver states is the variant's knob, not a number in the template."""
+    assert "and `P` is below 3" in _body(full, "project-orchestrator")
+    capped = _body(render(role_ids(), user_proxy_stops_per_cycle=7), "project-orchestrator")
+    assert "and `P` is below 7" in capped
+    assert "and `P` is below 3" not in capped
 
 
 def test_designer_default_and_owner_notes_render(full, advise):

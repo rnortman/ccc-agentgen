@@ -203,7 +203,8 @@ pick is your judgement.
 ended `incomplete`: a cycle reported shipped and the tool found the entry
 still listed (`TODO.md` or `todo.d/`); `remaining` names which of the unit's entries were
 left. Read that attempt's ADR dir (`adr_dir`): its `request.md`, and the
-`forester-ship-k<K>.md` with the highest `K`, compared as a number — its
+`forester-ship-k<K>.md` {% if "user-proxy" in roles %}or `forester-ship-k<K>-s<K>.md` (a gate relaunched
+with a stop answer) whose last `K` is highest{% else %}with the highest `K`{% endif %}, compared as a number — its
 **Report** closes it; when it has no
 **Report**, or there is none, `design.md` and `forester-log.md`. The report says what was built and what
 the cycle pushed back on; the design's **Request assessment** says what it dropped and why.

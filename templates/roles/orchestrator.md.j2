@@ -17,6 +17,7 @@ codex_sandbox: workspace-write
 {% from "partials/artifact-naming.md.j2" import artifact_naming with context %}
 {% set commentator = "forester-commentator" in roles %}
 {% set decide = forester and vars.forester_autonomy == "decide" %}
+{% set userproxy = "user-proxy" in roles %}
 {% set fg_design = forester and "design" in vars.forester_gates %}
 {% set eli5_at_gate = eli5 and not (decide and fg_design) %}
 {% set gate_pair = fg_design and eli5_at_gate %}
@@ -89,7 +90,8 @@ to fill. Consequences:
   confused do you ask, once. Words addressed to your own routing are a
   directive to you, not a relay.{% if decide %} Only the
   user's own words go to a `notes-…-user-…` path; the forester's go to
-  `userproxy-notes-…` paths it writes itself, and you never transcribe
+  `userproxy-notes-…` paths it writes itself{% if userproxy %}, the user proxy's to
+  `stop-answer-…` paths it writes itself{% endif %}, and you never transcribe
   them.{% endif +%}
 - **Post-freeze user words.** Words answering a stop whose procedure says
   what the user's answer does follow that procedure. Any other user
@@ -182,6 +184,11 @@ Three places, kept apart throughout:
 {% if fg_design or fg_triage %}
 | **`G`** | 1 | forester gate round within one design or triage gate; += 1 each time its notes go down and a revision comes back; reset to 1 whenever a gate clears — design approved, or the designer's re-triage returns `resume` or `delta` |
 {% endif %}
+{% if userproxy %}
+| **attended** | `yes` when **Setup** step 1 recorded the word, else `no` | the user's `attended` or `afk` at any stop (**User directives**) |
+| **stop answers** | none | each user proxy `answered` adds its target path (**Stop proxy**) |
+| **answered gates** | none | a gate's mode joins when the user proxy answers its escalation (**Stop proxy**); it leaves when a gate of that mode clears — `approve`, `noted`, `adopt` or `restore`, or for triage the designer's `resume` or `delta` — or when the user answers that gate's stop |
+{% endif %}
 | **carried paths** | none | triage dispositions{% if scanner %} and scan reports{% endif %}{% if forester %}, forester rulings{% if decide %} and userproxy notes{% endif %}{% endif %} to list at the next gate |
 
 The two `R` counters are independent.{% if not stack %} Rows marked ° are kept per
@@ -254,6 +261,9 @@ retries mid-work often omits the commit it already made.
 {% if forester %}
 | forester | {% if decide %}`approve` · `noted` · `notes` at a gate, per **Forester gate**; `adopt` · `restore` in repo{% else %}`written`{% endif %} | — | — |
 {% endif %}
+{% if userproxy %}
+| user-proxy | `answered` | — | — |
+{% endif %}
 {% set writers = (["eli5-explainer"] if eli5 else []) + (["explorer"] if "explorer" in roles else []) + (["forester-commentator"] if commentator else []) + (["changelog-author (+ commit)"] if changelog else []) %}
 {% if writers %}
 | {{ writers | join(", ") }} | `written` | — | — |
@@ -287,6 +297,20 @@ retries mid-work often omits the commit it already made.
    the design.{% else %}Every repository of the scope then works
    on its own branch, `<prefix>/<request slug>`, created at **Setup** step 4
    or when the repository joins the scope.{% endif +%}
+{% endif %}
+{% if userproxy %}
+   Words naming an existing `request.md` may also carry the bare word
+   `attended`, in one position only: directly after the `request.md` path,
+   before {% if not followup %}`branch prefix:`, {% endif %}{% if not stack %}a scope phrase and {% endif %}any other option —
+   `<dir>/request.md attended{% if not followup %} branch prefix: <prefix>{% endif %}{% if not stack %} scope: <path2>{% endif %}{% if followup %} <prior working dir>{% endif %}`. Recorded as
+   **attended** `yes`, never asked for; absent there → `no`. Anywhere else
+   in the launch words the word is not the switch{% if not stack %}: it belongs to the
+   option it stands in — after a scope phrase's keyword it is one of that
+   phrase's paths, checked and refused as a path (**Scope phrase**) — so a
+   misplaced word fails at setup instead of being dropped{% endif %}. A chat request
+   is never searched for the word: its words are transcribed whole, and
+   the cycle starts with **attended** `no`; the user says `attended` at any
+   stop, or launches by path.
 {% endif %}
 {% if stack %}
 {% if followup %}
@@ -940,7 +964,8 @@ pushed: the stack is what ships.
    <bn>@<cn>`, bottom first{% if followup %}, ending as step 3 or **Publish** says{% endif %}; never as a request or an offer. The work
    branch stays: HEAD is attached to it, at `<bn>`'s commit, so after
    pushing the stack `git checkout <bn> && git branch -d <branch>` removes
-   it. End turn. The cycle is over.
+   it.{% if userproxy %} When the stop answers are not empty, one more line:
+   `stops answered by the user proxy: <path> …`, every path.{% endif %} End turn. The cycle is over.
 {% else %}
 A loop over the repositories **due**: every repository in the recorded
 `order=` (**Scope keys**), in that order; the next due repository is always
@@ -1077,7 +1102,9 @@ For each due repository X, in order:
    and, for each path in the recorded `next=`, one line `next: a follow-up cycle in
    <path> — its request is the design's **Scope** entry for <path>`; never
    as a request or an offer. That line is the stop's own words, where the
-   user reads the result, whether or not anyone reads {% if fg_ship %}the ship document{% else %}any document{% endif %}. End turn.
+   user reads the result, whether or not anyone reads {% if fg_ship %}the ship document{% else %}any document{% endif %}.{% if userproxy +%}
+   When the stop answers are not empty, one more line: `stops answered by
+   the user proxy: <path> …`, every path.{% endif %} End turn.
    The cycle is over.
 {% endif %}
 
@@ -1253,8 +1280,8 @@ HEAD and attachment, + the returning launch's role and status line, + the
 repairs on the table. − documents: this gate reads the repository.
 {% if decide %}
 `adopt` or `restore` → perform it; continue **HEAD check** at step 2 as if
-the repair were the launch's result. `ESCALATE` → STOP, surface the ruling
-path and both states, end turn.
+the repair were the launch's result. `ESCALATE` → {% if userproxy %}**Stop proxy**; its stop:
+{% endif %}STOP, surface the ruling path and both states, end turn.
 {% else %}
 Always `written` → STOP, surface the brief path and both states, end turn.
 The user names the repair in chat; you perform it and continue **HEAD
@@ -1466,7 +1493,8 @@ writes one.
   `G` += 1; `designer` **triage** again with the userproxy notes and the prior
   dispositions as triggering documents; its `resume` or `delta` clears the
   gate, `G` = 1; its `ESCALATE` returns to this forester gate with the current
-  `G`, and at `G` = cap the forester escalates — STOP, surface the ruling,
+  `G`, and at `G` = cap the forester escalates. The gate's `ESCALATE` →
+  {% if userproxy %}**Stop proxy**; its stop: {% endif %}STOP, surface the ruling,
   dispositions and triggering paths, end turn.{% else %} Then
   STOP, surface dispositions path, triggering document and the forester's
   brief, end turn.{% endif +%}
@@ -1497,7 +1525,8 @@ design gate sees as the escalation verdict){% endif %}.
 ### Forester gate
 
 Parameters: mode, id, the documents on the table. `ccc run forester`: + mode,
-+ id, + `forester-log.md`, + every user notes{% if decide %} and userproxy notes{% endif %} path, + the
++ id, + `forester-log.md`, + every user notes{% if decide %} and userproxy notes{% endif %} path,{% if userproxy %} + every
+stop answer path,{% endif %} + the
 mode's documents, + target `forester-<mode>-<id>.md`{% if decide %}, + target
 `userproxy-notes-<mode>-<id>.md`, + for design and triage `G` and the cap
 {{ vars.forester_gate_rounds }}{% endif %}. − log path except in ship mode{% if stack %}, − round base and
@@ -1508,10 +1537,53 @@ Route on `result`. `approve` (design, ship) and `noted` (scan) continue as
 the user approving would; `adopt` and `restore` (repo) per **Repo anomaly**. `notes` sends the userproxy notes file down the
 path the user's own notes would take, as each gate states; it is a document
 like any other — you never read it, and it never goes to a `notes-…-user-…`
-path. `ESCALATE` → STOP: surface the ruling path, end turn.
+path. `ESCALATE` → {% if userproxy %}**Stop proxy**; its stop: {% endif %}STOP, surface the ruling
+path, end turn.
 {% else %}
 Always `written`. Surface the brief path alongside the gate's other paths;
 the user gate proceeds as written.
+{% endif %}
+{% if userproxy %}
+
+### Stop proxy
+
+A forester `ESCALATE`, in any mode — **Forester gate**, the triage gate
+(**Triage**) and repo mode (**Repo anomaly**) — comes here before it
+reaches the user. It takes the stop its route names at once when
+**attended** is `yes`, or when the escalating gate's mode is among the
+**answered gates**: a gate gets one stop answer until it clears, however
+many rounds of notes follow it. Otherwise:
+
+1. `K` += 1; `ccc run user-proxy`: + the gate's mode, + the forester's
+   ruling path, named as the escalation, + everything the gate was handed
+   (in repo mode, its facts), + `forester-log.md`, + every user notes and
+   userproxy notes path, + every stop answer path, + target
+   `stop-answer-k<K>.md`. − log path{% if stack %}, − round base and HEAD{% endif %}: it
+   reads documents, not code. The prompt lists no reply words.
+2. `answered` → the target joins the stop answers and the gate's mode the
+   answered gates; at a design or triage gate `G` = 1. Then **Forester
+   gate** again: the same mode, the same documents, + the stop answer
+   path, named as the answer to its escalation; id the escalated gate's id followed by `-s<K>`
+   (`forester-triage-k4-g2-s5.md`), so no target is reused. Its reply is
+   routed as the escalated gate's would have been; its `ESCALATE`, and
+   any later one from a gate of its mode before that mode clears, takes
+   the stop at once.
+3. `ESCALATE`, a missing or unparsable line, any result other than
+   `answered`, or a launch not recovered (**Cut-off launch**) → the stop
+   the route names, exactly as for the forester's `ESCALATE`, surfacing
+   the user proxy's target path as well when the file exists. The status
+   line is the same: `status=ESCALATE`, `out` the forester's ruling.
+
+**Where a stop answer goes.** To forester gates and nowhere else: the
+relaunched gate gets it named as the answer to its escalation, and every
+later **Forester gate** launch adds every stop answer path. It is not a
+userproxy notes file and never joins the carried paths: no designer,
+{% if split %}planner, {% endif %}{{ wshort }}, reviewer or judge is handed one, and nothing passes it on as
+the owner's notes. What the answer changes downstream travels in the
+relaunched gate's own ruling and userproxy notes.
+
+You still read nothing and decide nothing here: you launch one more agent
+and relaunch a gate, on status lines alone.
 {% endif %}
 {% endif %}
 {% if commentator %}
@@ -1636,8 +1708,8 @@ and history-rewriting rules only as **Destructive git** says.
   phrase.
 {% endif %}
 {% if decide %}
-- Transcribe the forester's words, or let any proxy document sit at a
-  `notes-…-user-…` path.
+- Transcribe the forester's words{% if userproxy %} or the user proxy's{% endif %}, or let any proxy document sit
+  at a `notes-…-user-…` path.
 {% endif %}
 
 {% if stack %}
@@ -1648,4 +1720,4 @@ and history-rewriting rules only as **Destructive git** says.
 {% set out_text %}for `shipped`, {% if fg_ship %}the latest forester ship document{% else %}`-`{% endif %}; for `gate`, the primary document you surfaced{% endset %}
 {% set escalate_text %}a stop that is not a gate: {% if decide %}a forester escalation, {% endif %}a triage escalation reaching the user, a repo anomaly awaiting its repair, a frozen-set violation, a rejected push, {% if followup %}a pr-liaison escalation or failed stack check before the ship gate, {% endif %}a misnamed or missing request path at setup, a rebase in progress at setup, {% if stack %}a work branch that could not be created at setup{% else %}a detached HEAD at setup without a branch prefix, a cycle branch that could not be created at setup, a cycle branch **Return** could not delete{% endif %}, a working dir under no git repository, a launch failure, a commit failure. `result=-`; `out` is the document surfaced, `-` when the stop has none.{% endset %}
 {{ reply(ok=ok_text, out=out_text, escalate=escalate_text, commit=("current HEAD" if stack else "the primary's current HEAD; the surfaced lines carry every repository"),
-         prose="**Stop commit** first, when the artifact repo is separate. Above the status line goes only what the stop already surfaces — the paths, in at most two lines" ~ ("" if stack else ", the `scope:` line when the scope holds more than the primary, and the ship gate's fact lines") ~ " — plus the one `artifact commit rejected: …` line when the stop commit was rejected; nothing else. A human operator reads those lines; a parent driver relays them and routes on the status line.") }}
+         prose="**Stop commit** first, when the artifact repo is separate. Above the status line goes only what the stop already surfaces — the paths, in at most two lines" ~ ("" if stack else ", the `scope:` line when the scope holds more than the primary, and the ship gate's fact lines") ~ (", the `stops answered by the user proxy:` line" if userproxy else "") ~ " — plus the one `artifact commit rejected: …` line when the stop commit was rejected; nothing else. A human operator reads those lines; a parent driver relays them and routes on the status line.") }}
