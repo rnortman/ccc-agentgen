@@ -92,6 +92,20 @@ to cut is mostly elsewhere, in the older paragraphs of the forester template,
 each of which records a rule an earlier incident added — so the pass has to
 weigh those rules, and say which still earn their words, not just trim prose.
 
+## `stack-sweep-commit-is-not-a-fixup`
+
+In the stack chains the comment sweep commits with an imperative subject, so
+the pr-assembler classes it as the open PR's own commit
+(`templates/roles/pr-assembler.md.j2`, step 1). A sweep that follows a
+`fixup!` commit edits comments in an assembled PR's code: on a round with an
+open PR those edits land in the wrong PR, and on a fixup-only round they trip
+"the round has own commits and no open entry". The prepass reviewer's rule
+that a fix to an assembled PR's code in the open PR's own commit is a
+`scope-` finding points the same way. The work is deciding what shape a
+sweep commit takes in a stack — one `fixup!` per PR whose code it touched, or
+a class of its own the assembler folds by path — and teaching the
+comment-rewriter, the pr-assembler and the prepass reviewer that shape.
+
 ## `todo-burndown-auto-driver-stops-reach-the-user`
 
 In `todo-burndown-auto` the units run with the user proxy at the embedded

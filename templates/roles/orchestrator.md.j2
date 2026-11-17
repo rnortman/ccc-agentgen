@@ -172,7 +172,7 @@ Three places, kept apart throughout:
 | **round base** ° | original base | each intermediate squash → the squash commit in each repository that moved, unchanged elsewhere; a ship-gate change request → current HEAD |
 | **increment `I`** | 0 | each committed increment; reset at round start |
 | **scope keys** | none | the round-ending reply's `order=`, `pins=` and `next=` (**Scope keys**), recorded unchecked, replacing the previous ones; a key-failure triage's `resume` (**Triage**); a repository shipping — struck from `order=`, every pair naming it from `pins=` (**Ship gate** step 2); a `drop from scope:` during the ship gate (**Ship gate**). The recorded `order=` is therefore always the due repositories still to ship |
-| **pending pins** | none | pairs `Y:X`, each *unanswered* or *answered* (with its notes path): added unanswered when X ships and the recorded `pins=` holds `Y:X` (**Ship gate** step 2); answered when a pin stop's answer records X's reference (step 3); removed when the **Pin step** for `Y:X` replies `pinned` and **HEAD check** records a commit in Y (step 4), or when Y is dropped from the scope (**Ship gate**, **A drop during the gate**) |
+| **pending pins** | none | pairs `Y:X`, each *unanswered* or *answered* (with its notes path): added unanswered when X ships and the recorded `pins=` holds `Y:X` (**Ship gate** step 2); answered when a pin stop's answer records X's reference (step 3); removed when the **Pin step** for `Y:X` replies `pinned` (step 4), or when Y is dropped from the scope (**Ship gate**, **A drop during the gate**) |
 {% endif %}
 {% if split %}
 | **`P`, `S`, retries** | 1, 1, 0 | per unit: `P` on each replan, `S` on each respawn or replan, retries on either; all reset when a unit starts |
@@ -234,12 +234,12 @@ retries mid-work often omits the commit it already made.
 | planner, increment | `complete` · `final` · `intermediate` | — | `round=close` or `open`; `order=`, `pins=`, `next=` (**Scope keys**) |
 | planner, respond | `dispositioned` · `delta-complete` · `delta-remaining` | — | — |
 | {{ worker }} | `done` + commit | `replan` · `respawn` | — |
-| {{ worker }}, pin | `pinned` + commit | — | — |
+| {{ worker }}, pin | `pinned`, + commit when the tree changed | — | — |
 {% else %}
 | implementer, incremental | `done` · {% if stack %}`pr-done` · {% endif %}`in-progress`, + commit | — | `tree=clean` or `dirty`{% if not stack %}; `order=`, `pins=`, `next=` (**Scope keys**){% endif %} |
 | implementer, respond | `responded` · `delta-complete` · `delta-remaining`, + commit | — | `tree=clean` |
 {% if not stack %}
-| implementer, pin | `pinned` + commit | — | `tree=clean` |
+| implementer, pin | `pinned`, + commit when the tree changed | — | `tree=clean` |
 {% endif %}
 {% endif %}
 {% if stack %}
@@ -798,6 +798,7 @@ is the same list.{% endif %}
      → {% if commentator %}**Commentary** → {% endif %}**Respond step** `deep-r<R>-w2-a1`{% if sweep %} → **Comment sweep**{% endif %}.
    - Judge once, after both waves: + every notes path, + dispositions paths
      for waves with findings{% if commentator %}, + every commentary path{% endif %}, + reviewed HEAD, + any triage dispositions path.
+     The judge is the reviewer of every commit after reviewed HEAD.
      Rework spans both waves: **Respond step** `deep-r<R>-a2`, same reviewed
      HEAD. Skip the judge only if all three reviewers replied `no-findings`.
 {% if stack %}
@@ -1064,14 +1065,15 @@ For each due repository X, in order:
    path, + Y and X, + exception `exception-pin-<Y basename>-k<K>.md`. It
    makes exactly the restoration edit the design's **Scope** section
    specifies for Y pinning X, with the reference the notes name, removes the
-   override, runs Y's full check, commits in Y and replies `pinned`. **HEAD
-   check** follows; a commit in Y removes the pair. `ESCALATE`, or a
-   `pinned` with Y's HEAD unmoved → **Triage** with the log path; a `resume`
-   relaunches the pin step for that pair under **Relaunch naming**. The pair
-   stays answered until its commit lands, so nothing in the loop passes it.
-   The pin commit is not reviewed by the chain: its content was frozen in
-   the design, its input is the user's own words, and its done criterion is
-   the project's full check.
+   override, runs Y's full check, commits in Y when the tree changed and
+   replies `pinned`. **HEAD check** follows as after any launch and decides
+   nothing about the pair. `pinned` removes the pair whether or not Y's HEAD
+   moved: a restoration already in the tree leaves nothing to commit.
+   `ESCALATE` → **Triage** with the log path; a `resume` relaunches the pin
+   step for that pair under **Relaunch naming**. The pair stays answered
+   until `pinned`. A pin commit, when there is one, is not reviewed by the
+   chain: its content was frozen in the design, its input is the user's own
+   words, and its done criterion is the project's full check.
 5. The recorded `order=` still names a repository → its first entry, step
    0. Otherwise → step 7.
 6. Changes requested instead, at any ship point → capture the request ({% if autoship %}the userproxy notes, {% endif %}the
@@ -1126,7 +1128,7 @@ gate; post-freeze escalations go to **Triage**.
    them is handed as the owner's notes; a reviewer's notes path never is.
 3. `ccc run judge`, round 1 → `judge-verdict-<phase>-r<R>-a1.md`. + every
    notes path, + dispositions path{% if commentator %}, + every commentary path{% endif %}, + (design phase) the document / (code
-   phase) {% if stack %}review{% else %}round{% endif %} base, HEAD, reviewed HEAD, + any triage dispositions path.
+   phase) {% if stack %}review{% else %}round{% endif %} base, HEAD, reviewed HEAD{% if prepass %} (the pre-pass has none: the deep waves review its fixes){% endif %}, + any triage dispositions path.
 4. `rework` → one rework: **Respond step** `<phase>-r<R>-a2` (+ verdict path);
    judge round 2 told "round 2 — approved or escalate only" →
    `judge-verdict-<phase>-r<R>-a2.md`.
@@ -1301,7 +1303,8 @@ already-swept commits{% endif %}: `ccc run comment-rewriter`. + {% if stack %}sw
 launch){% else %}one (repository, sweep base) pair per repository
 that moved, the sweep base the HEAD before that launch; once per launch,
 however many moved{% endif %}, + exception `exception-sweep-<K>.md`. − design path: comments must
-stand alone. Not a reviewer; joins no chain. **HEAD check** after it{% if not stack %}, in
+stand alone. Not a reviewer; joins no chain; it writes no log entry and
+no artifact unless it escalates. **HEAD check** after it{% if not stack %}, in
 every unshipped repository{% endif %}: moved →
 that commit is current HEAD downstream. `no-changes` → nothing. `ESCALATE` →
 **Triage**. Skip only when HEAD did not move{% if stack %}, or after the sweep or the

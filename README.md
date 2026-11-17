@@ -420,15 +420,16 @@ ship order, each with its own gate and changelog. After a repository that
 another one pins is squashed (and, in `-auto`, pushed off `main`), the
 cycle stops in every autonomy: `Waiting: the shipped reference of <X> for
 the pin in <Y>`. Ship it, answer with the reference, and the implementer
-restores the pin to it, runs the dependent's full check and commits; then
-the dependent ships. An in-scope repository the cycle never changed stays
-in scope to the end — a ship-gate change request may still send work
-there. The closing stop lists every repository, an unchanged one as
-`unchanged`. Once a repository has shipped, the orchestrator stops
-watching its HEAD: shipping it is yours, and it cannot be dropped from the
-scope. At a ship-gate stop, `drop from scope:` abandons a repository not
-yet shipped (`restore` resets its commits away first); a dependent whose
-dependency you drop goes to triage.
+restores the pin to it, runs the dependent's full check and commits the
+restoration when it changed anything; then the dependent ships. An
+in-scope repository the cycle never changed stays in scope to the end — a
+ship-gate change request may still send work there. The closing stop
+lists every repository, an unchanged one as `unchanged`. Once a
+repository has shipped, the orchestrator stops watching its HEAD: shipping
+it is yours, and it cannot be dropped from the scope. At a ship-gate stop,
+`drop from scope:` abandons a repository not yet shipped (`restore` resets
+its commits away first); a dependent whose dependency you drop goes to
+triage.
 
 The stack chains (`review-chain-stack*`) stay in one repository: they
 refuse a scope phrase, and a change needed elsewhere is a `TODO.md` entry

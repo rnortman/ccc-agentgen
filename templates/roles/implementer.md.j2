@@ -436,17 +436,17 @@ the code used to do. That is a standing project standard; a reviewer flagging
 such a comment is right, and the disposition is to fix it.
 
 {% if planned %}
-{{ reply(ok="`done`: the plan's or dispositions document's scope is committed and its done criteria pass; pin: `pinned`, the pin committed in Y",
+{{ reply(ok="`done`: the plan's or dispositions document's scope is committed and its done criteria pass; pin: `pinned`, the restoration is in Y's committed tree",
 
          out="`-`",
          retry="`replan` — the plan cannot be built as written; `out` is the exception path. `respawn` — your context is too deep to go on; `out` is the handoff path.",
          escalate="you wrote the exception document: design wrong or ambiguous, hooks you cannot pass, a toolchain failure, or anything else that blocks a green commit and is not the plan's fault. `result=-`; `out` is the exception path.",
-         commit="your work commit on `done`; `-` otherwise") }}
+         commit="your work commit on `done`, or on `pinned` when you made one; `-` otherwise") }}
 {% else %}
 {{ reply(ok="incremental: `done`" ~ (", `pr-done`" if stack else "") ~ " or `in-progress`; respond: `responded`, or `delta-complete` / `delta-remaining` when a delta was handed to you" ~ ("" if stack else "; pin: `pinned`"),
          out="`-`",
          escalate="you wrote the exception document: design wrong or ambiguous, hooks you cannot pass, aggregate scope beyond patching, or a toolchain failure. `result=-`; `out` is the exception path.",
-         commit="the commit you made; with `tree=dirty`, the HEAD you started from",
+         commit="the commit you made; with `tree=dirty`, the HEAD you started from" ~ ("" if stack else "; `-` on a `pinned` that needed no commit"),
          extra=("tree=<clean|dirty>" if stack else "tree=<clean|dirty> " ~ scope_key_grammar)) }}
 
 `tree=dirty` iff you left uncommitted work in {% if stack %}the tree{% else %}any in-scope repository{% endif %}; `clean` otherwise,

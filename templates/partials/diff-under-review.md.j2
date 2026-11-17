@@ -1,10 +1,20 @@
 {#- Import `with context`: the non-stack chains review one or more repositories. #}
 {% from "partials/shape.md.j2" import stack with context %}
 {% macro diff_sentences(extra="") %}{% if stack %}The change under review is `git diff <base>..HEAD`{% if extra %} — {{ extra }}{% endif %}{% else %}The change under review is the union, over the triples, of `git -C <repository> diff <base>..HEAD`{% if extra %} — {{ extra }}{% endif %}; with more than one, a finding names the repository it is in{% endif %}. With no version control, it is the dirty tree.{% endmacro %}
+{% macro comment_sweep() %}{% if "comment-rewriter" in roles %}After any launch that commits, a comment rewriter runs and may add a
+commit of its own: comment edits only, an imperative subject, no log entry
+and no artifact of any kind. That is the workflow as designed. Such a commit
+is never a finding for being unlogged, unexplained or absent from the
+design.{% endif %}{% endmacro %}
 {% macro diff_under_review(extra="") %}
 ## The diff
 
 {% if stack %}You are given a base commit and a HEAD.{% else %}You are given one or more (repository, base, HEAD) triples, one per
 repository of the scope the change touches.{% endif %} {{ diff_sentences(extra) }}
+{%- if "comment-rewriter" in roles +%}
+
+{{ comment_sweep() }} Its content is under review like the rest of the diff:
+one that changes behaviour is a finding.
+{%- endif %}
 {%- endmacro %}
 {% macro read_only_notes(also="") %}You change nothing and commit nothing; your output is the notes file{% if also %}, {{ also }}{% endif %}.{% endmacro %}

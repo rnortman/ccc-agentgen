@@ -4497,7 +4497,19 @@ def test_worker_pin_mode_matches_the_orchestrator(builds):
                 pin_step = pin_step[: pin_step.index("5. The recorded `order=`")]
                 assert "in `order=` order of Y" in pin_step, f"{stem}/{name}"
                 assert "replies `pinned`" in pin_step, f"{stem}/{name}"
-                assert "a `pinned` with Y's HEAD unmoved → **Triage**" in pin_step, f"{stem}/{name}"
+                where = f"{stem}/{name}"
+                assert "HEAD unmoved" not in flat_body, where
+                assert "until its commit lands" not in flat_body, where
+                assert "`pinned` removes the pair whether or not Y's HEAD moved" in pin_step, where
+                assert "`ESCALATE` → **Triage**" in pin_step, where
+                assert pin_step.count("**Triage**") == 1, where
+                pins_row = next(line for line in body.splitlines() if line.startswith("| **pending pins** |"))
+                assert "replies `pinned` (step 4)" in pins_row, where
+                assert "commit" not in pins_row, where
+                pin_rows = [line for line in table.splitlines() if ", pin |" in line]
+                assert pin_rows, where
+                for row in pin_rows:
+                    assert "+ commit" in row, f"{where}: {row}"
         for name, body in build.bodies(worker):
             where = f"{stem}/{name}"
             assert ("## Mode: pin" in body) == (not stack), where
@@ -4509,12 +4521,131 @@ def test_worker_pin_mode_matches_the_orchestrator(builds):
                 "never invent one, never take it from the tree",
                 "Nothing else in Y, nothing anywhere else",
                 "never a fix in X or a workaround in Y",
+                "never an empty",
             ):
                 assert rule in pin_mode, f"{where}: {rule}"
+            if worker == "coder-supervisor":
+                assert "an earlier launch's edit included, is committed" in pin_mode, where
+                assert "owed only when Y's HEAD did not already hold the restoration" in pin_mode, where
+                assert "whether or not anything was committed" in pin_mode, where
+                assert "append it yourself" in pin_mode, where
+                assert "is committed in Y" not in body, where
+                assert "the restoration is in Y's committed tree" in body, where
+                assert "or on `pinned` when it made one" in " ".join(reply_section(body).split()), where
+            else:
+                assert "whether this launch or an earlier one made it" in pin_mode, where
+                assert "Y's HEAD already holding all of it → no commit" in pin_mode, where
+                assert "Append a log entry naming the reference either way" in pin_mode, where
+                reply = " ".join(reply_section(body).split())
+                if "planner" in build.by_id:
+                    assert "or on `pinned` when you made one" in reply, where
+                else:
+                    assert "`-` on a `pinned` that needed no commit" in reply, where
         if "planner" in build.by_id:
             for name, body in build.bodies("planner"):
                 assert "## Mode: pin" not in body, f"{stem}/{name}"
                 assert "`pinned`" not in body, f"{stem}/{name}"
+
+
+SWEEP_SENTENCE = "never a finding for being unlogged, unexplained or absent from the design"
+SWEEP_READERS = (
+    "workflow-scanner",
+    "prepass-reviewer",
+    "citizen-reviewer",
+    "tracer-reviewer",
+    "test-reviewer",
+    "judge",
+)
+
+
+def test_commit_readers_are_told_of_the_comment_sweep(builds):
+    """Every role that audits commits hears of the sweep exactly where a sweep runs."""
+    seen = set()
+    for build in builds.values():
+        sweeps = "comment-rewriter" in build.by_id
+        for role_id in SWEEP_READERS:
+            if role_id not in build.by_id:
+                continue
+            for name, body in build.bodies(role_id):
+                where = f"{build.stem}/{name}"
+                flat = " ".join(body.split())
+                assert flat.count(SWEEP_SENTENCE) == (1 if sweeps else 0), where
+                if not sweeps:
+                    continue
+                seen.add(role_id)
+                if role_id in ("citizen-reviewer", "tracer-reviewer", "test-reviewer"):
+                    assert "one that changes behaviour is a finding" in flat, where
+                elif role_id == "judge":
+                    assert "one that changes behaviour is a disputed item" in flat, where
+                elif role_id == "prepass-reviewer":
+                    assert "A sweep commit is not **Undesigned work** and owes no log entry" in flat, where
+                else:
+                    assert "changes behaviour" not in flat, where
+                    assert "is the reviewers' and the judge's to read, not yours" in flat, where
+    assert seen == set(SWEEP_READERS), seen
+
+
+JUDGE_REVIEW_HEADING = "**Unreviewed-commit review**"
+
+
+def test_judge_reviews_the_commits_no_reviewer_saw(builds):
+    """The judge is told it is the only code review of the post-wave commits."""
+    for build in builds.values():
+        if "judge" not in build.by_id:
+            continue
+        assert "code-reviews the fixes no reviewer saw" in build.by_id["judge"].frontmatter["description"]
+        prepass = "prepass-reviewer" in build.by_id
+        for name, body in build.bodies("judge"):
+            where = f"{build.stem}/{name}"
+            flat = " ".join(body.split())
+            assert "nobody but you reads them before they ship" in flat, where
+            assert "the only one they get" in flat, where
+            assert "4. **Review the unreviewed commits.**" in flat, where
+            assert f"4. {JUDGE_REVIEW_HEADING} —" in flat, where
+            assert "not a fresh review" not in flat, where
+            assert "Unreviewed-commit scan" not in flat, where
+            assert ("A code phase that supplies none is the pre-pass" in flat) == prepass, where
+
+
+def test_scanner_knows_who_reviews_which_commit(builds):
+    """The scanner reads the judge's review section as the review of the last fixes."""
+    seen = False
+    for build in builds.values():
+        if "workflow-scanner" not in build.by_id:
+            continue
+        seen = True
+        judge_flat = " ".join(build.by_id["judge"].body.split())
+        heading = re.search(r"4\. (\*\*[^*]+\*\*) —", judge_flat[judge_flat.index("## Verdict file") :])
+        assert heading, build.stem
+        assert heading[1] == JUDGE_REVIEW_HEADING, build.stem
+        prepass = "prepass-reviewer" in build.by_id
+        for name, body in build.bodies("workflow-scanner"):
+            where = f"{build.stem}/{name}"
+            assert body.index("## The workflow as designed") < body.index("## The hunt"), where
+            section = " ".join(_raw_section(body, "## The workflow as designed").split())
+            assert section.count(heading[1]) == 2, where
+            assert "by design by no one else" in section, where
+            assert f"and no {heading[1]} section, or a section that omits a commit in the range" in section, where
+            assert "a section that lists the commits and engages with none of them" in section, where
+            assert ("fixes answering the pre-pass" in section) == prepass, where
+            flat = " ".join(body.split())
+            assert "commits in range nobody reviewed" not in flat, where
+            assert f"neither a reviewer wave nor the judge's {heading[1]} covers" in flat, where
+    assert seen
+
+
+def test_orchestrator_names_the_judge_as_reviewer_of_the_last_fixes(builds):
+    """The orchestrator's account of who reviews what agrees with the judge's."""
+    for stem in REVIEW_CHAIN_STEMS:
+        build = builds[stem]
+        prepass = "prepass-reviewer" in build.by_id
+        for name, body in build.bodies("orchestrator"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert "The judge is the reviewer of every commit after reviewed HEAD" in flat, where
+            assert ("(the pre-pass has none: the deep waves review its fixes)" in flat) == prepass, where
+            if "comment-rewriter" in build.by_id:
+                assert "it writes no log entry and no artifact unless it escalates" in flat, where
 
 
 README_VARIANT_ROW_RE = re.compile(r"^\| `(?P<stem>[a-z0-9-]+)` \| [^|]+ \| (?P<clis>[^|]+?) \|$", re.MULTILINE)

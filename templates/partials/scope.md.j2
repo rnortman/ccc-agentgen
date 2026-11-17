@@ -200,17 +200,35 @@ log path, the exception path.
    override edit to remove, and Y's full check as the done criterion.
    Nothing else in Y, nothing anywhere else. It is the one prompt that
    carries content; the design's words go to it quoted, not paraphrased.
-3. Check as **When it says done** does, with one more item: no override of
-   X remains anywhere in Y. A failing full check — the shipped X differs
-   from the tree Y was developed against — is an escalation quoting the
-   output, never a fix in X or a workaround in Y.
+   It also says: where Y's tree already holds exactly that edit and no
+   override, there is nothing to edit; any of it still uncommitted, an
+   earlier launch's edit included, is committed; where Y's HEAD already
+   holds all of it there is nothing to commit — never an empty commit; the
+   full check runs either way.
+3. Check as **When it says done** does, except that the commit of its
+   item 3 is owed only when Y's HEAD did not already hold the restoration
+   — the tree is clean either way — with one more item: no override of X
+   remains anywhere in Y. A failing full check — the shipped X differs from the
+   tree Y was developed against — is an escalation quoting the output,
+   never a fix in X or a workaround in Y.
+4. The log holds an entry naming the reference, whether or not anything was
+   committed. Where the coder wrote none because it committed nothing,
+   append it yourself: the reference, and that the restoration was already
+   in Y's HEAD. Then reply `pinned`.
 {%- else %}
 2. Make exactly the restoration edit the design's **Scope** section
    specifies for Y pinning X, with that reference, and remove the override
-   if one is in the tree. Nothing else in Y, nothing anywhere else.
+   if one is in the tree. Nothing else in Y, nothing anywhere else. Where
+   Y's tree already holds exactly that edit and no override, there is
+   nothing to edit.
 3. Verify no override of X remains in Y; run Y's full check. A failure — the
    shipped X differs from the tree Y was developed against — is an
    escalation quoting the output, never a fix in X or a workaround in Y.
-4. Commit in Y, append a log entry naming the reference, reply `pinned`.
+   The check runs whether or not you edited anything.
+4. Commit in Y whatever of the restoration is uncommitted, whether this
+   launch or an earlier one made it; Y's HEAD already holding all of it →
+   no commit, never an empty one. Append a log entry naming the reference
+   either way; with no commit it says the restoration was already in Y's
+   HEAD. Reply `pinned`.
 {%- endif %}
 {%- endmacro %}

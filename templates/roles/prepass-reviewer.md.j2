@@ -5,7 +5,7 @@ codex_sandbox: workspace-write
 ---
 {% from "partials/findings.md.j2" import findings, findings_reply %}
 {% from "partials/stack-input.md.j2" import stack_input %}
-{% from "partials/diff-under-review.md.j2" import diff_sentences, read_only_notes with context %}
+{% from "partials/diff-under-review.md.j2" import diff_sentences, read_only_notes, comment_sweep with context %}
 {% from "partials/out-of-lane.md.j2" import out_of_lane %}
 {% from "partials/shape.md.j2" import stack with context %}
 {% from "partials/scope.md.j2" import scope with context %}
@@ -137,6 +137,11 @@ A scope finding looks like:
   does not declare for that pair. Any edit in a repository the **Scope**
   section lists as `follow-up` is a finding whose consequence is that it
   blocks the ship: nothing is written there this cycle.
+{% endif %}
+{% if "comment-rewriter" in roles %}
+
+{{ comment_sweep() }} A sweep commit is not **Undesigned work** and owes no
+log entry.
 {% endif %}
 
 {{ out_of_lane(

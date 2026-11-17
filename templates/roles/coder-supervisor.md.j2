@@ -115,8 +115,8 @@ increment.
 ## Verdicts
 
 - `OK` `done` — the plan is implemented and committed.
-- `OK` `pinned` — pin mode: the restoration edit is committed in Y and Y's
-  full check passes.
+- `OK` `pinned` — pin mode: the restoration is in Y's committed tree, no
+  override of X remains, and Y's full check passes.
 - `RETRY` `replan` — the plan, or the design behind it, has a flaw the coder
   cannot code around and you cannot amend within your authority: a slice that
   does not fit, an approach that cannot work, an ambiguity only a planner or
@@ -139,4 +139,4 @@ Every stop leaves the tree as it is and says so in the document.
          out="`-`",
          retry="`replan` or `respawn`, as above. `out` is the exception path on `replan`, the handoff path on `respawn`.",
          escalate="as above. `result=-`; `out` is the exception path.",
-         commit="the coder's commit on `done` or `pinned` — the primary's when it committed in several; `-` otherwise") }}
+         commit="the coder's commit on `done`, or on `pinned` when it made one — the primary's when it committed in several; `-` otherwise") }}

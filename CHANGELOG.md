@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **The pin step no longer loops when the restoration needs no commit.**
+  At the ship gate, the worker's `pinned` now ends the pin step for its
+  pair whether or not the dependent's HEAD moved; it commits whatever part
+  of the restoration the dependent's HEAD does not already hold, and logs
+  the pin either way. Before, a
+  `pinned` with nothing to commit went to triage, and a `resume` relaunched
+  the same step forever. A cycle caught in that loop: stop it, redeploy,
+  resume the orchestrator's session (ccc reads the definition again on a
+  resume) and tell it to relaunch the pin step for the pair — its `pinned`
+  clears the pair.
+- **Comment-sweep commits and the last review fixes stop reading as
+  unreviewed drift.** The reviewers, the pre-pass and the round-close
+  scanner are told that a comment-sweep commit, unlogged and outside the
+  design, is the workflow as designed. The judge is told it is the only
+  code review the commits after the last reviewer wave get, and its verdict
+  now lists every commit it reviewed, per repository, under
+  **Unreviewed-commit review**; the scanner reads that section as those
+  commits' review.
 - **`-auto` runs stop for you far less.** Every `-auto` variant gains a
   `user-proxy` role that stands at a stop an agent raised before it reaches
   you. In the review chain a forester escalation, in any mode, goes to it
