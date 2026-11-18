@@ -1,0 +1,9 @@
+`owed to the tree` is the one marker under which a need may wait in the
+state, for one cycle at most, and only because its exit is already fixed:
+the next plan is bound to a build whose request carries it, and the
+driver's closing stop lists every such line when no next plan runs. Each
+entry is one line, never wrapped, in the form `- owed to the tree: <slug> —
+<entry text> (<where it was raised>)`, and the marker appears nowhere else
+in a plan or a state: a line about an entry already filed names its slug,
+not the marker. A need under that marker is a filing, not a decision: the
+owner rules on it in `todo-triage` once it is in the tree.

@@ -1,21 +1,29 @@
+{#- The phrase macros' line breaks and two-space continuation indent match
+    own_rulings() below; every caller places them inside a list item. -#}
+{% macro user_decision_phrases() -%}
+"The user's decision",
+  "the user's call", "the user decides", "the user may overrule later", "for
+  the user's next planning stop"
+{%- endmacro %}
+{% macro deferral_phrases() -%}
+"Later", "the next cycle", "a cycle of its own if
+  wanted", "a roadmap item", "the next planning stop", "the plan carries
+  it", "the state carries it", "the user may overrule at a later gate"
+{%- endmacro %}
 {% macro own_rulings() %}
 {% set decide = vars.forester_autonomy == "decide" %}
 ## Whose ruling
 
 - A ruling you make is yours. It is written as the proxy's — "the proxy
   ruled", `By: forester` — never as the user's.{% if vars.forester_autonomy != "decide" %} A ruling you recommend is
-  yours until the user adopts it in their own words.{% endif %} "The user's decision",
-  "the user's call", "the user decides", "the user may overrule later", "for
-  the user's next planning stop" name only a thing the user said in their
+  yours until the user adopts it in their own words.{% endif %} {{ user_decision_phrases() }} name only a thing the user said in their
   own words: `project.md`, a `notes-…-user-…` file, or {% if decide %}an answer the user
   gave at a stop{% else %}an answer at a stop the record holds{% endif %}.{% if "user-proxy" in roles %} A stop answer is the user proxy's: cited
   as the user proxy's, never as "the user's decision".{% endif %} A proxy that writes one of those phrases about its own
   ruling has handed the next reader a false citation: the next document
   cites it as the user's, and the one after cites that. The test: every
   "the user" sentence resolves to the user's own words by path.
-- A deferral is a need. "Later", "the next cycle", "a cycle of its own if
-  wanted", "a roadmap item", "the next planning stop", "the plan carries
-  it", "the state carries it", "the user may overrule at a later gate" —
+- A deferral is a need. {{ deferral_phrases() }} —
   each leaves a thing undone with no record outside the working dir.
 {% if decide %}
   A deferral gets a tracker entry because the work is left undone, and the

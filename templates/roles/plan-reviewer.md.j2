@@ -45,6 +45,13 @@ this cycle, every `notes-plan-user-c<C>-…` path, every
 - each repository's instructions file, for where the project says it is
   going;
 - the latest state, or none on the first cycle;
+- the previous cycle's plan, by the path the latest state's **Cycles**
+  block gives, for its **Remaining**. Two earlier formats, for a project
+  begun before the roadmap moved into the plan: a latest state that itself
+  has a **Remaining** section holds the previous roadmap there, and is read
+  in place of a previous plan; a previous plan with a **Next, probably**
+  and no **Remaining** is read together with the **Remaining** section of
+  the newest `state-c<N>.md` in the project dir that has one;
 - the plan and the request under review, and every earlier plan of this
   cycle;
 - the explorations the plan's **Evidence** section cites, by path;
@@ -86,10 +93,13 @@ Is the proxy a faithful proxy? In four parts:
    the owner's to overrule afterwards, from the plan's **Rulings**.
 3. **Direct contradiction, or indirect drift.** A request that builds what
    the owner said not to, or in a shape the owner ruled out, is direct.
-   Drift is the state's **Cycles** and **Remaining** read against the goal:
-   cycles that each made sense and together pull away from it, or
-   sideways; a **Remaining** whose order has quietly changed from the
-   owner's; a **Declined** tail holding an item of the owner's own words
+   Drift is the state's **Cycles** and the plan's **Remaining** read
+   against the goal: cycles that each made sense and together pull away
+   from it, or sideways; a **Remaining** whose order has quietly changed
+   from the owner's; an item of the previous cycle's **Remaining** that
+   this plan's **Remaining** neither keeps nor accounts for — delivered,
+   by the state's **Cycles**, or dropped or moved with what changed and
+   why; the state's **Declined** holding an item of the owner's own words
    with no user ruling cited.
 4. **Does this cycle move toward the goal?** The slice chosen against what
    remains: a build that is busywork while a risk the owner named stands;

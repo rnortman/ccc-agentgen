@@ -124,7 +124,7 @@ PROJECT_PLAN_PHASE = (
     "check a quote against `project.md`, the spec or the user's notes on your own desk, never on the "
     "responder's say-so. - **Fixed** is verified in the plan and the request as they now read. - "
     "**TODO(slug)** means a tracker entry, not a comment in the tree: verify a build's request lists "
-    "it as a deliverable, or a spike's plan lists it under **Next, probably** marked `owed to the "
+    "it as a deliverable, or a spike's plan lists it under **Remaining** marked `owed to the "
     "tree`, slug and entry text, and score the rubric in the plan's terms — Q1, is the item worth "
     "doing, now or eventually, against the owner's words; Q2, is it work this cycle should not carry "
     "— outside what the plan scopes, or a cycle of its own — rather than a place in this cycle's "
@@ -183,7 +183,7 @@ PROJECT_WORDING = {
         "judge": PROJECT_JUDGE_WORDING,
     },
 }
-PROJECT_ROLES = {"project-orchestrator", "project-forester", "experimenter", "publisher"}
+PROJECT_ROLES = {"project-orchestrator", "project-forester", "cycle-digester", "experimenter", "publisher"}
 # Per project stem, the roles it adds on top of its chain: `-auto` reviews
 # every plan before it runs, where the plain variant's user reads it at the
 # cycle gate.
@@ -270,7 +270,8 @@ RESULTS = {
     "sketcher": {"written"},
     "contrarian": {"written"},
     "triage-forester": {"ruled", "selected", "nothing"},
-    "project-forester": {"build", "spike", "done", "written"},
+    "project-forester": {"build", "spike", "done"},
+    "cycle-digester": {"written"},
     "plan-reviewer": {"findings", "no-findings"},
     # One token in every variant: a stop's own reply words come from the prompt.
     "user-proxy": {"answered"},
@@ -681,8 +682,9 @@ def test_forester_names_no_fourth_exit(builds):
 
 def test_project_forester_scaffolding_by_autonomy(builds):
     """The project forester knows who reads its plan, writes no section for
-    the user, carries unfiled needs as `owed to the tree`, and checks a
-    cycle's work only after a shipped build but its questions after any.
+    the user and carries unfiled needs as `owed to the tree`; the cycle
+    digester checks a cycle's work only after a shipped build but its
+    questions after any.
     """
     readers = {
         PROJECT_AUTO_STEM: "no one reads the plan before the cycle runs",
@@ -700,12 +702,9 @@ def test_project_forester_scaffolding_by_autonomy(builds):
             assert reader in scaffolding, where
             assert other not in scaffolding, where
             assert "6. **For the user**" not in flat, where
-            assert "The digest has no exit of its own" in flat, where
-            assert "`owed to the tree`" in flat, where
-            assert "the **Declined** tail" in flat, where
-            assert "For a **shipped build** only" in flat, where
-            assert "a need whatever the cycle's ending" in flat, where
-            assert "Digest mode: `written`, always" in flat, where
+            assert "The cycle digester has no exit of its own" in flat, where
+            assert "writes into the state's **Owed** under `owed to the tree`" in flat, where
+            assert "`written`" not in flat, where
             plan = " ".join(_raw_section(body, "## Mode: plan").split())
             assert "A spike is not planned while" in plan, where
             assert "would not build and has a tracker entry in the tree of a repository of the scope, verified read-only" in plan, where
@@ -716,10 +715,30 @@ def test_project_forester_scaffolding_by_autonomy(builds):
             assert "the marker appears nowhere else in a plan or a state" in flat, where
             assert "The escalating plan writes every other entry it identified" in plan, where
             assert "Above the status line, and only then: the plan's `owed to the tree` lines" in flat, where
+            assert "For a **shipped build** only" not in flat, where
+        for name, body in build.bodies("cycle-digester"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert "6. **For the user**" not in flat, where
+            assert "6. **Declined** — a list of *decisions*" in flat, where
+            assert "its **Declined** tail into **Declined**" in flat, where
+            assert "take its `owed to the tree` lines into **Owed**" in flat, where
+            assert "and carry nothing else from it" in flat, where
+            assert (
+                "Work the cycle's request names as a later cycle's is the project's "
+                "sequencing, which the next plan carries: it is not a deferral and needs no record."
+            ) in flat, where
+            assert "is a deferral all the same, and so is later work the request does not name" in flat, where
+            assert "For a **shipped build** only" in flat, where
+            assert "a need whatever the cycle's ending" in flat, where
+            assert "`result` is `written`, always" in flat, where
+            assert "`- owed to the tree: <slug> — <entry text> (<where it was raised>)`" in flat, where
+            assert "the marker appears nowhere else in a plan or a state" in flat, where
             assert "except the tracker entries a stopped build's request listed" in flat, where
             assert "rulings in the user's name that deferred, dropped or narrowed something" in flat, where
             assert "`git -C <path> ls-tree <cycle branch> todo.d/ .todo.d/`" in flat, where
             assert "names nothing for the user to decide" in flat, where
+            assert "stays in **Owed**, verbatim, until the tree has it" in flat, where
 
 
 def test_project_orchestrator_end_surfaces_owed_entries(builds):
@@ -734,6 +753,61 @@ def test_project_orchestrator_end_surfaces_owed_entries(builds):
             boundary = " ".join(_raw_section(body, "## Information boundary").split())
             assert "the lines the fixed-marker `grep` prints from the latest state" in boundary, where
             assert "tracker entries the next build was to file; the project ended first" in end, where
+
+
+def test_cycle_digester_is_the_projects_opus_role(builds):
+    """The digest is its own role, on Opus, exactly where the project driver
+    is; the project forester stays on Fable.
+    """
+    for build in builds.values():
+        project = "project-orchestrator" in build.by_id
+        assert ("cycle-digester" in build.by_id) == project, build.stem
+        if not project:
+            continue
+        assert build.by_id["cycle-digester"].frontmatter["model"] == "claude-opus-5-5[1M]", build.stem
+        assert build.by_id["project-forester"].frontmatter["model"] == "claude-fable-5-2[1M]", build.stem
+
+
+CYCLE_DIGESTER_STATE_SECTIONS = ["Goal", "Branches", "Cycles", "Learned", "Owed", "Declined"]
+
+
+def test_cycle_digester_decides_nothing(builds):
+    """The cycle digester records: no modes, no escalation, no roadmap, no
+    ruling, no spawn; its state has exactly the record's sections and adds
+    no fact.
+    """
+    for stem in PROJECT_EMBEDS:
+        for name, body in builds[stem].bodies("cycle-digester"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert "## Mode:" not in body, where
+            escalates = [line for line in body.splitlines() if "ESCALATE" in line]
+            assert escalates == ["[agent] status=<OK|RETRY|ESCALATE> result=<token|-> out=<abs-path|-> commit=<hash|->"], where
+            for absent in (
+                "**Next, probably**",
+                "## Whose ruling",
+                "## You are the owner",
+                "## Repositories in scope",
+                "## What this cycle ships",
+            ):
+                assert absent not in body, f"{where}: {absent}"
+            assert spawn_references(body) == set(), where
+            state = _raw_section(body, "## The state")
+            sections = re.findall(r"^\d+\. \*\*(\w+)\*\* —", state, re.MULTILINE)
+            assert sections == CYCLE_DIGESTER_STATE_SECTIONS, where
+            assert "the state adds no fact" in flat, where
+            assert "You plan nothing, rule nothing, recommend nothing and ask the user nothing" in flat, where
+
+
+def test_project_driver_launches_the_cycle_digester(builds):
+    """Loop step 4 launches the cycle digester for the digest's record and stops."""
+    for where, flat, _variant in _project_driver_bodies(builds):
+        digest = _between(flat, "4. **Digest.**", "5. **Publish**")
+        assert "`ccc run cycle-digester`: + the scope" in digest, where
+        assert "mode **digest**" not in flat, where
+        assert "| cycle-digester | `written` |" in flat, where
+        assert "project-forester, digest" not in flat, where
+        assert "orchestrator or experimenter → cycle-digester → publisher" in flat, where
 
 
 def test_owner_overrules_frozen_search_and_false_rationale_rules(builds):
@@ -2970,8 +3044,15 @@ def test_project_forester_rules_and_records_under_rulings(builds):
             assert "it asks for the owner's confirmation of a ruling **What you may rule** gives you" in respond, where
             assert "A finding that the owner should have been asked is answered from **What you may rule**" in respond, where
             assert "or the ruling's line under **Rulings**" in respond, where
-            assert flat.count("every `stop-answer-c<C>-…` path") == 2, where
-            assert "each stop the user proxy answered, by path" in flat, where
+            assert flat.count("every `stop-answer-c<C>-…` path") == 1, where
+        for name, body in build.bodies("cycle-digester"):
+            where = f"{stem}/{name}"
+            flat = " ".join(body.split())
+            assert ("the plan's **Rulings** among them" in flat) == decide, where
+            assert ("its **Kind** and its **Rulings**" in flat) == decide, where
+            if decide:
+                assert flat.count("every `stop-answer-c<C>-…` path") == 1, where
+                assert "each stop the user proxy answered, by path" in flat, where
 
 
 def test_user_proxy_frontmatter_pins(builds):
@@ -3409,6 +3490,10 @@ def test_plan_reviewer_asks_the_owners_questions(builds):
             "edit neither the plan nor the request",
             "On a replan, check too that the plan answers every user note",
             "you spawn no explorers",
+            "the previous cycle's plan, by the path the latest state's **Cycles** block gives, for its **Remaining**",
+            "a latest state that itself has a **Remaining** section holds the previous roadmap there, and is read in place of a previous plan",
+            "a previous plan with a **Next, probably** and no **Remaining** is read together with the **Remaining** section of the newest `state-c<N>.md` in the project dir that has one",
+            "an item of the previous cycle's **Remaining** that this plan's **Remaining** neither keeps nor accounts for",
         ):
             assert phrase in flat, f"{where}: {phrase}"
         assert spawn_references(body) == set(), where
@@ -3425,18 +3510,19 @@ def test_project_forester_responds_to_the_plan_review(builds):
             flat = " ".join(body.split())
             where = f"{stem}/{name}"
             assert ("## Mode: respond" in body) == decide, where
+            assert "**digest**" not in flat, where
             if not decide:
-                assert "Modes: **plan** and **digest**." in flat, where
+                assert "Modes: **plan**. You decide what the project's next cycle is" in flat, where
                 continue
-            assert "Modes: **plan**, **respond** and **digest**." in flat, where
-            respond = _between(flat, "## Mode: respond", "## Mode: digest")
+            assert "Modes: **plan** and **respond**." in flat, where
+            respond = _between(flat, "## Mode: respond", "## Reply")
             for phrase in (
                 "- **Fixed** — the plan or the request changed",
                 "A fix may change the plan's **Kind**.",
                 "the cycle dir it had stays on disk as a record, never deleted",
                 "- **TODO(slug)** — the item becomes a tracker entry",
                 "A build's request lists it as a deliverable",
-                "a spike files nothing, so its plan carries the entry under **Next, probably**, marked `owed to the tree`",
+                "a spike files nothing, so its plan carries the entry under **Remaining**, marked `owed to the tree`",
                 "A clear NO to Q2",
                 "- **Won't-Do** — following the finding would contradict the owner's own words",
                 "a finding never answers for the owner",
@@ -3447,10 +3533,11 @@ def test_project_forester_responds_to_the_plan_review(builds):
             assert "> *Provenance:" not in respond, where
 
 
-def test_project_forester_plans_and_digests(builds):
+def test_project_forester_plans_and_the_digester_records(builds):
     """The project forester names its cycle dir only where the branches it
     would produce are free, writes a self-contained request under its own
-    provenance, and digests the stack from its prompt, never from the refs.
+    provenance and the roadmap in its plan's **Remaining**; the cycle
+    digester records the stack from its prompt, never from the refs.
     """
     for stem in PROJECT_EMBEDS:
         for name, body in builds[stem].bodies("project-forester"):
@@ -3460,21 +3547,40 @@ def test_project_forester_plans_and_digests(builds):
                 "`git show-ref --verify --quiet refs/heads/<prefix>/<basename>` fails",
                 "`git for-each-ref refs/heads/<prefix>/<basename>/` prints nothing",
                 "`git for-each-ref refs/heads/<prefix>/spike-<basename>/` prints nothing",
-                "**Request assessment**, **Scope**, **Open questions**",
-                "`git -C <path> log -1 --format=%B <cycle branch>`",
-                "a repository whose stack lacks it shipped nothing this cycle and has no squash to read",
-                "that is neither in the stack nor a stopped cycle's leftover",
                 "> *Provenance: written by the project forester, a product-owner proxy; not the user.*",
-                "A repository's stack is the list your prompt hands for it, never a scan of the refs.",
-                "**Next, probably**",
                 "around 4000 added lines",
                 "no merging",
             ):
                 assert phrase in flat, f"{where}: {phrase}"
             assert "pr-r<R>.md" not in flat, where
-            for section in ("Goal", "Branches", "Cycles", "Learned", "Remaining"):
-                assert f"**{section}** —" in flat, f"{where}: {section}"
+            assert "## Mode: digest" not in body, where
+            sections = " ".join(_raw_section(body, "### The plan").split())
+            assert "4. **Remaining** — what stands between the stack and the goal" in sections, where
+            assert "**Next, probably** —" not in sections, where
+            # The one mention is the earlier-format reading rule.
+            assert flat.count("**Next, probably**") == 1, where
+            desk = " ".join(_raw_section(body, "## The desk").split())
+            assert "a previous plan with a **Next, probably** and no **Remaining** is read together" in desk, where
+            assert "a latest state that itself has a **Remaining** section" in desk, where
+            assert "its `owed to the tree` lines are the state's **Owed** — `none` where it has none" in desk, where
+            plan = " ".join(_raw_section(body, "## Mode: plan").split())
+            assert "the state's **Owed** is not `none`" in plan, where
+            assert "The previous plan's **Remaining**" in plan, where
+            assert "the spike heads that build's **Remaining**" in plan, where
+            assert "the state's **Remaining**" not in flat, where
+        for name, body in builds[stem].bodies("cycle-digester"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            for phrase in (
+                "**Request assessment**, **Scope**, **Open questions**",
+                "`git -C <path> log -1 --format=%B <cycle branch>`",
+                "a repository whose stack lacks it shipped nothing this cycle and has no squash to read",
+                "that is neither in the stack nor a stopped cycle's leftover",
+                "A repository's stack is the list your prompt hands for it, never a scan of the refs.",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
             assert "**For the user** —" not in flat, where
+            assert "**Remaining** —" not in flat, where
 
 
 def test_project_roles_take_the_scope(builds):
@@ -3495,9 +3601,6 @@ def test_project_roles_take_the_scope(builds):
             plan = " ".join(_raw_section(body, "## Mode: plan").split())
             assert "Inputs: the scope (every repository's path, primary first)" in plan, where
             assert "base branch" not in plan, where
-            digest = " ".join(_raw_section(body, "## Mode: digest").split())
-            assert "Inputs: the scope," in digest, where
-            assert "and per repository its base branch, its project stack bottom first" in digest, where
             for phrase in (
                 "the branches it would produce must not be taken, in every repository of the scope",
                 "a hit in any repository means another slug",
@@ -3505,10 +3608,7 @@ def test_project_roles_take_the_scope(builds):
                 "which the orchestrator creates in every repository of the scope",
                 "a repository the cycle leaves unchanged ships no commit and its empty cycle branch is deleted at the cycle's end",
                 "no work in a repository outside the scope",
-                "verified read-only on the cycle branch of the repository the entry names",
                 "summed over the repositories the cycle changes",
-                "left by a cycle run before the orchestrator deleted such branches at the cycle's end",
-                "one block per repository of the scope, primary first",
             ):
                 assert phrase in flat, f"{where}: {phrase}"
             assert "no work in another repository" not in flat, where
@@ -3522,6 +3622,22 @@ def test_project_roles_take_the_scope(builds):
                 "`<repo basename>:<path>:<line>`",
             ):
                 assert phrase in section, f"{where}: {phrase}"
+        for name, body in build.bodies("cycle-digester"):
+            flat = " ".join(body.split())
+            where = f"{stem}/{name}"
+            inputs = " ".join(_raw_section(body, "## Inputs").split())
+            assert inputs.startswith("## Inputs The scope, project dir,"), where
+            assert "and per repository its base branch, its project stack bottom first" in inputs, where
+            for phrase in (
+                "verified read-only on the cycle branch of the repository the entry names",
+                "left by a cycle run before the orchestrator deleted such branches at the cycle's end",
+                "one block per repository of the scope, primary first",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            section = " ".join(_raw_section(body, "## The project's scope").split())
+            assert "You only read it" in section, where
+            assert "`<repo basename>:<path>:<line>`" in section, where
+            assert "only the user widens it" not in flat, where
         for name, body in build.bodies("experimenter"):
             flat = " ".join(body.split())
             where = f"{stem}/{name}"
@@ -4272,7 +4388,7 @@ def test_report_closes_the_last_ship_document(builds):
                 closing = ship[ship.rindex(". STOP: surface") :]
                 assert ("ship document path" in closing) == fg_ship, where
     for build in builds.values():
-        for role_id in ("project-forester", "triage-forester"):
+        for role_id in ("cycle-digester", "triage-forester"):
             if role_id not in build.by_id:
                 continue
             for name, body in build.bodies(role_id):
@@ -4286,7 +4402,7 @@ def test_report_closes_the_last_ship_document(builds):
                 else:
                     assert "when it has no **Report**, its **Why**" in flat, where
                     assert "the record each has, if any — a need with none is unfiled" in flat, where
-    assert seen == {"forester", "orchestrator", "project-forester", "triage-forester"}, seen
+    assert seen == {"forester", "orchestrator", "cycle-digester", "triage-forester"}, seen
 
 
 def _is_stack(build: Build) -> bool:

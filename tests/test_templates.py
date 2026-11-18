@@ -256,6 +256,7 @@ PROVENANCE_READERS = {
     "forester-commentator",
     "triage-forester",
     "project-forester",
+    "cycle-digester",
     "experimenter",
     "sketcher",
     "contrarian",
@@ -325,6 +326,51 @@ def test_ship_shape_names_what_the_cycle_ships(request, shape):
                 "under a branch prefix, the branch the cycle creates in that repository"
                 in " ".join(body.split())
             ), (shape, role_id)
+
+
+@pytest.mark.parametrize("shape", ["full", "lite", "advise", "stack"])
+def test_ship_shape_renders_only_in_its_readers(request, shape):
+    for role in request.getfixturevalue(shape):
+        if role.id not in SHIP_SHAPE_READERS:
+            assert "## What this cycle ships" not in role.body, (shape, role.id)
+
+
+def test_owed_marker_renders_identically_in_its_writers(full, advise):
+    """The plan and the state write the same marker by the same definition."""
+    for rendered in (full, advise):
+        paragraphs = set()
+        for role_id in ("project-forester", "cycle-digester"):
+            body = next(role for role in rendered if role.id == role_id).body
+            start = body.index("`owed to the tree` is the one marker")
+            end = body.index("once it is in the tree.", start) + len("once it is in the tree.")
+            paragraphs.add(body[start:end])
+        assert len(paragraphs) == 1
+
+
+USER_DECISION_PHRASES = (
+    "\"The user's decision\", \"the user's call\", \"the user decides\", \"the user may overrule later\","
+    " \"for the user's next planning stop\""
+)
+DEFERRAL_PHRASES = (
+    '"Later", "the next cycle", "a cycle of its own if wanted", "a roadmap item", "the next planning'
+    ' stop", "the plan carries it", "the state carries it", "the user may overrule at a later gate"'
+)
+
+
+def test_whose_ruling_keeps_its_phrase_lists(full, advise):
+    """The two phrase lists render in **Whose ruling** exactly as written there,
+    under both autonomies, and the cycle digester reads the same lists.
+    """
+    for rendered in (full, advise):
+        for role_id in ("forester", "project-forester"):
+            body = next(role for role in rendered if role.id == role_id).body
+            section = " ".join(body[body.index("## Whose ruling") :].split("\n## ", 1)[0].split())
+            assert f"{USER_DECISION_PHRASES} name only a thing the user said" in section, role_id
+            assert f"- A deferral is a need. {DEFERRAL_PHRASES} — each leaves a thing undone" in section, role_id
+        digester = _body(rendered, "cycle-digester")
+        assert "## Whose ruling" not in digester
+        assert f"dir: {DEFERRAL_PHRASES}, and any sentence that says the same" in digester
+        assert f"decides: {USER_DECISION_PHRASES}, \"for the user\"" in digester
 
 
 def test_designer_spawning_a_role_the_variant_dropped_is_caught():

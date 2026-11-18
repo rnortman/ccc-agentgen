@@ -47,6 +47,30 @@ and D2). The fix is workflow design — a changelog author that can cut a
 release section, a tag made by a role at the ship gate — and needs the
 user's decision on what the workflow should do, not a patch.
 
+## `in-session-restatements-still-written-on-fable`
+
+Three pieces of restatement — text that repeats what a document already
+records and needs no judgement — are written by roles pinned to Fable:
+
+- the forester's **Report**, the closing section of the last ship document
+  (`templates/roles/forester.md.j2`, **The report**);
+- the forester-log entries that transcribe the user's rulings, `By: user`
+  (`templates/partials/forester-log.md.j2`);
+- the request body the triage forester writes for a burndown unit, mostly
+  carried forward from the ruling and the sketch
+  (`templates/roles/triage-forester.md.j2`, **Mode: select**).
+
+The cycle digest, the one launch whose whole product was a summary, has
+its own Opus role, `cycle-digester`. These three were not moved the same
+way because none is a launch: each is a page or less written inside a
+session whose context a ruling already paid for, so a separate Opus launch
+to write it costs more than the Fable output it saves. A cut is worth
+making only if the text can be produced without a new launch — for
+example mechanically, by a tool, as `todo-triage summary` already writes
+the session summaries of the TODO workflows. The work is to find that
+route for each of the three, or to show that none exists, and to say what
+the mechanical version loses for the reader of each; that is a design.
+
 ## `lint-warns-on-documentation-examples`
 
 `todo-triage lint` reports a "matches no entry" warning for every

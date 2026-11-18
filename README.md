@@ -677,10 +677,11 @@ so they can be removed by hand before an entry is ruled.
 large for one cycle through as many cycles as it takes, and end with one
 stack of branches, one per cycle, never merged. They embed `review-chain`
 and `review-chain-auto` whole — except that in `-auto` the embedded chain
-never pushes — and add four roles, five in `-auto`: the driver
+never pushes — and add five roles, six in `-auto`: the driver
 `project-orchestrator`, which knows nothing about what is being built; the
-`project-forester`, a product-owner proxy that plans each cycle and digests
-it; the `experimenter`, which runs spikes; the `publisher`, which pushes
+`project-forester`, a product-owner proxy that plans each cycle; the
+`cycle-digester`, which records each finished cycle in the project state,
+on Opus; the `experimenter`, which runs spikes; the `publisher`, which pushes
 the stack and opens its PRs; and, in `-auto` only, the `plan-reviewer`,
 which reviews each plan and request against your own words before the
 cycle runs.
@@ -707,8 +708,9 @@ stops when a branch named `<p>`, any leading part of it, or any branch
 under `<p>/` exists.
 
 **Cycles.** Each cycle starts with a plan: the project forester reads the
-goal, the latest state and the code, writes `plan-c<C>-g<G>.md`, and picks
-one of:
+goal, the latest state, the previous plan's **Remaining** and the code,
+writes `plan-c<C>-g<G>.md` — with its own **Remaining**, the ordered work
+left to the goal — and picks one of:
 
 - a **build** — one coherent slice sized near `cycle_target_lines` (4000
   added lines), shipped as one squashed commit with no PR size limit. The
@@ -762,11 +764,13 @@ reverses it; a project in flight with no `attended:` line is unattended.
 Each plan records its rulings under **Rulings**, where you overrule them
 afterwards.
 
-**The state document.** After every cycle the forester digests it into
-`state-c<C>.md`: the goal, the branches, one short block per cycle, what
-was learned, and what remains. It is rewritten whole each time and kept to
-a page or two, every line pointing at where the fact is recorded, so the
-next plan orients on it without reading every cycle's documents. The state
+**The state document.** After every cycle the `cycle-digester` records it
+in `state-c<C>.md`: the goal, the branches, one short block per cycle, what
+was learned, what is owed to the tree and what was declined. It is a
+record, not a plan: the roadmap is in each plan's **Remaining**. It is
+rewritten whole each time and kept to a page or two, every line pointing
+at where the fact is recorded, so the next plan orients on it without
+reading every cycle's documents. The state
 names no decision for you: a need a cycle left unfiled becomes a tracker
 entry the next build files — the state carries it as `owed to the tree`
 until then, and the driver's closing stop lists any still owed — and a

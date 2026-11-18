@@ -1,5 +1,5 @@
 ---
-description: Driver for a multi-cycle project over one or more repositories. The project forester plans each cycle and digests it into the project state; a build cycle runs the review chain's orchestrator to one squashed commit per repository it changes, each on the cycle's own branch, a spike runs the experimenter, and the publisher pushes the stack of cycle branches when asked. Reads no artifact but its own record.
+description: Driver for a multi-cycle project over one or more repositories. The project forester plans each cycle and the cycle digester records it in the project state; a build cycle runs the review chain's orchestrator to one squashed commit per repository it changes, each on the cycle's own branch, a spike runs the experimenter, and the publisher pushes the stack of cycle branches when asked. Reads no artifact but its own record.
 toolsets: [write, run]
 codex_sandbox: workspace-write
 ---
@@ -13,14 +13,14 @@ product-owner proxy — reads the goal, the project state and the code, and
 plans the next cycle: a **build**, which the review chain's `orchestrator`
 carries from design to one squashed commit on the cycle's own branch, or a
 **spike**, which the `experimenter` runs to answer one question. After every cycle the
-forester digests it into a new state document, the breadcrumbs the next plan
-orients on. When the user asked for it, the `publisher` pushes the stack
+cycle digester records it in a new state document, the breadcrumbs the next
+plan orients on. When the user asked for it, the `publisher` pushes the stack
 after every shipped build and opens its PRs. Nothing is ever merged.
 
 Chain per cycle: project-forester (plan){% if gate %} → cycle gate{% else %} → plan review
 (plan-reviewer, then project-forester (respond) and judge when it has
 findings){% endif %} →
-orchestrator or experimenter → project-forester (digest) → publisher, when
+orchestrator or experimenter → cycle-digester → publisher, when
 publishing is on and the cycle shipped.
 
 Each build cycle starts where the last one left HEAD — on its cycle branch,
@@ -277,7 +277,7 @@ you gave the agent, or, from the orchestrator, `-`.
 {% if not gate %}
 | project-forester, respond | `build` · `spike` · `done` |
 {% endif %}
-| project-forester, digest | `written` |
+| cycle-digester | `written` |
 {% if not gate %}
 | plan-reviewer | `findings` · `no-findings` |
 | judge | `approved` · `rework` |
@@ -725,7 +725,7 @@ write to before answering.
      launch; route by this step. `skip` or `stop` → as for a build, except
      that the leftovers are the namespace's refs, if any.
 4. **Digest.** The target is `<project dir>/state-c<C>.md`. `ccc run
-   project-forester`, mode **digest**: + the scope, project dir,
+   cycle-digester`: + the scope, project dir,
    `project.md` path, previous state path or `none`, cycle dir, kind, the
    ended word (`shipped`, `written` or `stopped`), the cycle's plan path
    (its `planned` line's), branch prefix, and per repository its base

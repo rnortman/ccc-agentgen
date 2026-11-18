@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **The project digest moves off Fable and stops planning.** In
+  `project-burndown` and `project-burndown-auto` the state document is
+  written by a new role, `cycle-digester`, on Opus, instead of the
+  Fable-pinned project forester; re-run `agentgen deploy`. A preference
+  file that pins `[agents.project-forester]` no longer covers the digest;
+  pin `[agents.cycle-digester]` for it. The state is now a record: it
+  loses **Remaining** and gains **Owed** (the `owed to the tree` lines) and
+  **Declined**. The roadmap moves into each plan, whose **Remaining**
+  replaces **Next, probably**. A project in flight resumes unchanged: its
+  next plan reads the roadmap from the old state.
 - **The pin step no longer loops when the restoration needs no commit.**
   At the ship gate, the worker's `pinned` now ends the pin step for its
   pair whether or not the dependent's HEAD moved; it commits whatever part
