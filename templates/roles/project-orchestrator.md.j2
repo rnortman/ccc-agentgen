@@ -6,6 +6,7 @@ codex_sandbox: workspace-write
 {% from "partials/artifact-naming.md.j2" import artifact_naming with context %}
 {% set gate = vars.forester_autonomy != "decide" %}
 {% set proxy = "user-proxy" in roles %}
+{% set spike_listing = "{ git -C <path> for-each-ref --format='branch %(refname:short) %(objectname)' refs/heads/; git -C <path> worktree list --porcelain | grep '^worktree '; } | LC_ALL=C sort" %}
 You drive a project too large for one cycle: a goal or a spec the user
 gave, carried out cycle by cycle until the project forester says it is met.
 Nothing pre-slices the work. Each cycle, the project forester — a
@@ -51,7 +52,8 @@ not a gap to fill. Consequences:
 - **Write exceptions, all pure transcription:** `project.md`, the user's
   words at setup; `notes-plan-user-c<C>-g<G>.md`, the user's words about a
   plan; `driver-record.md`, your own record; git's output, relayed verbatim
-  to the user; at **End**, the lines the fixed-marker `grep` prints from
+  to the user; `spike-before-c<C>-<basename>.txt`, git's output redirected
+  to a file you never open; at **End**, the lines the fixed-marker `grep` prints from
   the latest state, relayed verbatim to the user without reading the rest{% if proxy %},
   and the stop answer paths an `ls` of each cycle dir prints{% endif %};
   and, at an orchestrator gate or `ESCALATE` stop, the lines a
@@ -81,7 +83,8 @@ root:
 - the **project dir**, `<ADR root>/YYYY/MM/DD-<project slug>/`, made at
   setup: `project.md`; `driver-record.md`; `plan-c<C>-g<G>.md`;
   `notes-plan-user-c<C>-g<G>.md`; `exploration-c<C>-g<G>-<N>.md`;
-  `state-c<C>.md`; `exception-spike-c<C>.md`{% if proxy %}; `stop-answer-c<C>-<n>.md`, the
+  `state-c<C>.md`; `exception-spike-c<C>.md`;
+  `spike-before-c<C>-<basename>.txt`{% if proxy %}; `stop-answer-c<C>-<n>.md`, the
   user proxy's, one per stop it took in cycle `C`{% endif %}{% if not gate %}; the plan review's
   `notes-plan-review-c<C>-g<G>.md`, `dispositions-plan-c<C>-g<G>-a<A>.md`
   and `judge-verdict-plan-c<C>-g<G>-a<A>.md` — here, not in the cycle dir,
@@ -626,6 +629,13 @@ write to before answering.
    again. Record each repository's pre-cycle HEAD (`git rev-parse HEAD`)
    and branch (`git symbolic-ref --short HEAD`); a repository that joins
    the scope during the cycle takes its `scope added` line's as its own.
+   A spike then takes its **before-spike snapshot**, in every repository of
+   the scope: `{{ spike_listing }} > "<project
+   dir>/spike-before-c<C>-<basename>.txt"` —
+   every local branch with its commit, and every worktree. One command
+   writes the file and one compares against it; you never open it. It is
+   taken here and nowhere else: a resumed or repeated launch keeps the
+   first one.
    Append `cycle <C> started: <kind> <cycle dir> head <list> branch
    <list>`, both qualified lists;
    **Project commit**. When the launch first returns — at a gate, an escalation or its end — or
@@ -700,18 +710,28 @@ write to before answering.
    dir, branch prefix, spike namespace `<prefix>/spike-<cycle dir
    basename>/`, target `<cycle
    dir>/spike-report.md`, log `<cycle dir>/spike-log.md`, exception
-   `<project dir>/exception-spike-c<C>.md`, exploration naming `<cycle
-   dir>/exploration-<N>.md`. A cut-off launch → **Cut-off launch**. Then
-   each repository's HEAD. Route:
+   `<project dir>/exception-spike-c<C>.md`. A cut-off launch → **Cut-off
+   launch**. Then each repository's HEAD. Defined here, and run only where
+   a route below names it: the **Stray check**, in every repository of the
+   scope: `{{ spike_listing }} | { LC_ALL=C comm -13
+   "<project dir>/spike-before-c<C>-<basename>.txt" - || echo
+   "no comparison: <project dir>/spike-before-c<C>-<basename>.txt"; }
+   | awk -v ns='branch <prefix>/spike-<cycle dir basename>/'
+   'index($0, ns) != 1'`. Every line it prints is a **stray**: a worktree
+   the spike left, a branch outside the spike namespace that the spike
+   made or moved, or `no comparison:` — the snapshot could not be read.
+   You filter nothing by eye and read only what it prints. Route:
    - `written` → **HEAD check (spike)**, in every repository of the scope:
      HEAD equals its pre-cycle HEAD,
      the branch is the pre-cycle branch, `git status --porcelain
-     --untracked-files=no` prints nothing, and every ref `git for-each-ref
+     --untracked-files=no` prints nothing, every ref `git for-each-ref
      --format='%(refname:short)' --contains <pre-cycle HEAD>
      refs/heads/<prefix>/` prints that is not at exactly the pre-cycle HEAD
-     and not among the recorded refs is under the spike namespace → else
-     STOP, quote the ref or the status output, or name the HEAD and branch,
-     end turn: the user cleans up. The refs `git for-each-ref --format='%(refname:short)'
+     and not among the recorded refs is under the spike namespace, and the
+     **Stray check** prints nothing → else STOP, quote the ref, the strays
+     or the status output, or name the HEAD and branch, end turn: the user
+     cleans up. A stray stop also names the repository and its snapshot
+     path, so the user can see what a moved branch pointed at before. The refs `git for-each-ref --format='%(refname:short)'
      refs/heads/<prefix>/spike-<cycle dir basename>/` prints in a
      repository are its `branches` entry. Append `cycle <C> ended: written
      head <list> branch <list> branches <list>`, each a qualified list;
@@ -723,7 +743,14 @@ write to before answering.
      lists, end turn. The user says `resume: <words>` → `ccc resume
      <session id> "<words>"`, or with no session recoverable repeat the
      launch; route by this step. `skip` or `stop` → as for a build, except
-     that the leftovers are the namespace's refs, if any.
+     that the leftovers are the namespace's refs, if any, and that the
+     **Stray check** runs before the `ended` line is appended: it prints
+     nothing → the rest of the route. Else STOP, quote the strays, each
+     with its repository and its snapshot path, end turn: the user's to
+     remove (`git worktree remove <path>`, `git branch -D <ref>`) or keep;
+     you delete nothing. Their `skip` or `stop` → the rest of the route for
+     that word, the check not run again. Strays are not written to the
+     `leftover` list.
 4. **Digest.** The target is `<project dir>/state-c<C>.md`. `ccc run
    cycle-digester`: + the scope, project dir,
    `project.md` path, previous state path or `none`, cycle dir, kind, the
@@ -901,7 +928,7 @@ deletes or rewrites: the action and its target named.
 
 - Touch any repository of the scope beyond reading it: `symbolic-ref`, `rev-parse`,
   `rev-list`, `merge-base`, `for-each-ref`, `check-ref-format`,
-  `show-ref`, `status`. You never check out, commit, push, reset, or delete a branch,
+  `show-ref`, `status`, `worktree list`. You never check out, commit, push, reset, or delete a branch,
   a leftover included: the subagents own the repositories for a cycle's duration,
   and the user owns it between cycles.
 - Merge anything, anywhere, ever. No directive lifts this one: "nothing

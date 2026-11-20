@@ -721,7 +721,10 @@ left to the goal — and picks one of:
 - a **spike** — one question the next build turns on that reading cannot
   settle. The `experimenter` answers it with the smallest experiment,
   on throwaway branches under `<p>/spike-<cycle dir basename>/`, and writes
-  `spike-report.md`. Nothing it builds ships;
+  `spike-report.md`. Nothing it builds ships. It directs its harness's own
+  subagents for exploration and implementation rather than spawning through
+  ccc; the model it gives them is a hint set per harness in `[vars]
+  experimenter_subagent_models`;
 - **done** — the goal is met, and the plan says why;
 - or a question for you, as an escalation.
 
@@ -856,7 +859,10 @@ closed as stopped with `close`. Run one driver per project at a time.
 you are done with them: the spike branches and a stopped cycle's leftover
 branches — its cycle branch among them — which the stop names. A cycle
 branch that shipped nothing is removed by the cycle's own orchestrator; one
-left by a project run before that change is yours to delete. This workflow creates no work branches. The driver commits the project dir in the
+left by a project run before that change is yours to delete. The driver
+also reports a worktree, or a branch outside the spike namespace, that a
+spike left — at the spike's end or when it is closed — and deletes nothing.
+This workflow creates no work branches. The driver commits the project dir in the
 sidecar at every stop, and every cycle dir a build's orchestrator does not
 commit itself.
 
@@ -935,6 +941,14 @@ whether or not it names it. It must exist, include no set and grant at least
 one tool, since ccc reads an empty `tools` list as every tool. The `run` set
 carries `Bash` with `TaskStop` and `Monitor`, so no role can start a
 background process it cannot wait on and stop.
+
+The `subagents` set grants Claude Code's in-session subagent tool, under both
+of its names, `Agent` and `Task`. Only the `experimenter` names it: a spike
+ships nothing, so it directs its own work with its harness's subagents
+instead of spawning through ccc. ccc neither routes nor audits what that tool
+starts — those subagents do not appear in `ccc status` and stop only with the
+session — and the role's allowlist should be assumed not to bind them. Every
+other role spawns only through ccc.
 
 `toolsets` is accepted at all three tiers under the usual precedence (later
 wins, whole value replaces). `tools` stays accepted at the same tiers and

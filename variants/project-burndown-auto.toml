@@ -34,6 +34,14 @@ user_proxy_stops_per_cycle = 3
 # lines; the cycle ships as one squash.
 cycle_target_lines = 4000
 
+# Experimenter: which model it gives its own subagents, per harness, as a
+# hint in its definition. `default` is the model for a subagent;
+# `mechanical`, optional, the one it may drop to for a simple, mechanical
+# change. A harness with no table gets no hint.
+[vars.experimenter_subagent_models.claude]
+default = "Opus"
+mechanical = "Sonnet"
+
 [roles.project-orchestrator]
 model = "claude-opus-5-5[1M]"
 effort = "low"

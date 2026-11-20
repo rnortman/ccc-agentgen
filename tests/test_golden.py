@@ -1570,6 +1570,67 @@ def test_experimenter_holds_the_run_set(builds):
     assert seen
 
 
+def test_only_the_experimenter_holds_the_subagent_tool(builds):
+    seen = 0
+    for where, front in _claude_roles(builds):
+        holds = {"Agent", "Task"} & set(front["tools"])
+        if where.endswith("/experimenter"):
+            seen += 1
+            assert holds == {"Agent", "Task"}, where
+        else:
+            assert holds == set(), where
+    assert seen
+
+
+EXPERIMENTER_CLAUDE_HINT = "Give a subagent Opus; Sonnet only for a simple, mechanical change."
+
+
+def test_experimenter_directs_its_own_subagents(builds):
+    seen = 0
+    for build in builds.values():
+        if "experimenter" not in build.by_id:
+            continue
+        role = build.by_id["experimenter"]
+        for harness in role.harnesses:
+            seen += 1
+            body = role.body_for(harness)
+            flat = " ".join(body.split())
+            where = f"{build.stem}/experimenter/{harness}"
+            assert "\n## Subagents\n" in body, where
+            assert "Prefer them for exploration and for implementation" in flat, where
+            assert "A subagent sees none of this definition and may hold tools you do not" in flat, where
+            for phrase in (
+                "Every rule here binds what it does, and holding it to them is yours",
+                "nothing it does acts outside the scope's repositories and the cycle dir or outlasts your turn",
+                "a branch or worktree it makes is the spike's",
+                "its work is on a branch under the spike namespace and the rest is removed",
+            ):
+                assert phrase in flat, f"{where}: {phrase}"
+            assert "in a repository or the cycle dir, and holding" not in flat, where
+            assert SPAWNING_PARTIAL_SENTINEL not in body, where
+            assert spawn_references(body) == set(), where
+            assert "## Exploring" not in body, where
+            assert "exploration naming" not in flat, where
+            if harness == "claude":
+                assert EXPERIMENTER_CLAUDE_HINT in flat, where
+            else:
+                assert "Give a subagent" not in flat, where
+    assert seen
+
+
+def test_driver_spike_launch_names_no_exploration(builds):
+    seen = 0
+    for build in builds.values():
+        if "project-orchestrator" not in build.by_id:
+            continue
+        for name, body in build.bodies("project-orchestrator"):
+            seen += 1
+            flat = " ".join(body.split())
+            spike = _between(flat, "**spike:** `ccc run experimenter`", "4. **Digest.**")
+            assert "exploration naming" not in spike, f"{build.stem}/{name}"
+    assert seen
+
+
 def test_forester_commentator_cannot_reach_the_code(builds):
     seen = 0
     for build in builds.values():
@@ -2713,7 +2774,8 @@ def test_project_driver_never_list(builds):
         assert "Launch a cycle while one is open." in never, where
         assert "relay anything at a gate but the user's words" in never, where
         for command in ("`symbolic-ref`", "`rev-parse`", "`rev-list`", "`merge-base`",
-                        "`for-each-ref`", "`check-ref-format`", "`show-ref`", "`status`"):
+                        "`for-each-ref`", "`check-ref-format`", "`show-ref`", "`status`",
+                        "`worktree list`"):
             assert command in never, f"{where}: {command}"
         assert "delete a branch, a leftover included" in never, where
 
@@ -2800,6 +2862,54 @@ def test_project_driver_checks_the_stack_from_git(builds):
         ) in flat, where
 
 
+def test_project_driver_reports_spike_strays(builds):
+    """A spike takes a snapshot of every local branch and worktree before its
+    launch, and a stray check compares against it at both ends of the spike:
+    the `written` route stops on a stray, and `skip` and `stop` stop on them
+    too, before the `ended` line, and delete nothing. A missing snapshot is
+    reported by the command itself.
+    """
+    snapshot_cmd = (
+        "{ git -C <path> for-each-ref --format='branch %(refname:short) %(objectname)' refs/heads/;"
+        " git -C <path> worktree list --porcelain | grep '^worktree '; } | LC_ALL=C sort"
+    )
+    for where, flat, _ in _project_driver_bodies(builds):
+        run = _between(flat, "3. **Run the cycle.**", "**build:** `ccc run orchestrator")
+        for phrase in (
+            "A spike then takes its **before-spike snapshot**",
+            snapshot_cmd + ' > "<project dir>/spike-before-c<C>-<basename>.txt"`',
+        ):
+            assert phrase in run, f"{where}: {phrase}"
+        snapshot = run.index("A spike then takes its **before-spike snapshot**")
+        assert run.index("Record each repository's pre-cycle HEAD") < snapshot, where
+        assert snapshot < run.index("Append `cycle <C> started:"), where
+        spike = _between(flat, "**spike:** `ccc run experimenter`", "4. **Digest.**")
+        stray_cmd = (
+            snapshot_cmd
+            + ' | { LC_ALL=C comm -13 "<project dir>/spike-before-c<C>-<basename>.txt" -'
+            + ' || echo "no comparison: <project dir>/spike-before-c<C>-<basename>.txt"; }'
+            + " | awk -v ns='branch <prefix>/spike-<cycle dir basename>/' 'index($0, ns) != 1'"
+        )
+        assert "**Stray check**, in every repository of the scope: `" + stray_cmd + "`." in spike, where
+        written = _between(spike, "- `written` →", "- `ESCALATE`")
+        assert "the **Stray check** prints nothing → else STOP" in written, where
+        skip = spike[spike.index("`skip` or `stop` →") :]
+        for phrase in (
+            "the **Stray check** runs before the `ended` line is appended",
+            "Else STOP, quote the strays, each with its repository and its snapshot path",
+            "Their `skip` or `stop` → the rest of the route for that word, the check not run again",
+            "you delete nothing",
+            "`git worktree remove <path>`",
+        ):
+            assert phrase in skip, f"{where}: {phrase}"
+        for phrase in ("in the next stop's lines", "Their `go`"):
+            assert phrase not in skip, f"{where}: {phrase}"
+        if "### Stop proxy" in flat:
+            proxy = _between(flat, "### Stop proxy", "### Project commit")
+            assert "its checks included; a check that fails stops for the user as written" in proxy, where
+        assert "A snapshot file that does not exist" not in flat, where
+
+
 def test_project_driver_reads_only_its_record(builds):
     """The driver's one read-back file is its own append-only record, and the
     project commit leaves a started build's dir to the orchestrator.
@@ -2808,6 +2918,8 @@ def test_project_driver_reads_only_its_record(builds):
         assert "**One file you read back:** `driver-record.md`, and only it." in flat, where
         assert "You never read `out`; you pass it on." in flat, where
         assert ">> <project dir>/driver-record.md`, never edited" in flat, where
+        exceptions = _between(flat, "**Write exceptions, all pure transcription:**", "**One file you read back:**")
+        assert "`spike-before-c<C>-<basename>.txt`, git's output redirected to a file you never open" in exceptions, where
         commit = _between(flat, "### Project commit", "### Never")
         assert "that no `cycle <C> started: build` line names" in commit, where
         assert "add -- . " in commit and "diff --cached --quiet -- . " in commit, where
@@ -3758,7 +3870,9 @@ def test_experimenter_never_bypasses_hooks(builds):
             assert clean < flat.index("git checkout --no-track -b") < patch, where
             for phrase in (
                 "git checkout --no-track -b <namespace><name>",
-                "Never touch a branch outside the spike namespace in any repository, never push, never merge",
+                "Never touch a branch outside the spike namespace in any repository but one a subagent made "
+                "this spike (**Subagents**), never push, never merge",
+                "`git worktree list` lists no worktree the spike made",
                 "`git status --porcelain --untracked-files=no` prints nothing",
                 "every subject prefixed `spike:`",
             ):

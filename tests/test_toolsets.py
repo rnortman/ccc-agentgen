@@ -218,6 +218,15 @@ def test_resolve_rejects_an_unknown_set(root):
         load(root).resolve("r", ["runn"], None)
 
 
+def test_shipped_catalogue_grants_agent_and_task_through_subagents():
+    catalogue = load_catalogue(TEMPLATES)
+    assert catalogue is not None
+    assert catalogue.granting_set("Agent") == "subagents"
+    assert catalogue.granting_set("Task") == "subagents"
+    assert "Agent" not in catalogue.withheld
+    assert "Task" not in catalogue.withheld
+
+
 @pytest.mark.parametrize("value", ["run", [3], [""], {"run": True}])
 def test_resolve_rejects_a_malformed_toolsets_value(root, value):
     with pytest.raises(AgentGenError, match=r"role r: `toolsets` must be a list of non-empty strings"):
@@ -232,6 +241,10 @@ def test_resolve_rejects_a_malformed_tools_value(root, value):
 
 PROBE = os.environ.get("AGENTGEN_PROBE_CLAUDE") == "1"
 probe = pytest.mark.skipif(not PROBE, reason="set AGENTGEN_PROBE_CLAUDE=1 to probe the installed Claude Code")
+
+# Two names for one Claude Code tool: either registers it, and the init
+# registry prints only one of them.
+TOOL_ALIASES = {"Agent": "Task", "Task": "Agent"}
 
 
 def _registered_tools(tmp_path: Path, tools: list[str] | None) -> list[str]:
@@ -283,5 +296,7 @@ def test_probe_every_claude_code_tool_is_classified(tmp_path):
 def test_probe_every_emitted_tool_list_registers_in_full(tmp_path):
     for tools in _emitted_tool_lists():
         registered = _registered_tools(tmp_path, tools)
-        missing = [tool for tool in tools if tool not in registered]
+        missing = [
+            tool for tool in tools if tool not in registered and TOOL_ALIASES.get(tool) not in registered
+        ]
         assert missing == [], f"Claude Code dropped {missing} from {tools}"

@@ -47,6 +47,44 @@ and D2). The fix is workflow design — a changelog author that can cut a
 release section, a tag made by a role at the ship gate — and needs the
 user's decision on what the workflow should do, not a patch.
 
+## `experimenter-subagent-mcp-reach`
+
+The spike `experimenter`'s in-session subagents (the `subagents` tool set
+in `templates/toolsets.toml`) likely hold every MCP server — every
+connected account — of the operator's Claude session, and every built-in
+tool the catalogue withholds from all roles. Basis: one run on Claude Code
+2.1.329 in which a subagent of an agent restricted to `Read`, `Agent`,
+`Task` listed its own tools. That is the model's self-report, so likely,
+not proven. The servers it listed included Forgejo (posting, editing and
+closing pull requests), Discord, Playwright's unsafe code runner, Google
+Drive and Calendar, plus push notifications and cron and remote triggers
+that outlast the session.
+
+Only wording in the experimenter's definition restrains this, and wording
+is no defence against prompt injection from third-party material a spike
+reads.
+
+The reach was accepted for now by the user proxy at the ship gate of the
+2026-11-20 experimenter-subagents cycle, not by the owner in person.
+
+Until it is closed, the safe way to run a spike is from a Claude session
+with those servers disconnected. To withdraw the reach entirely, revert
+the `subagents` grant and regenerate.
+
+The fix is a `ccc` launch option that starts a Claude agent with no MCP
+servers, and the experimenter using it.
+
+**Done when** the `ccc` option exists and the experimenter uses it, or the
+owner rules the reach acceptable.
+
+The entry for `ccc`, not yet filed in ccc; the owner files it:
+
+```
+## `claude-no-mcp-launch`
+
+`ccc` starts a Claude agent with every MCP server of the operator's session connected, and restricts the agent only through the `tools` list of its `--agents` entry. That list does not appear to bind in-session subagents: on Claude Code 2.1.329 a subagent started by an agent whose list was `Read`, `Agent`, `Task` reported holding every built-in tool and every tool of every connected MCP server (the model's self-report, one run, recorded by ccc-agentgen's experimenter-subagents cycle of 2026-11-20). ccc-agentgen's spike `experimenter` now runs in-session subagents, so its subagents can act on the operator's connected accounts (Forgejo, Discord, Google, remote triggers) with only prompt wording against it. Wanted: a per-agent-type way to launch Claude with no MCP servers (for example `--strict-mcp-config` with an empty config; to be verified that this also strips them from subagents), and ccc-agentgen's experimenter using it. To settle first: whether it is an agent-definition key or site config, and whether an allowlist of servers is wanted rather than all-or-nothing. Done when an experimenter session's subagent reports no MCP tools, or the owner has ruled the reach acceptable. Code site: where `src/harness/claude.rs` builds the `--agents` entry.
+```
+
 ## `in-session-restatements-still-written-on-fable`
 
 Three pieces of restatement — text that repeats what a document already

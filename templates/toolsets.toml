@@ -3,7 +3,7 @@
 # the role's `tools` allowlist. Every built-in Claude Code tool is either
 # granted by exactly one set or listed in [withheld] with the reason.
 #
-# Classified against Claude Code 2.1.316's tool inventory. After upgrading
+# Classified against Claude Code 2.1.329's tool inventory. After upgrading
 # Claude Code, run the probe test (README, Tool sets).
 
 [sets.harmless]
@@ -28,6 +28,12 @@ description = "Launch a process, foreground or background, wait on it, and stop 
 include = ["navigate"]
 tools = ["Bash", "TaskStop", "Monitor"]
 
+# TODO(experimenter-subagent-mcp-reach): a subagent started with this tool
+# likely holds every MCP server of the operator's session; see TODO.md.
+[sets.subagents]
+description = "Start subagents inside the session with Claude Code's own tool, outside ccc: ccc does not route or audit them, they stop only with the session, and this allowlist is the role's own — assume it does not bind them. For a role that directs its own work and ships nothing. Agent and Task are two names for one tool: either registers it, and the init registry prints it as Task."
+tools = ["Agent", "Task"]
+
 [sets.forgejo-publish]
 description = "Find and open pull requests on the forgejo host."
 tools = [
@@ -48,8 +54,6 @@ tools = [
 ]
 
 [withheld]
-Agent = "In-session subagents. Workflows spawn only through ccc, which routes, audits and can kill; an in-session subagent does none of that."
-Task = "The in-session subagent tool under its other name. Workflows spawn only through ccc, which routes, audits and can kill; an in-session subagent does none of that."
 Skill = "Loads instructions from outside the definition; the definition and the prompt are an agent's whole contract."
 Grep = "Claude Code drops it whenever Bash is listed, and a role that holds Bash searches with Bash. Never put it in a set that travels with run; a role without Bash that needs to search gets a set of its own holding it."
 Glob = "Claude Code drops it whenever Bash is listed, and a role that holds Bash searches with Bash. Never put it in a set that travels with run; a role without Bash that needs to search gets a set of its own holding it."
@@ -67,6 +71,9 @@ SendToProjectContext = "Reaches sessions in other projects; one-shot agents repo
 PushNotification = "Reaches the user's devices; one-shot agents report through their status line."
 EnterWorktree = "Moves the session into another worktree; roles manage branches and the tree by their own rules."
 ExitWorktree = "Moves the session into another worktree; roles manage branches and the tree by their own rules."
+ListMcpResourcesTool = "Reads resources from the MCP servers of the operator's session; a role reaches an MCP server only through the MCP tools it names."
+ReadMcpResourceTool = "Reads resources from the MCP servers of the operator's session; a role reaches an MCP server only through the MCP tools it names."
+ReadMcpResourceDirTool = "Reads resources from the MCP servers of the operator's session; a role reaches an MCP server only through the MCP tools it names."
 ListAgents = "No role needs it."
 ReportFindings = "No role needs it."
 Workflow = "No role needs it."

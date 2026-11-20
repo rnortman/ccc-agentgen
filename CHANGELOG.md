@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **The spike experimenter directs its own subagents.** In
+  `project-burndown` and `project-burndown-auto`, the experimenter (the
+  role that carries out a spike) now hands exploration and implementation
+  to its harness's built-in subagents instead of `ccc run explorer`, so a
+  larger spike no longer runs in one ever-growing context. Re-run
+  `agentgen deploy`; a spike session started before that keeps its old
+  tool list on `ccc resume`.
+  - On Claude it gains the `Agent`/`Task` tool (a new `subagents` tool set
+    no other role holds). Its definition hints Opus for subagents, Sonnet
+    only for simple, mechanical changes; change the hint in the variant's
+    `[vars.experimenter_subagent_models.<harness>]` table (`default`,
+    optional `mechanical`), or drop the table to drop it.
+  - These subagents do not appear in `ccc status`, run on the
+    experimenter's account, and should not be assumed held to its tool
+    list. On Claude they likely reach every MCP server connected to the
+    session the driver runs in, so run a spike from a session with those
+    disconnected (see `experimenter-subagent-mcp-reach` in `TODO.md`).
+  - After a spike, including one ended by `skip` or `stop`, the driver
+    stops on any worktree, or any branch outside the spike's namespace,
+    that the spike made or moved, and lists them for you to remove. It
+    keeps a `spike-before-c<C>-<basename>.txt` snapshot per repository in
+    the project dir to compare against.
+  - A spike's cycle dir no longer holds `exploration-<N>.md` files.
 - **The project digest moves off Fable and stops planning.** In
   `project-burndown` and `project-burndown-auto` the state document is
   written by a new role, `cycle-digester`, on Opus, instead of the

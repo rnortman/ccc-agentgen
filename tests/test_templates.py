@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from agentgen import AgentGenError
 from agentgen.check import check_all, spawn_references
 from agentgen.model import Variant
 from agentgen.render import make_environment, parse_frontmatter, render_variant, split_frontmatter
@@ -49,6 +50,7 @@ ALL_VARS = {
     "forester_gate_rounds": 2,
     "cycle_target_lines": 4000,
     "user_proxy_stops_per_cycle": 3,
+    "experimenter_subagent_models": {"claude": {"default": "Opus", "mechanical": "Sonnet"}},
 }
 
 # Roles the lite shape drops, exercising the `{% if "<id>" in roles %}` pruning
@@ -90,7 +92,7 @@ def role_ids() -> list[str]:
     return role_template_ids(TEMPLATES)
 
 
-def render(ids: list[str], **var_overrides) -> list:
+def render(ids: list[str], *, base_vars: dict = ALL_VARS, **var_overrides) -> list:
     variant = Variant(
         name="synthetic",
         defaults={
@@ -99,7 +101,7 @@ def render(ids: list[str], **var_overrides) -> list:
             "codex_model": "gpt-5.6-sol",
             "codex_effort": "medium",
         },
-        vars={**ALL_VARS, **var_overrides},
+        vars={**base_vars, **var_overrides},
         roles={rid: {} for rid in ids},
     )
     return render_variant(TEMPLATES, variant)
@@ -503,10 +505,8 @@ def test_spawning_roles_forbid_taskstop_on_a_ccc_launch_on_claude_only(full):
             assert (TASKSTOP_SENTENCE in flat) == (harness == "claude"), (role.id, harness)
 
 
-@pytest.mark.parametrize("explorer", [True, False])
-def test_experimenter_stops_what_it_started(explorer):
-    ids = [rid for rid in role_ids() if explorer or rid != "explorer"]
-    role = next(role for role in render(ids) if role.id == "experimenter")
+def test_experimenter_stops_what_it_started():
+    role = next(role for role in render(["experimenter"]) if role.id == "experimenter")
     for harness in role.harnesses:
         flat = " ".join(role.body_for(harness).split())
         launch = flat[flat.index("## Processes you start") : flat.index("## The spike")]
@@ -514,13 +514,49 @@ def test_experimenter_stops_what_it_started(explorer):
         assert "stopped with that same tool (`docker stop <name>`)" in launch, harness
         claude_launch = "Start it as a background task (`run_in_background: true`), never with `&`, `nohup` or `setsid`"
         assert (claude_launch in launch) == (harness == "claude"), harness
-        assert ("is waited out (**Exploring**), never stopped" in launch) == explorer, harness
+        assert "(**Exploring**)" not in flat, harness
         step = flat[flat.index("6. **Leave every repository as found.**") :]
         assert "First stop every process the spike started that is still running" in step, harness
         assert "each detached one with the tool that started it" in step, harness
         assert "record in the log what was stopped" in step, harness
         assert ("each background task with TaskStop," in step) == (harness == "claude"), harness
-        assert ("An explorer launch still running is not one of them: wait for it to finish." in step) == explorer, harness
+
+
+ALL_VARS_WITHOUT_SUBAGENT_MODELS = {k: v for k, v in ALL_VARS.items() if k != "experimenter_subagent_models"}
+
+
+@pytest.mark.parametrize(
+    ("vars", "hint"),
+    [
+        (ALL_VARS, "Give a subagent Opus; Sonnet only for a simple, mechanical change."),
+        ({**ALL_VARS, "experimenter_subagent_models": {}}, None),
+        ({**ALL_VARS, "experimenter_subagent_models": {"claude": {"default": "Opus"}}}, "Give a subagent Opus."),
+        (ALL_VARS_WITHOUT_SUBAGENT_MODELS, None),
+    ],
+    ids=["both", "empty", "default-only", "absent"],
+)
+def test_experimenter_subagent_model_hint(vars, hint):
+    (role,) = render(["experimenter"], base_vars=vars)
+    for harness in role.harnesses:
+        flat = " ".join(role.body_for(harness).split())
+        section = flat[flat.index("## Subagents") : flat.index("## Processes you start")]
+        assert "Prefer them for exploration and for implementation" in section, harness
+        assert section.rstrip().endswith("the rest is removed."), harness
+        if hint is not None and harness == "claude":
+            assert hint in section, harness
+            assert section.count("Give a subagent") == 1, harness
+        else:
+            assert "Give a subagent" not in section, harness
+
+
+@pytest.mark.parametrize(
+    "table",
+    [{}, {"mechanical": "Sonnet"}, {"defualt": "Opus"}],
+    ids=["empty", "mechanical-only", "misspelled-default"],
+)
+def test_experimenter_subagent_model_table_without_default_fails(table):
+    with pytest.raises(AgentGenError, match="default"):
+        render(["experimenter"], experimenter_subagent_models={"claude": table})
 
 
 def test_no_role_body_names_the_glob_tool(full):
