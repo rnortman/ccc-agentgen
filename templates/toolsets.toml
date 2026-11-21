@@ -31,8 +31,8 @@ tools = ["Bash", "TaskStop", "Monitor"]
 # TODO(experimenter-subagent-mcp-reach): a subagent started with this tool
 # likely holds every MCP server of the operator's session; see TODO.md.
 [sets.subagents]
-description = "Start subagents inside the session with Claude Code's own tool, outside ccc: ccc does not route or audit them, they stop only with the session, and this allowlist is the role's own — assume it does not bind them. For a role that directs its own work and ships nothing. Agent and Task are two names for one tool: either registers it, and the init registry prints it as Task."
-tools = ["Agent", "Task"]
+description = "Start subagents inside the session with Claude Code's own tool, outside ccc: ccc does not route or audit them, they stop only with the session, and this allowlist is the role's own — assume it does not bind them. For a role that directs its own work and ships nothing. SendMessage follows up with or resumes a subagent and also reaches other Claude sessions; ListAgents lists who it can reach."
+tools = ["Agent", "SendMessage", "ListAgents"]
 
 [sets.forgejo-publish]
 description = "Find and open pull requests on the forgejo host."
@@ -65,7 +65,6 @@ CronDelete = "Schedules work outside ccc and outside the one-shot run."
 CronList = "Schedules work outside ccc and outside the one-shot run."
 ScheduleWakeup = "Schedules work outside ccc and outside the one-shot run."
 RemoteTrigger = "Schedules work outside ccc and outside the one-shot run."
-SendMessage = "Reaches other agents; one-shot agents report through their status line."
 SendToProject = "Reaches sessions in other projects; one-shot agents report through their status line."
 SendToProjectContext = "Reaches sessions in other projects; one-shot agents report through their status line."
 PushNotification = "Reaches the user's devices; one-shot agents report through their status line."
@@ -74,7 +73,6 @@ ExitWorktree = "Moves the session into another worktree; roles manage branches a
 ListMcpResourcesTool = "Reads resources from the MCP servers of the operator's session; a role reaches an MCP server only through the MCP tools it names."
 ReadMcpResourceTool = "Reads resources from the MCP servers of the operator's session; a role reaches an MCP server only through the MCP tools it names."
 ReadMcpResourceDirTool = "Reads resources from the MCP servers of the operator's session; a role reaches an MCP server only through the MCP tools it names."
-ListAgents = "No role needs it."
 ReportFindings = "No role needs it."
 Workflow = "No role needs it."
 DesignSync = "No role needs it."

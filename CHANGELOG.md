@@ -9,8 +9,9 @@
   larger spike no longer runs in one ever-growing context. Re-run
   `agentgen deploy`; a spike session started before that keeps its old
   tool list on `ccc resume`.
-  - On Claude it gains the `Agent`/`Task` tool (a new `subagents` tool set
-    no other role holds). Its definition hints Opus for subagents, Sonnet
+  - On Claude it gains the `Agent`, `SendMessage` and `ListAgents` tools (a
+    new `subagents` tool set no other role holds); `SendMessage` can also
+    reach other Claude sessions. Its definition hints Opus for subagents, Sonnet
     only for simple, mechanical changes; change the hint in the variant's
     `[vars.experimenter_subagent_models.<harness>]` table (`default`,
     optional `mechanical`), or drop the table to drop it.

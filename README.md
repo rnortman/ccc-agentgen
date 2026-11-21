@@ -942,8 +942,11 @@ one tool, since ccc reads an empty `tools` list as every tool. The `run` set
 carries `Bash` with `TaskStop` and `Monitor`, so no role can start a
 background process it cannot wait on and stop.
 
-The `subagents` set grants Claude Code's in-session subagent tool, under both
-of its names, `Agent` and `Task`. Only the `experimenter` names it: a spike
+The `subagents` set grants Claude Code's in-session subagent tools: `Agent`
+to start one, `SendMessage` to follow up with or resume it, and `ListAgents`
+to list who it can reach. `SendMessage` also reaches other Claude sessions,
+local or remote. A subagent is stopped with `TaskStop`, which the `run` set
+already grants. Only the `experimenter` names the set: a spike
 ships nothing, so it directs its own work with its harness's subagents
 instead of spawning through ccc. ccc neither routes nor audits what that tool
 starts — those subagents do not appear in `ccc status` and stop only with the

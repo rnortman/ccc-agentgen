@@ -1570,13 +1570,14 @@ def test_experimenter_holds_the_run_set(builds):
     assert seen
 
 
-def test_only_the_experimenter_holds_the_subagent_tool(builds):
+def test_only_the_experimenter_holds_the_agent_tools(builds):
+    agent_tools = {"Agent", "SendMessage", "ListAgents"}
     seen = 0
     for where, front in _claude_roles(builds):
-        holds = {"Agent", "Task"} & set(front["tools"])
+        holds = agent_tools & set(front["tools"])
         if where.endswith("/experimenter"):
             seen += 1
-            assert holds == {"Agent", "Task"}, where
+            assert holds == agent_tools, where
         else:
             assert holds == set(), where
     assert seen
