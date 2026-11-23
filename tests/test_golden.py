@@ -1598,15 +1598,38 @@ def test_experimenter_directs_its_own_subagents(builds):
             flat = " ".join(body.split())
             where = f"{build.stem}/experimenter/{harness}"
             assert "\n## Subagents\n" in body, where
-            assert "Prefer them for exploration and for implementation" in flat, where
-            assert "A subagent sees none of this definition and may hold tools you do not" in flat, where
+            assert "\n\n**The brief** is everything a subagent knows" in body, where
+            section = flat[flat.index("## Subagents") : flat.index("## Processes you start")]
+            assert "your harness's own subagents do its work" in section, where
+            assert "A subagent sees none of this definition and may hold tools you do not" in section, where
             for phrase in (
                 "Every rule here binds what it does, and holding it to them is yours",
-                "nothing it does acts outside the scope's repositories and the cycle dir or outlasts your turn",
+                "nothing it does acts outside the scope's repositories, the cycle dir and the scratch dir, "
+                "or outlasts your turn",
                 "a branch or worktree it makes is the spike's",
                 "its work is on a branch under the spike namespace and the rest is removed",
+                "a context that fills up loses the early facts the report depends on",
+                "every piece of work whose doing is larger than its result",
+                "every brief says what to return",
+                "No file contents, no raw command output",
+                "it writes to a file in the scratch dir and names the path",
+                "It is never in the cycle dir or a repository",
+                "the git steps of 1, 2 and 6",
+                "a process that must outlive one piece of work",
+                "a process it starts is stopped before it returns",
+                "Never open in full a file a subagent wrote",
+                "A file a subagent wrote in the cycle dir is the exception: read it whole before the report",
+                "A working tree holds one branch at a time",
+                "you run no git step there",
+                "with `mktemp -d`, and record its path in the log",
+                "A return that is long or vague gets a follow-up",
+                "A return is a claim, not evidence",
+                "a commit a hook rejects it reports back",
             ):
-                assert phrase in flat, f"{where}: {phrase}"
+                assert phrase in section, f"{where}: {phrase}"
+            assert section.index("your context is what carries it") < section.index(
+                "A subagent sees none of this definition"
+            ), where
             assert "in a repository or the cycle dir, and holding" not in flat, where
             assert SPAWNING_PARTIAL_SENTINEL not in body, where
             assert spawn_references(body) == set(), where
@@ -1616,6 +1639,33 @@ def test_experimenter_directs_its_own_subagents(builds):
                 assert EXPERIMENTER_CLAUDE_HINT in flat, where
             else:
                 assert "Give a subagent" not in flat, where
+    assert seen
+
+
+def test_experimenter_steps_point_at_subagents(builds):
+    seen = 0
+    for build in builds.values():
+        if "experimenter" not in build.by_id:
+            continue
+        role = build.by_id["experimenter"]
+        for harness in role.harnesses:
+            seen += 1
+            flat = " ".join(role.body_for(harness).split())
+            where = f"{build.stem}/experimenter/{harness}"
+            cycle_dir = flat[flat.index("## What the cycle dir may hold") : flat.index("## Subagents")]
+            assert "Output you have not read is never written here" in cycle_dir, where
+            step1 = flat[flat.index("1. **Check the trees.**") : flat.index("2. **Decide whether code is needed.**")]
+            assert "through a subagent once it is more than a file or two (**Subagents**)" in step1, where
+            step3 = flat[flat.index("3. **Commit freely**") : flat.index("4. **A hook that rejects a commit.**")]
+            assert "on the branch you created (**Subagents**)" in step3, where
+            step6 = flat[flat.index("6. **Leave every repository as found.**") : flat.index("## The log")]
+            assert "remove the scratch dir (**Subagents**)" in step6, where
+            assert (
+                "never write outside the repositories of the scope, the cycle dir and the scratch dir" in step6
+            ), where
+            log = flat[flat.index("## The log") : flat.index("## The report")]
+            assert "A run a subagent made is logged by you" in log, where
+            assert "because the full output is not kept" in log, where
     assert seen
 
 

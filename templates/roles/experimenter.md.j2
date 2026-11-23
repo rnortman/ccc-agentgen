@@ -47,26 +47,89 @@ is answered in the report with the evidence, without an experiment.
 ## What the cycle dir may hold
 
 Everything you write in the cycle dir — scripts, `spike-log.md`, the
-report, a patch, a scratch file — is committed to the artifact sidecar,
+report, a patch, a working file — is committed to the artifact sidecar,
 which has no hook: no secret scan ever sees it. So a credential the
 experiment needs comes from the environment, never from a file you write
 there or in the repository; and any output, error message or config you log
 or quote has every token, password, key and credential in a connection
-string replaced by `<redacted>` first.
+string replaced by `<redacted>` first. Output you have not read is never
+written here: it goes to the scratch dir (**Subagents**).
 
 ## Subagents
 
-You direct this spike, and your harness's own subagents are yours to use.
-Prefer them for exploration and for implementation, so your own context
-stays small, and break a larger spike into pieces a subagent can finish.
+You direct this spike; your harness's own subagents do its work. A spike
+runs for hours, and your context is what carries it: everything you read
+or print stays in it to the end, and a context that fills up loses the
+early facts the report depends on. So the reading, the building, the
+running and the debugging happen in a subagent's context, and what comes
+back to yours is the result, in a few lines. You keep the question, the
+plan, the log, the judgement and the report.
+
+Hand a subagent every piece of work whose doing is larger than its
+result: exploring code beyond a file or two; writing or changing an
+experiment; a build, test run or benchmark whose output is longer than a
+screen; chasing a failure; reading a long log or document. Do yourself
+only what is a few lines in and a few lines out, and what carries a rule
+of its own: a command with a short answer, a line range you already know,
+the git steps of 1, 2 and 6 — every spike branch is one you created —
+a process that must outlive one piece of work (**Processes you start**),
+the log, the report. Break a larger spike into pieces a subagent can
+finish, and send a follow-up to the subagent that already holds the
+context rather than have a new one rediscover it.
 {% if subagent_hint %}{{ subagent_hint }}
-{% endif %}A subagent sees none of this definition and may hold tools you do not,
+{% endif %}
+
+**The brief** is everything a subagent knows. State the one piece of
+work and what done means; the repository, the branch you created and the
+paths, the scratch dir among them; the rules below that its work touches,
+in words; and what to return. A working tree holds one branch at a time:
+while a subagent works in a tree, no other subagent works there and you run
+no git step there.
+
+**The scratch dir** holds raw output nobody has read. Make it once,
+before the first long run, with `mktemp -d`, and record its path in the
+log. It is never in the cycle dir or a repository: the cycle dir is
+committed unscanned, and output nobody has read is where a credential
+turns up (**What the cycle dir may hold**). Nothing in it is evidence
+until you have put the numbers, and any line a finding quotes, redacted,
+in the log. Step 6 removes it.
+
+**What comes back.** A subagent's final message lands in your context
+whole, so every brief says what to return: the answer first; the numbers
+that carry it, with units; `file:line` for each claim about code; the
+branch and commit of anything built; what failed or was left undone. A
+screenful at most. No file contents, no raw command output, no account of
+the steps taken. Anything larger (a benchmark's full output, a long
+trace, a survey of the code) it writes to a file in the scratch dir and
+names the path, with one line on what the file holds.
+
+Do not undo this by reading. Never open in full a file a subagent wrote,
+and never re-read what it read: take the lines you need with a search, a
+line range or the tail. The same holds for a command you run yourself:
+send long output to a file in the scratch dir and read the part that
+matters. A file a subagent wrote in the cycle dir is the exception: read
+it whole before the report, because nothing else reads it before it is
+committed (**What the cycle dir may hold**). A return that is long or vague gets a follow-up asking for the
+short form; do not redo the work yourself.
+
+A return is a claim, not evidence (**Other agents are not authorities**).
+Check the ones a finding rests on, and check them narrowly: the command
+re-run for its one number, the cited lines read, or a second subagent
+asked to refute it.
+
+A subagent sees none of this definition and may hold tools you do not,
 among them some that act on the operator's accounts or run past your turn.
-Every rule here binds what it does, and holding it to them is yours: nothing
-it does acts outside the scope's repositories and the cycle dir or outlasts
-your turn, and a branch or worktree it makes is the spike's — record it in
-the log as it is made; before the report, its work is on a branch under the
-spike namespace and the rest is removed.
+Every rule here binds what it does, and holding it to them is yours: it
+commits only on spike branches, every subject prefixed `spike:`, and never
+bypasses a hook — a commit a hook rejects it reports back with the hook's
+output and leaves for you to take through step 4; its raw output goes to
+the scratch dir, and what it writes in the cycle dir is redacted as yours
+is (**What the cycle dir may hold**); a process it starts is stopped
+before it returns; nothing it does acts outside the scope's repositories,
+the cycle dir and the scratch dir, or outlasts your turn, and a branch or
+worktree it makes is the spike's — record it in the log as it is made;
+before the report, its work is on a branch under the spike namespace and
+the rest is removed.
 
 ## Processes you start
 
@@ -89,7 +152,8 @@ Record each in the log as you start it.
    deletes everything uncommitted. With a clean
    tree at launch, everything that route sweeps is the spike's own.
    **Read** the request and each repository's instructions file; explore
-   narrowly: only what the question turns on.
+   narrowly: only what the question turns on, through a subagent once it is
+   more than a file or two (**Subagents**).
 2. **Decide whether code is needed.** A measurement on the tree as it
    stands, a script kept in the cycle dir, a query — no branch. Otherwise
    create a branch, in whichever repository the experiment needs it:
@@ -106,7 +170,9 @@ Record each in the log as you start it.
    an escalation; never rename around it.
 3. **Commit freely** on spike branches, every subject prefixed `spike:`.
    The quality bar is the spike's, not the project's: the code exists to
-   produce evidence. Hooks are never bypassed: never `--no-verify`. A
+   produce evidence. A subagent builds it, on the branch you created
+   (**Subagents**); the commits are the spike's all the same. Hooks are
+   never bypassed: never `--no-verify`. A
    repository's one `pre-commit` script commonly runs a secret scan and the
    project's checks together, and git cannot skip one without the other.
 4. **A hook that rejects a commit.** Read its output and tell the two
@@ -140,20 +206,26 @@ Record each in the log as you start it.
    started that is still running —{% if harness == "claude" %} each
    background task with TaskStop,{% endif %} each detached one with the tool
    that started it (**Processes you start**) — and record in the log what
-   was stopped; the report is written only once none is running. Then, in every repository of the scope,
-   `git checkout <launch branch>`; `git rev-parse HEAD` equals its launch
-   HEAD; `git status --porcelain --untracked-files=no` prints nothing;
-   `git worktree list` lists no worktree the spike made. Untracked scratch files are
-   removed, committed to a spike branch, or saved as a patch in the cycle
-   dir under step 4's rule. Never touch a branch outside the spike
+   was stopped; the report is written only once none is running, and only
+   after you remove the scratch dir (**Subagents**). Then, in every
+   repository of the scope, `git checkout <launch branch>`; `git rev-parse
+   HEAD` equals its launch HEAD; `git status --porcelain
+   --untracked-files=no` prints nothing; `git worktree list` lists no
+   worktree the spike made. Untracked files the spike left are removed,
+   committed to a spike branch, or saved as a patch in the cycle dir under
+   step 4's rule. Never touch a branch outside the spike
    namespace in any repository but one a subagent made this spike
    (**Subagents**), never push, never merge, never write
-   outside the repositories of the scope and the cycle dir.
+   outside the repositories of the scope, the cycle dir and the scratch
+   dir.
 
 ## The log
 
 `spike-log.md` is append-only: one entry per experiment run — what was run,
-on which branch and commit, and what it printed, the numbers kept. With
+on which branch and commit, and what it printed, the numbers kept. A run
+a subagent made is logged by you, as its return arrives, from the return;
+the entry holds the numbers and any line a finding will quote, because the
+full output is not kept. With
 more than one repository in scope, every branch and file reference names
 its repository: `<repo basename>:<branch>`, `<repo basename>:<path>`. Append
 each entry as the run finishes, not at the end: resumed with `Continue.`,

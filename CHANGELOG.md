@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The spike experimenter keeps its own context small.** In
+  `project-burndown` and `project-burndown-auto`, the experimenter's
+  definition now tells it to hand the reading, building and running of a
+  spike to its subagents and to take back only short results, so its own
+  context stays small over a long spike. Re-run `agentgen deploy`.
+  - Raw output of a spike's runs is kept in a temporary directory
+    (`mktemp -d`) outside the repositories and the cycle dir, and removed
+    before the report. The experimenter now writes in one place beyond the
+    scope and the cycle dir; nothing new is committed to the sidecar.
+  - Only one subagent works in a given working tree at a time; work in
+    separate trees or repositories may still run in parallel.
+  - Subagents run more often, so the caution of
+    `experimenter-subagent-mcp-reach` in `TODO.md` applies more often.
 - **The spike experimenter directs its own subagents.** In
   `project-burndown` and `project-burndown-auto`, the experimenter (the
   role that carries out a spike) now hands exploration and implementation

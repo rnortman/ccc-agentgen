@@ -723,8 +723,9 @@ left to the goal — and picks one of:
   on throwaway branches under `<p>/spike-<cycle dir basename>/`, and writes
   `spike-report.md`. Nothing it builds ships. It directs its harness's own
   subagents for exploration and implementation rather than spawning through
-  ccc; the model it gives them is a hint set per harness in `[vars]
-  experimenter_subagent_models`;
+  ccc: the work is done in subagents and only short results come back, so
+  its own context stays small over a long spike. The model it gives them is
+  a hint set per harness in `[vars] experimenter_subagent_models`;
 - **done** — the goal is met, and the plan says why;
 - or a question for you, as an escalation.
 

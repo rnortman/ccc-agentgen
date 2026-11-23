@@ -540,13 +540,15 @@ def test_experimenter_subagent_model_hint(vars, hint):
     for harness in role.harnesses:
         flat = " ".join(role.body_for(harness).split())
         section = flat[flat.index("## Subagents") : flat.index("## Processes you start")]
-        assert "Prefer them for exploration and for implementation" in section, harness
+        assert "your harness's own subagents do its work" in section, harness
         assert section.rstrip().endswith("the rest is removed."), harness
         if hint is not None and harness == "claude":
             assert hint in section, harness
             assert section.count("Give a subagent") == 1, harness
+            assert f"rediscover it. {hint} **The brief**" in section, harness
         else:
             assert "Give a subagent" not in section, harness
+            assert "rediscover it. **The brief**" in section, harness
 
 
 @pytest.mark.parametrize(
