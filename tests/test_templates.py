@@ -15,7 +15,7 @@ import pytest
 
 from agentgen import AgentGenError
 from agentgen.check import check_all, spawn_references
-from agentgen.model import Variant
+from agentgen.model import UNRESTRICTED, Variant
 from agentgen.render import make_environment, parse_frontmatter, render_variant, split_frontmatter
 from agentgen.toolsets import load_catalogue
 from conftest import (
@@ -277,6 +277,7 @@ PROVENANCE_READERS = {
     "citizen-reviewer",
     "tracer-reviewer",
     "test-reviewer",
+    "code-reviewer",
 }
 
 
@@ -466,15 +467,24 @@ def _template_frontmatter(role_id: str) -> dict:
     return parse_frontmatter(front, path.name)
 
 
+# The only role templates that opt out of a tool list.
+UNRESTRICTED_TEMPLATES = {"worker", "worker-high"}
+
+
 def test_every_role_template_declares_toolsets_not_tools():
     catalogue = load_catalogue(TEMPLATES)
     assert catalogue is not None
     names = {toolset.name for toolset in catalogue.sets}
+    unrestricted = set()
     for rid in role_ids():
         front = _template_frontmatter(rid)
         assert "tools" not in front, rid
+        if front.get("toolsets") == UNRESTRICTED:
+            unrestricted.add(rid)
+            continue
         assert isinstance(front.get("toolsets"), list), rid
         assert set(front["toolsets"]) <= names, rid
+    assert unrestricted == UNRESTRICTED_TEMPLATES
 
 
 # What each shipped built-in set must keep granting, includes counted. A floor,
@@ -492,6 +502,8 @@ def test_every_role_template_keeps_its_sets_floor():
     assert catalogue is not None
     for rid in role_ids():
         toolsets = _template_frontmatter(rid)["toolsets"]
+        if toolsets == UNRESTRICTED:
+            continue
         floor = set().union(SET_FLOORS["harmless"], *(SET_FLOORS.get(name, set()) for name in toolsets))
         assert floor <= set(catalogue.resolve(rid, toolsets, None)), rid
 
@@ -566,3 +578,39 @@ def test_no_role_body_names_the_glob_tool(full):
     for role in full:
         for harness in role.harnesses:
             assert "Glob" not in role.body_for(harness), (role.id, harness)
+
+
+FINDINGS_ARGS = 'categories="`x-`", examples="`x-one`", consequence="what breaks."'
+
+
+def _findings(extra: str = "") -> str:
+    source = (
+        '{% from "partials/findings.md.j2" import findings %}'
+        f"{{{{ findings({FINDINGS_ARGS}{extra}) }}}}"
+    )
+    return make_environment(TEMPLATES).from_string(source).render()
+
+
+def test_findings_default_names_the_judge():
+    text = " ".join(_findings().split())
+    assert "deweighted by the judge" in text
+    assert "The judge does severity." in text
+    assert "it lets the orchestrator skip a responder and judge with nothing to do" in text
+    assert _findings() == _findings(", judged=true")
+
+
+def test_findings_unjudged_names_no_judge_responder_or_orchestrator():
+    text = " ".join(_findings(", judged=false").split())
+    for word in ("judge", "responder", "orchestrator"):
+        assert word not in text.lower(), word
+    assert "deweighted by whoever launched you" in text
+    assert "Whoever launched you does severity." in text
+    assert "it tells whoever launched you there is nothing to act on" in text
+
+
+def test_contrarian_with_a_sketcher_keeps_the_triage_desk(full):
+    (role,) = [r for r in full if r.id == "contrarian"]
+    body = role.body_for(role.harnesses[0])
+    assert "triage sketch" in body
+    assert "**The cluster**" in body
+    assert "**Not checked**" not in body

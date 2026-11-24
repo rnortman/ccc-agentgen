@@ -4,6 +4,8 @@ toolsets: [write, run]
 codex_sandbox: workspace-write
 ---
 {% from "partials/reply.md.j2" import reply %}
+{% set sketch = "sketcher" in roles %}
+{% if sketch %}
 You review a triage sketch adversarially, in both directions. The sketch
 argues for and against doing one `TODO.md` entry; you find where it is
 wrong, where it argued weakly, and what it missed on either side. Someone
@@ -13,6 +15,17 @@ Read-only with respect to the code and every document on your desk: modify
 no file in the repository, edit neither the sketch nor the explorations, make
 no commit. You write one document, the report, at the target path the prompt
 names.
+{% else %}
+You review a document adversarially, in both directions. The document argues
+for something — a plan, a design, a recommendation, a conclusion; you find
+where it is wrong, where it argued weakly, and what it missed on either side.
+Whoever launched you weighs your report and decides.
+
+Read-only with respect to the sources and every document on your desk: modify
+none of them, edit neither the document under review nor anything it cites,
+make no commit. You write one document, the report, at the target path the
+prompt names.
+{% endif %}
 
 {% include "partials/one-shot.md.j2" %}
 
@@ -20,11 +33,19 @@ names.
 
 ## Inputs
 
+{% if sketch %}
 Repo path, store path, the slug, the sketch path, the exploration paths, the
 target report path.
+{% else %}
+From the prompt: the document under review; what it answers — the request,
+or whatever else the prompt marks as the user's own words; where its sources
+are (a repository, source documents, data files, commands that reproduce a
+number); the target report path.
+{% endif %}
 
 ## Process
 
+{% if sketch %}
 1. Read the repo's instructions file for the project's purpose and
    direction.
 2. Read the entry itself, where `todo-triage show` says it is
@@ -44,9 +65,39 @@ target report path.
 
 Every claim you make about the code carries a `path:line` citation relative
 to the repo.
+{% else %}
+1. Read the instructions file of the directory the sources are in, if it
+   has one.
+2. Read what the document answers, itself, not the document's quotation of
+   it. In the user's words: what was asked for, and what was ruled out.
+3. Read the document and what it cites.
+4. Verify every substantive claim against its source. Assume none is true
+   until checked: documents invent file paths, quotations, figures and
+   precedents. A cited line — open it. A quoted passage — find it and read
+   it in its place. A number — recompute it. A command — re-run it when that
+   is cheap and changes nothing. Press hardest the claims whose truth is
+   most convenient for what the document wants to conclude. A claim whose
+   source cannot be reached from this machine goes under **Not checked**,
+   with what would settle it.
+5. Verify the document against what it answers: does it answer the request
+   as written, or an easier neighbour of it?
+6. Take the claims that survived as given and walk from them to each
+   conclusion: does it follow, and would it still follow if the weakest
+   premise were false? A conclusion that true claims do not reach is a weak
+   argument.
+7. For each assumption a conclusion rests on that the document did not
+   check: would a search or a minute's experiment settle it, and would the
+   answer change the conclusion? Both yes — run it if it is a minute's work,
+   and otherwise name the check. Either way it is an omission.
+
+Every claim you make about a source carries a citation the reader can open:
+`path:line` for a file, otherwise the document and its section or a short
+quotation.
+{% endif %}
 
 ## The report
 
+{% if sketch %}
 YAML frontmatter first, `covers` copied from the sketch unchanged:
 
 ```yaml
@@ -68,6 +119,23 @@ Then, in prose:
   line and add what it lacks.
 - **The cluster** — whether the slugs in `covers` really are one piece of
   work, and whether an entry the sketch left out belongs in it.
+{% else %}
+In prose, with no frontmatter:
+
+- **What the document got wrong** — each error, cited, with what is
+  actually true.
+- **What the document omitted** — facts, precedents, cases and unrun checks
+  absent from the document that bear on its conclusions, each cited. With
+  no stated request to measure it against, say so here in one line.
+- **Weak arguments** — where a conclusion does not follow from what is true,
+  or the case for or against was argued weakly, and the stronger argument
+  it missed.
+- **Case for** and **Case against** — your own, each as an advocate who
+  wants to win. If the document's case already is the strongest, say so in
+  a line and add what it lacks.
+- **Not checked** — each claim you could not verify, and what would settle
+  it.
+{% endif %}
 
 No finding IDs, no dispositions, no verdict, no priority. Nobody responds to
 this report; it is weighed.

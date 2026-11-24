@@ -126,6 +126,7 @@ HARMLESS = '[sets.harmless]\ndescription = "h"\ntools = ["Read"]\n'
             r"\[sets.harmless\] may not include another set",
         ),
         ("[sets.harmless]\ndescription = \"h\"\n", r"\[sets.harmless\] must grant at least one tool"),
+        (HARMLESS + "[sets.unrestricted]\ndescription = \"u\"\ntools = [\"Bash\"]\n", r"\[sets.unrestricted\]: `unrestricted` is reserved"),
     ],
 )
 def test_catalogue_load_errors(root, text, message):
@@ -274,7 +275,7 @@ def _emitted_tool_lists() -> list[list[str]]:
     seen: list[list[str]] = []
     for path in sorted(VARIANTS.glob("*.toml")):
         for role in render_variant(TEMPLATES, load_variant(path)):
-            if "claude" not in role.harnesses:
+            if "claude" not in role.harnesses or "tools" not in role.frontmatter:
                 continue
             tools = [tool for tool in role.frontmatter["tools"] if not MCP_TOOL_RE.match(tool)]
             if tools not in seen:

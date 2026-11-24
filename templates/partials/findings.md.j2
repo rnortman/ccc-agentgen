@@ -1,5 +1,6 @@
 {% from "partials/reply.md.j2" import reply %}
-{% macro findings(categories, examples, consequence, why="") %}
+{% macro findings(categories, examples, consequence, why="", judged=true) %}
+{% set weigher = "the judge" if judged else "whoever launched you" %}
 ## Findings file
 
 One file at the target path. Finding IDs are slugs, `<category>-<short-kebab-slug>`
@@ -16,17 +17,18 @@ Per finding:
 - Why — {{ why }}
 {% endif %}
 - **Consequence** — {{ consequence }} Required: a finding with no consequence
-  is deweighted by the judge and may be dropped.
+  is deweighted by {{ weigher }} and may be dropped.
 - The specific fix, or a direction for one.
 
-No severity tags; rank nothing. The judge does severity.
+No severity tags; rank nothing. {{ weigher | capitalize }} does severity.
 
 Report what you can show. An unconfirmed suspicion is investigated until it is
 a finding or left out — maybes dilute the real findings.
 
 Nothing to report → write a one-line file saying "No findings." and reply
-`no-findings`. The token is not a count: it lets the orchestrator skip a
-responder and judge with nothing to do, while the file remains in the audit
+`no-findings`. The token is not a count: {% if judged %}it lets the orchestrator skip a
+responder and judge with nothing to do{% else %}it tells whoever launched you there
+is nothing to act on{% endif %}, while the file remains in the audit
 trail.
 {%- endmacro %}
 {% macro findings_reply(commit="the commit you reviewed", escalate="") %}

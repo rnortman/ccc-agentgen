@@ -24,6 +24,11 @@ decisions. It keeps the workflow moving. Sugagents communicate by writing
 documents and reading documents. The orchestrator never reads any of it. That
 keeps its context window clean and focused on orchestration.
 
+`freeform` is the deliberate exception: a lead that knows what is being done,
+chooses its own workflow and reads what its subagents write, for work that
+does not fit a design → implement → review → ship chain or is not software
+at all ([Freeform](#freeform)).
+
 The todo burndown workflow takes this to another level: It has an orchestrator
 orchestrating orchestrators. The top-level orchestrator just launches
 sub-orchestrators for different units; that way a single top-level orchestrator
@@ -211,8 +216,8 @@ have their own quick start in [TODO triage and burndown](#todo-triage-and-burndo
 
 ## Choosing a variant
 
-Sixteen variants ship: eleven review chains, three TODO workflows and two
-project workflows.
+Seventeen variants ship: eleven review chains, three TODO workflows, two
+project workflows and one freeform workflow.
 
 | Variant | What it is | CLIs |
 | --- | --- | --- |
@@ -232,6 +237,7 @@ project workflows.
 | `todo-burndown-auto` | Works ruled entries down through `review-chain-auto` | Claude or Codex |
 | `project-burndown` | Works a multi-cycle project into one stack of branches, one per cycle, through `review-chain` | Claude or Codex |
 | `project-burndown-auto` | `project-burndown` with the forester deciding and every plan reviewed against the owner's words before it runs, through `review-chain-auto` | Claude or Codex |
+| `freeform` | A lead that chooses its own workflow, with workers, an explorer and reviewers; not only for software | Claude or Codex |
 
 "Claude or Codex" means either CLI alone runs it; "Claude and Codex" means
 it needs both.
@@ -867,6 +873,62 @@ This workflow creates no work branches. The driver commits the project dir in th
 sidecar at every stop, and every cycle dir a build's orchestrator does not
 commit itself.
 
+## Freeform
+
+`freeform` has no script. One interactive role, `lead`, takes a goal from
+you — software or not — decides what it takes, delegates to a menu of
+subagents, reads what they write and answers for the result. Nothing in it
+is a gate, a frozen design or a ship step unless the lead decides the work
+needs one.
+
+```
+ccc-use freeform
+ccc launch lead --cwd <dir>
+```
+
+The menu:
+
+| Role | Claude model | Codex model | For |
+| --- | --- | --- | --- |
+| `worker` | Opus | `gpt-6-sol` | A task the lead can specify. No role of its own: its prompt is the whole brief. |
+| `worker-high` | Fable | `gpt-6-astra` | The same worker for hard tasks and tasks that need judgement, and any review lens the menu lacks. |
+| `explorer` | Opus | `gpt-6-luna` | A few related questions that reading files answers; a cited report. |
+| `contrarian` | Fable | `gpt-6-sol` | Fact-checks a document against its sources and what it answers, and argues both cases; a report the lead weighs. |
+| `code-reviewer` | Opus | `gpt-6-sol` | One code change: correctness, error handling, security, tests, quality and reuse; a findings file the lead weighs. |
+
+The lead runs on Fable with files, the shell and `ccc` (`[edit, run]`), and
+no web, MCP or in-session subagent tools: anything that needs them is one
+worker launch away. It asks you once where its working dir goes, unless the
+project's documentation standard says; there it writes your request
+verbatim as `request.md` and keeps `journal.md` — each decision, each
+launch as it is issued with its output path and then its session id, each
+ruling you gave. A fresh `ccc launch lead` pointed at that working dir reads
+both and continues; it asks you to check a launch with no recorded result
+before running it again. It
+pushes, publishes, sends, deletes or spends nothing you did not name.
+
+When to prefer a scripted workflow: the lead reads results and decides, so
+its context fills on a long job. Delegation and the journal slow that, they
+do not stop it. A long, well-specified software change belongs in a review
+chain, whose orchestrator never reads the work and can run for days.
+
+**The workers' reach.** Both workers are unrestricted (`toolsets:
+unrestricted`, [Tool sets](#tool-sets)). On Claude that is every built-in
+tool — web access, cron and remote triggers that outlast the run,
+in-session subagents — and every tool of every MCP server Claude Code loads
+for that spawn: the servers and claude.ai connectors of the account ccc picks
+for it (any profile in `[claude] profiles`, or the ambient login) and the
+`.mcp.json` of the worker's `--cwd`. The lead's own session plays no part.
+Their definition says nothing to restrain them; the lead's prompt is the
+only restraint. Remove the servers you do not want a worker to touch from
+every account it may run under, or give `ccc` only profiles without them,
+and send workers only into directories whose `.mcp.json` you have read. On
+Codex the
+ceiling is the `workspace-write` sandbox: a worker writes its cwd and
+whatever your Codex config makes writable ([Operator
+configuration](#operator-configuration)), and replies `ESCALATE` with the
+denial when asked to write elsewhere.
+
 ## Development
 
 For working on the templates, variants and the tool itself.
@@ -935,10 +997,11 @@ The catalogue holds two tables:
   everything its included sets grant, transitively. Set names follow the
   role-id grammar.
 - `[withheld]` — `<tool> = "<reason>"` for every known built-in tool no set
-  grants: the record that it was considered and why no role gets it.
+  grants: the record that it was considered and why no role with a tool list
+  gets it.
 
-`harmless` is always offered: every role that allows Claude receives it,
-whether or not it names it. It must exist, include no set and grant at least
+`harmless` is always offered: every role that allows Claude and has a tool
+list receives it, whether or not it names it. It must exist, include no set and grant at least
 one tool, since ccc reads an empty `tools` list as every tool. The `run` set
 carries `Bash` with `TaskStop` and `Monitor`, so no role can start a
 background process it cannot wait on and stop.
@@ -952,7 +1015,18 @@ ships nothing, so it directs its own work with its harness's subagents
 instead of spawning through ccc. ccc neither routes nor audits what that tool
 starts — those subagents do not appear in `ccc status` and stop only with the
 session — and the role's allowlist should be assumed not to bind them. Every
-other role spawns only through ccc.
+other role with a tool list spawns only through ccc; an unrestricted role
+holds the subagent tools, and everything else, without naming any set.
+
+`toolsets: unrestricted` — the string, in place of a list — opts a role out
+of a tool list: no `tools` key is emitted, and on Claude the role gets every
+built-in tool, including any Claude Code adds later, and every MCP server
+connected to the session. It is a word someone wrote, never an omission; the
+shipped roles that use it are `freeform`'s two workers. It is accepted at
+every tier like a list, so a variant can restrict an unrestricted template
+role with a list at `[roles.<id>]`, or the reverse. Beside it, `tools`
+extras are an error naming the role; another string is an error; a
+catalogue set may not be named `unrestricted`.
 
 `toolsets` is accepted at all three tiers under the usual precedence (later
 wins, whole value replaces). `tools` stays accepted at the same tiers and

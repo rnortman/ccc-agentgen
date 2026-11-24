@@ -85,6 +85,57 @@ The entry for `ccc`, not yet filed in ccc; the owner files it:
 `ccc` starts a Claude agent with every MCP server of the operator's session connected, and restricts the agent only through the `tools` list of its `--agents` entry. That list does not appear to bind in-session subagents: on Claude Code 2.1.329 a subagent started by an agent whose list was `Read`, `Agent`, `Task` reported holding every built-in tool and every tool of every connected MCP server (the model's self-report, one run, recorded by ccc-agentgen's experimenter-subagents cycle of 2026-11-20). ccc-agentgen's spike `experimenter` now runs in-session subagents, so its subagents can act on the operator's connected accounts (Forgejo, Discord, Google, remote triggers) with only prompt wording against it. Wanted: a per-agent-type way to launch Claude with no MCP servers (for example `--strict-mcp-config` with an empty config; to be verified that this also strips them from subagents), and ccc-agentgen's experimenter using it. To settle first: whether it is an agent-definition key or site config, and whether an allowlist of servers is wanted rather than all-or-nothing. Done when an experimenter session's subagent reports no MCP tools, or the owner has ruled the reach acceptable. Code site: where `src/harness/claude.rs` builds the `--agents` entry.
 ```
 
+## `freeform-worker-mcp-reach`
+
+The `freeform` variant's two unrestricted workers (`worker`, `worker-high`)
+read the web and, on Claude, hold every tool of every MCP server and
+claude.ai connector — mail, chat, the forge, drives — of whichever account
+ccc launches them under (any `[claude] profiles` entry, or the ambient
+login), plus the `.mcp.json` of the directory they run in. Nothing narrows that per launch, so a web page that injects
+instructions into a worker can reach all of it.
+
+The only control today is the one the README's Freeform section names:
+remove unwanted servers from every account a worker may run under (or give
+ccc only profiles without them), and read a directory's `.mcp.json` before
+sending a worker there.
+
+The owner asked for a worker with "no tool restrictions". The reach as it
+turned out to be was accepted by agents acting for the owner — the forester
+at the ship gate of the 2026-11-24 freeform-workflow cycle and the user
+proxy at the stop that followed — not by the owner in person: the cycle's
+design had described a per-session control (disconnect the servers in the
+session `freeform` is launched from), review found that it controls
+nothing, and the owner never ruled once that was known.
+
+The fix belongs in ccc (`../ccc`): a way to launch a role with a chosen set
+of MCP servers, or none, and the freeform workers using it. That cycle
+could not write to ccc.
+
+The cheap alternative, if the owner would rather not wait for ccc: give the
+two workers a tool list without MCP, or without web access, at their
+`[roles.<id>]` tables in `variants/freeform.toml`, and correct the README
+section on their reach.
+
+See also `experimenter-subagent-mcp-reach`: the same kind of reach through
+a different door, and its ccc entry `claude-no-mcp-launch` asks for the
+no-servers case of the feature asked for below. One ccc feature — an
+explicit server list, empty meaning none — would serve both. ccc's own
+tracker already holds a neighbour, `trust-scope-gate`: the unconditional
+cwd trust that makes a directory's `.mcp.json` load at all.
+
+**Done when** ccc can launch a role with a chosen set of MCP servers or
+none, the freeform workers use it, and the README section on the workers'
+reach names it as the control; or the owner rules the reach acceptable.
+
+The entry for `ccc`, not yet filed there; to be filed in `../ccc/TODO.md`
+by the owner:
+
+```
+## `spawn-mcp-allowlist`
+
+A Claude spawn loads every MCP server and claude.ai connector of the account ccc picks for it, plus the `.mcp.json` of its `--cwd`; ccc passes no `--mcp-config` or `--strict-mcp-config`, so neither an agent definition nor the operator can narrow a spawn's MCP servers short of removing them from every profile. ccc-agentgen's `freeform` variant ships two unrestricted workers that read the web, which makes this the only real control over what an injected page can reach. Wanted: a way (agent frontmatter, site config, or both) to give a spawn an explicit MCP server list, passed as `--strict-mcp-config --mcp-config <file>`. To settle first: where the list lives, whether an empty list means "none" or "unset", and how it combines with the cwd's `.mcp.json` that the trusted-workspace step loads today. Done when a role can be launched with a chosen set of MCP servers or none, and ccc-agentgen's README section on the freeform workers' reach names it as the control. Code site: the Claude argv in `src/harness/claude.rs`.
+```
+
 ## `in-session-restatements-still-written-on-fable`
 
 Three pieces of restatement — text that repeats what a document already

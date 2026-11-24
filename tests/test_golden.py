@@ -24,6 +24,7 @@ from conftest import (
     DEFAULT_CHECK,
     DEFAULTS_RULE,
     DRIVERS,
+    LEADS,
     OWNER_NOTES_LABEL,
     PROVENANCE_LINE_RE,
     SPAWNING_PARTIAL_SENTINEL,
@@ -54,6 +55,7 @@ STACK_STEMS = (STACK_STEM, STACK_AUTO_STEM) + FOLLOWUP_STEMS
 TRIAGE_STEM = "todo-triage"
 BURNDOWN_STEM = "todo-burndown"
 BURNDOWN_AUTO_STEM = "todo-burndown-auto"
+FREEFORM_STEM = "freeform"
 
 VARIANT_STEMS = sorted(p.stem for p in VARIANTS.glob("*.toml"))
 REVIEW_CHAIN_STEMS = [stem for stem in VARIANT_STEMS if stem.startswith("review-chain")]
@@ -280,6 +282,9 @@ RESULTS = {
     # Interactive: the user reads the turn, the line only keeps the grammar closed.
     "triage-clerk": {"pending", "done"},
     "site-remover": {"removed", "no-sites"},
+    "worker": {"done"},
+    "worker-high": {"done"},
+    "code-reviewer": {"findings", "no-findings"},
     # A driver that can itself run under a parent driver.
     "orchestrator": {"shipped", "gate"},
 }
@@ -367,6 +372,7 @@ def test_shipped_variants_are_committed():
             BURNDOWN_AUTO_STEM,
             PROJECT_STEM,
             PROJECT_AUTO_STEM,
+            FREEFORM_STEM,
         ]
     )
 
@@ -1391,7 +1397,7 @@ def test_result_vocabulary_is_closed(built: Build):
     """
     emitted: dict[str, set[str]] = {}
     for role in built.roles:
-        if role.id in DRIVERS and role.id not in RESULTS:
+        if (role.id in DRIVERS and role.id not in RESULTS) or role.id in LEADS:
             continue
         assert role.id in RESULTS, f"{role.id} has no result vocabulary listed"
         emitted[role.id] = set()
@@ -1407,7 +1413,7 @@ def test_result_vocabulary_is_closed(built: Build):
             assert found == RESULTS[key], filename
             emitted[role.id] |= found
     drivers = [role.id for role in built.roles if role.id in DRIVERS]
-    assert drivers, f"{built.stem} has no driver"
+    assert drivers or LEADS & set(built.by_id), f"{built.stem} has neither a driver nor a lead"
     for driver in drivers:
         routed = set().union(*(tokens for rid, tokens in emitted.items() if rid != driver))
         for filename, body in built.bodies(driver):
@@ -1545,8 +1551,14 @@ def _claude_roles(builds):
                 yield f"{build.stem}/{role.id}", role.frontmatter
 
 
+# The Claude roles that hold every tool: `toolsets: unrestricted`, no `tools` key.
+UNRESTRICTED_ROLES = {f"{FREEFORM_STEM}/worker", f"{FREEFORM_STEM}/worker-high"}
+
+
 def test_every_bash_role_can_wait_on_and_stop_its_processes(builds):
     for where, front in _claude_roles(builds):
+        if "tools" not in front:
+            continue
         tools = front["tools"]
         if "Bash" in tools:
             assert {"TaskStop", "Monitor"} <= set(tools), where
@@ -1555,10 +1567,17 @@ def test_every_bash_role_can_wait_on_and_stop_its_processes(builds):
 
 
 def test_every_claude_role_reads_and_has_a_tool_list(builds):
-    """No Claude role is unrestricted, and every one holds the harmless set."""
+    """No Claude role is unrestricted by accident: every one holds the harmless
+    set, except exactly the roles that opted out of a list.
+    """
+    unrestricted = set()
     for where, front in _claude_roles(builds):
         assert "toolsets" not in front, where
+        if "tools" not in front:
+            unrestricted.add(where)
+            continue
         assert "Read" in front["tools"], where
+    assert unrestricted == UNRESTRICTED_ROLES
 
 
 def test_experimenter_holds_the_run_set(builds):
@@ -1570,10 +1589,15 @@ def test_experimenter_holds_the_run_set(builds):
     assert seen
 
 
-def test_only_the_experimenter_holds_the_agent_tools(builds):
+def test_only_the_experimenter_names_the_agent_tools(builds):
+    """Of the roles with a tool list, only the experimenter names the in-session
+    subagent tools; an unrestricted role holds them without naming any.
+    """
     agent_tools = {"Agent", "SendMessage", "ListAgents"}
     seen = 0
     for where, front in _claude_roles(builds):
+        if "tools" not in front:
+            continue
         holds = agent_tools & set(front["tools"])
         if where.endswith("/experimenter"):
             seen += 1
@@ -4081,8 +4105,8 @@ def test_designer_assesses_the_request(builds):
 
 def test_provenance_line_is_uniform(builds):
     """Every provenance line a writer is told to write has the one grammar; only
-    the orchestrator's transcription, the deciding forester's proxy notes and
-    the project forester's cycle request carry one.
+    the orchestrator's and the lead's transcriptions, the deciding forester's
+    proxy notes and the project forester's cycle request carry one.
     """
     for build in builds.values():
         autonomy = build.variant.vars.get("forester_autonomy")
@@ -4093,6 +4117,7 @@ def test_provenance_line_is_uniform(builds):
                 "project-forester": 1,
                 "project-orchestrator": 1,
                 "user-proxy": 1,
+                "lead": 1,
             }.get(role.id, 0)
             for name, body in build.bodies(role.id):
                 where = f"{build.stem}/{name}"
@@ -5161,3 +5186,128 @@ def test_readme_names_the_user_proxy_and_its_switch():
     flat = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
     for phrase in ("`user-proxy`", "`attended`", "`afk`", "`user_proxy_stops_per_cycle` (3)", "`proxy-authority`"):
         assert phrase in flat, phrase
+
+
+FREEFORM_ROLES = {"lead", "worker", "worker-high", "explorer", "contrarian", "code-reviewer"}
+FREEFORM_MENU = FREEFORM_ROLES - LEADS
+TABLE_ROLE_RE = re.compile(r"^\| ([a-z][a-z-]*) \|", re.MULTILINE)
+# Words of the triage desk the general contrarian must not carry.
+TRIAGE_WORDS = ("todo-triage", "sketch", "todo.md", "covers", "slug", "store", "cluster")
+CONTRARIAN_REPORT_HEADINGS = (
+    "**What the document got wrong**",
+    "**What the document omitted**",
+    "**Weak arguments**",
+    "**Case for**",
+    "**Case against**",
+    "**Not checked**",
+)
+CODE_REVIEWER_CATEGORIES = ("correctness-", "errhandling-", "security-", "test-", "quality-", "reuse-")
+
+
+def _freeform(builds) -> Build:
+    return builds[FREEFORM_STEM]
+
+
+def test_freeform_roles_are_the_lead_and_its_menu(builds):
+    assert set(_freeform(builds).variant.role_ids) == FREEFORM_ROLES
+
+
+def test_freeform_lead_menu_and_replies_name_the_other_roles(builds):
+    for name, body in _freeform(builds).bodies("lead"):
+        assert SPAWNING_PARTIAL_SENTINEL in body, name
+        assert spawn_references(body) == set(), name
+        menu = _raw_section(body, "## The menu")
+        replies = _raw_section(body, "## Replies")
+        assert set(TABLE_ROLE_RE.findall(menu)) == FREEFORM_MENU, name
+        assert set(TABLE_ROLE_RE.findall(replies)) == FREEFORM_MENU, name
+        for role_id in FREEFORM_MENU:
+            row = next(line for line in replies.splitlines() if line.startswith(f"| {role_id} |"))
+            tokens = set(BACKTICKED_TOKEN_RE.findall(row))
+            assert tokens == RESULTS[role_id], f"{name}: {role_id}"
+
+
+def test_freeform_lead_harness_bodies_differ_only_in_overlap_and_spawning(builds):
+    role = _freeform(builds).by_id["lead"]
+    assert set(role.harnesses) == {"claude", "codex"}
+
+    def outside(body: str) -> list[str]:
+        body = body.replace(_raw_section(body, "## Spawning subagents through ccc"), "")
+        body = body.replace(_raw_section(body, "## Cut-off launch"), "")
+        body = body.replace(_raw_section(body, "## When a subagent hangs"), "")
+        delegating = _raw_section(body, "## Delegating")
+        kept = [para for para in delegating.split("\n- ") if "at a time" not in para]
+        return body.replace(delegating, "\n- ".join(kept)).splitlines()
+
+    claude, codex = role.body_for("claude"), role.body_for("codex")
+    assert claude != codex
+    assert outside(claude) == outside(codex)
+    assert "may\n  overlap" in claude and "may\n  overlap" not in codex
+    assert "One launch at a time" in codex and "One launch at a time" not in claude
+
+
+def test_freeform_lead_is_no_driver(builds):
+    for name, body in _freeform(builds).bodies("lead"):
+        assert "## User directives" not in body, name
+        assert "## Flow" not in body, name
+        assert "## Reply\n" not in body, name
+        lines = GRAMMAR_LINE_RE.findall(body)
+        assert len(lines) == 1, name
+        assert body.index(lines[0]) > body.index("## Replies"), name
+        assert "[agent]" not in _raw_section(body, "## Stopping for the user"), name
+
+
+def test_freeform_workers_share_one_short_body(builds):
+    build = _freeform(builds)
+    worker, high = build.by_id["worker"], build.by_id["worker-high"]
+    assert worker.body == high.body
+    assert not worker.overlays and not high.overlays
+    assert SPAWNING_PARTIAL_SENTINEL not in worker.body
+    assert len(worker.body.splitlines()) < 40
+    assert worker.frontmatter["description"] != high.frontmatter["description"]
+
+
+def test_freeform_models_follow_the_menu(builds):
+    by_id = _freeform(builds).by_id
+    expected = {
+        "lead": ("claude-fable-5-2[1M]", "gpt-6-astra"),
+        "worker": ("claude-opus-5-5[1M]", "gpt-6-sol"),
+        "worker-high": ("claude-fable-5-2[1M]", "gpt-6-astra"),
+        "explorer": ("claude-opus-5-5[1M]", "gpt-6-luna"),
+        "contrarian": ("claude-fable-5-2[1M]", "gpt-6-sol"),
+        "code-reviewer": ("claude-opus-5-5[1M]", "gpt-6-sol"),
+    }
+    for role_id, (model, codex_model) in expected.items():
+        front = by_id[role_id].frontmatter
+        assert (front["model"], front["codex_model"]) == (model, codex_model), role_id
+    assert by_id["lead"].frontmatter["tools"]
+    assert "Agent" not in by_id["lead"].frontmatter["tools"]
+
+
+def test_freeform_contrarian_reviews_any_document(builds):
+    build = _freeform(builds)
+    description = build.by_id["contrarian"].frontmatter["description"].lower()
+    for word in TRIAGE_WORDS:
+        assert word not in description, word
+    for name, body in build.bodies("contrarian"):
+        flat = " ".join(body.split())
+        for word in TRIAGE_WORDS:
+            assert word not in body.lower(), f"{name}: {word}"
+        for heading in CONTRARIAN_REPORT_HEADINGS:
+            assert heading in flat, f"{name}: {heading}"
+        process = flat[flat.index("## Process") : flat.index("## The report")]
+        assert re.findall(r"(?:^| )(\d)\. ", process) == [str(n) for n in range(1, 8)], name
+        for phrase in ("Assume none is true until checked", "an easier neighbour", "it is weighed"):
+            assert phrase in flat, f"{name}: {phrase}"
+    assert (
+        build.by_id["contrarian"].body.encode() != builds[TRIAGE_STEM].by_id["contrarian"].body.encode()
+    )
+
+
+def test_freeform_code_reviewer_answers_whoever_launched_it(builds):
+    for name, body in _freeform(builds).bodies("code-reviewer"):
+        for category in CODE_REVIEWER_CATEGORIES:
+            assert f"`{category}`" in body, f"{name}: {category}"
+        lowered = body.lower()
+        for word in ("judge", "responder", "orchestrator"):
+            assert word not in lowered, f"{name}: {word}"
+        assert "whoever launched you" in " ".join(body.split()), name

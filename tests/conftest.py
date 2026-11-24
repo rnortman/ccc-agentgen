@@ -19,7 +19,7 @@ PROVENANCE_PARTIAL_SENTINEL = "Who wrote it decides how it binds you"
 
 # A provenance line as a workflow writer puts it on the first line of a document.
 PROVENANCE_LINE_RE = re.compile(
-    r"^> \*Provenance: .*(not the user|transcribed from chat by the (project )?orchestrator)\.\*$"
+    r"^> \*Provenance: .*(not the user|transcribed from chat by the ((project )?orchestrator|lead))\.\*$"
 )
 
 # The forester's decide-mode rule that `approve` accepts every open question
@@ -34,6 +34,11 @@ OWNER_NOTES_LABEL = "as the owner's notes"
 # Roles that drive a workflow: each routes a `## Replies` table over the
 # results of the roles in its own variant, and takes the user's directives.
 DRIVERS = {"orchestrator", "triage-orchestrator", "burndown-orchestrator", "project-orchestrator"}
+
+# Roles that run a workflow of their own choosing: each launches subagents and
+# reads their replies, but routes on no fixed table and takes no directives
+# partial, because the user's turns are its only instructions.
+LEADS = {"lead"}
 
 
 @pytest.fixture(autouse=True)

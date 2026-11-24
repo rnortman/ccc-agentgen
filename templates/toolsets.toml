@@ -2,6 +2,8 @@
 # build emits `harmless`, plus every named set and the sets it includes, as
 # the role's `tools` allowlist. Every built-in Claude Code tool is either
 # granted by exactly one set or listed in [withheld] with the reason.
+# `toolsets = "unrestricted"`, a string in place of a list, emits no `tools`
+# key: that role gets every tool, withheld ones and MCP servers included.
 #
 # Classified against Claude Code 2.1.329's tool inventory. After upgrading
 # Claude Code, run the probe test (README, Tool sets).

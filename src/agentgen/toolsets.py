@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from . import AgentGenError
-from .model import CATALOGUE_NAME, ROLE_ID_RE
+from .model import CATALOGUE_NAME, ROLE_ID_RE, UNRESTRICTED
 
 # The set every Claude-allowed role receives, whether or not it names it.
 HARMLESS = "harmless"
@@ -148,6 +148,11 @@ def load_catalogue(templates_dir: Path) -> Catalogue | None:
             raise fail(
                 f"{where}: set name {name!r} must be lowercase letters, digits "
                 "and `-`, starting with a letter"
+            )
+        if name == UNRESTRICTED:
+            raise fail(
+                f"{where}: `{UNRESTRICTED}` is reserved: as a role's `toolsets` it "
+                "means no tool list at all"
             )
         if not isinstance(entry, dict):
             raise fail(f"{where} must be a table")

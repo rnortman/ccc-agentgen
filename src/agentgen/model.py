@@ -22,6 +22,10 @@ ROLE_ID_RE = re.compile(rf"^{ROLE_ID_PATTERN}$")
 # The tool-set catalogue's file name within the templates directory.
 CATALOGUE_NAME = "toolsets.toml"
 
+# The `toolsets` value that opts a role out of a tool list: it emits no
+# `tools` key and so gets every Claude Code tool and every MCP server.
+UNRESTRICTED = "unrestricted"
+
 # A variant name becomes a directory name under `build/`.
 VARIANT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -244,5 +248,19 @@ def _resolve_tools(role_id: str, merged: dict[str, Any], catalogue: Catalogue | 
         raise AgentGenError(
             f"role {role_id}: a role with no tool list gets every Claude Code tool "
             "and every MCP server; declare `toolsets`"
+        )
+    toolsets = merged.get("toolsets")
+    if toolsets == UNRESTRICTED:
+        if "tools" in merged:
+            raise AgentGenError(
+                f"role {role_id}: `toolsets` is `{UNRESTRICTED}`, which already holds "
+                "every tool; drop `tools`"
+            )
+        del merged["toolsets"]
+        return
+    if isinstance(toolsets, str):
+        raise AgentGenError(
+            f"role {role_id}: `toolsets` must be a list of tool-set names or the "
+            f"string `{UNRESTRICTED}`, not {toolsets!r}"
         )
     merged["tools"] = catalogue.resolve(role_id, merged.pop("toolsets", None), merged.get("tools"))

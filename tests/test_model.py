@@ -313,6 +313,76 @@ def test_merge_resolves_toolsets_per_key_across_tiers(root, template, defaults, 
     assert "toolsets" not in merged
 
 
+@pytest.mark.parametrize(
+    "template, defaults, overrides",
+    [
+        ({"toolsets": "unrestricted"}, {}, {}),
+        ({}, {"toolsets": "unrestricted"}, {}),
+        ({}, {}, {"toolsets": "unrestricted"}),
+        ({"toolsets": ["write"]}, {}, {"toolsets": "unrestricted"}),
+        ({"toolsets": ["write"]}, {"toolsets": "unrestricted"}, {}),
+    ],
+)
+def test_merge_unrestricted_emits_no_tool_list(root, template, defaults, overrides):
+    merged = merge_frontmatter(
+        "worker", {"description": "d", **template}, defaults, overrides, _catalogue(root)
+    )
+    assert "tools" not in merged
+    assert "toolsets" not in merged
+
+
+@pytest.mark.parametrize(
+    "template, defaults, overrides",
+    [
+        ({"toolsets": "unrestricted"}, {"toolsets": ["run"]}, {}),
+        ({"toolsets": "unrestricted"}, {}, {"toolsets": ["run"]}),
+        ({}, {"toolsets": "unrestricted"}, {"toolsets": ["run"]}),
+    ],
+)
+def test_merge_a_later_list_restricts_an_unrestricted_role(root, template, defaults, overrides):
+    merged = merge_frontmatter(
+        "worker", {"description": "d", **template}, defaults, overrides, _catalogue(root)
+    )
+    assert merged["tools"] == ["Read", "Bash", "TaskStop"]
+
+
+@pytest.mark.parametrize("tools_tier", ["template", "defaults", "overrides"])
+@pytest.mark.parametrize("toolsets_tier", ["template", "defaults", "overrides"])
+def test_merge_unrestricted_with_tools_is_an_error(root, toolsets_tier, tools_tier):
+    tiers = {"template": {"description": "d"}, "defaults": {}, "overrides": {}}
+    tiers[toolsets_tier]["toolsets"] = "unrestricted"
+    tiers[tools_tier]["tools"] = ["Agent"]
+    with pytest.raises(AgentGenError, match="role worker: `toolsets` is `unrestricted`"):
+        merge_frontmatter(
+            "worker", tiers["template"], tiers["defaults"], tiers["overrides"], _catalogue(root)
+        )
+
+
+@pytest.mark.parametrize("value", ["write", "Unrestricted", ""])
+def test_merge_rejects_another_toolsets_string(root, value):
+    with pytest.raises(
+        AgentGenError,
+        match="role worker: `toolsets` must be a list of tool-set names or the string `unrestricted`",
+    ):
+        merge_frontmatter(
+            "worker", {"description": "d", "toolsets": value}, {}, {}, _catalogue(root)
+        )
+
+
+def test_merge_without_catalogue_rejects_unrestricted():
+    with pytest.raises(AgentGenError, match="role worker: `toolsets` needs a tool-set catalogue"):
+        merge_frontmatter("worker", {"description": "d", "toolsets": "unrestricted"}, {}, {})
+
+
+def test_render_variant_emits_an_unrestricted_role_without_tools(root):
+    root.role("worker", "description: works\ntoolsets: unrestricted", "body\n")
+    _catalogue(root)
+    variant = load_variant(root.variant("demo", "[roles.worker]\n"))
+    (role,) = render_variant(root.templates, variant)
+    assert "tools" not in role.frontmatter
+    assert "toolsets" not in role.frontmatter
+
+
 def test_merge_reports_resolution_errors_with_the_role(root):
     with pytest.raises(AgentGenError, match="role explorer: `Bash` is granted by tool set `run`"):
         merge_frontmatter(

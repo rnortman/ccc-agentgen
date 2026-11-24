@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **New variant: `freeform`.** A lead that chooses its own workflow for
+  any goal, software or not, with a menu of subagents: two general workers
+  (`worker` on Opus, `worker-high` on Fable), the `explorer`, the
+  `contrarian` (now able to review any document, not only a triage sketch)
+  and a standalone `code-reviewer`. `ccc-use freeform`, then `ccc launch
+  lead --cwd <dir>`. Re-run `agentgen deploy` to get it.
+  - The two workers run with every tool on Claude: every built-in tool,
+    web access and in-session subagents included, and every MCP server
+    Claude Code loads for the spawn: the account ccc picks for it and the
+    `.mcp.json` of its `--cwd`, not the lead's session. Remove unwanted
+    servers from every profile a worker may run under. On Codex they are held
+    to the `workspace-write` sandbox.
+  - For people who build their own variants: `toolsets: unrestricted` in
+    place of a list opts a role out of a tool list (README, **Tool sets**).
+    Beside `tools` it is an error, and a catalogue set may not be named
+    `unrestricted`.
 - **The spike experimenter keeps its own context small.** In
   `project-burndown` and `project-burndown-auto`, the experimenter's
   definition now tells it to hand the reading, building and running of a
