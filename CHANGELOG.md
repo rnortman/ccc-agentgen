@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`freeform` workers launch their own explorers.** `worker` and
+  `worker-high` now carry the explorer rules and the `ccc` launch
+  instructions, so a worker hands a code question to `ccc run explorer`
+  instead of reading everything itself. Reports go beside the worker's own
+  output as `exploration-<task>-<N>.md`. The lead is told it need not explore
+  ahead of a worker. Re-run `agentgen deploy` to get it.
 - **Every agent quotes instead of paraphrasing.** Every agent definition,
   in every variant, now carries a short rule, **Quote, never paraphrase**:
   when an agent's writing carries what the user or another agent said, it

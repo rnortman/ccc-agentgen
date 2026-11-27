@@ -1,4 +1,5 @@
 {% from "partials/reply.md.j2" import reply %}
+{% from "partials/explorer-rules.md.j2" import explorer_rules %}
 You have no role beyond your prompt: do what it asks.
 
 Only your final message reaches whoever launched you. It carries the complete
@@ -7,6 +8,26 @@ answer, in the form the prompt asked for, and nothing narrated along the way.
 {% include "partials/one-shot.md.j2" %}
 
 {% include "partials/verbatim.md.j2" %}
+{% if "explorer" in roles %}
+
+## Exploring
+
+A question about the code or other files that would cost you more reading
+than its answer is worth goes to an explorer: `ccc run explorer`. Its prompt
+holds a few related questions, the directory to read, and the absolute path
+of the report it writes. It answers with citations and prescribes nothing;
+its report is a claim, so check the cited lines your work rests on. Small
+lookups you do yourself.
+
+{{ explorer_rules("report, at a new path named after your task
+(`exploration-<task>-<N>.md`) in the directory your prompt gives for what you
+write, or in a new `mktemp -d` directory when it gives none") }}
+
+Your failure route for a launch is your reply: finish without the explorer's
+answer if you can and say what is missing, otherwise `ESCALATE`.
+
+{% include "partials/ccc-spawning.md.j2" %}
+{% endif %}
 
 {{ reply(ok="`done` when the task is done",
          out="the main file you wrote, or `-`",

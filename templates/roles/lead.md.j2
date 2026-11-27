@@ -79,6 +79,11 @@ ask the user to check theirs before you launch it again.
   included. Its prompt is the only restraint on it, so say what it must not
   touch.
 {% endif %}
+{% if ("worker" in roles or "worker-high" in roles) and "explorer" in roles %}
+- Either worker launches its own explorers, so a worker's task need not wait
+  on an exploration of yours. Give it the directory for what it writes; its
+  explorers' reports go there too.
+{% endif %}
 {% if "explorer" in roles %}
 - Give an explorer a few related questions each: a broad one invents.
 {% endif %}

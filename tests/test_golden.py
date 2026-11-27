@@ -5297,14 +5297,30 @@ def test_freeform_lead_is_no_driver(builds):
         assert "[agent]" not in _raw_section(body, "## Stopping for the user"), name
 
 
-def test_freeform_workers_share_one_short_body(builds):
+def test_freeform_workers_share_one_body_that_launches_explorers(builds):
     build = _freeform(builds)
     worker, high = build.by_id["worker"], build.by_id["worker-high"]
     assert worker.body == high.body
-    assert not worker.overlays and not high.overlays
-    assert SPAWNING_PARTIAL_SENTINEL not in worker.body
-    assert len(worker.body.splitlines()) < 50
+    assert worker.overlays == high.overlays
+    assert set(worker.overlays) == {"codex"}
     assert worker.frontmatter["description"] != high.frontmatter["description"]
+    for name, body in build.bodies("worker"):
+        flat = " ".join(body.split())
+        assert SPAWNING_PARTIAL_SENTINEL in body, name
+        assert spawn_references(body) == {"explorer"}, name
+        exploring = flat[flat.index("## Exploring") : flat.index("## Spawning subagents through ccc")]
+        for phrase in (
+            "Serial, never parallel",
+            "`exploration-<task>-<N>.md`",
+            "Your failure route for a launch is your reply",
+        ):
+            assert phrase in exploring, f"{name}: {phrase}"
+        assert body.index("## Exploring") < body.index("## Reply"), name
+
+
+def test_freeform_lead_knows_workers_launch_explorers(builds):
+    for name, body in _freeform(builds).bodies("lead"):
+        assert "Either worker launches its own explorers" in " ".join(body.split()), name
 
 
 def test_freeform_models_follow_the_menu(builds):

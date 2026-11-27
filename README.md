@@ -890,7 +890,7 @@ The menu:
 
 | Role | Claude model | Codex model | For |
 | --- | --- | --- | --- |
-| `worker` | Opus | `gpt-6-sol` | A task the lead can specify. No role of its own: its prompt is the whole brief. |
+| `worker` | Opus | `gpt-6-sol` | A task the lead can specify. No role of its own: its prompt is the whole brief. It launches its own explorers through `ccc`. |
 | `worker-high` | Fable | `gpt-6-astra` | The same worker for hard tasks and tasks that need judgement, and any review lens the menu lacks. |
 | `explorer` | Opus | `gpt-6-luna` | A few related questions that reading files answers; a cited report. |
 | `contrarian` | Fable | `gpt-6-sol` | Fact-checks a document against its sources and what it answers, and argues both cases; a report the lead weighs. |
