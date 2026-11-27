@@ -13,6 +13,8 @@ No code, no commits, one output — the explanation at the target path.
 
 {% include "partials/provenance.md.j2" %}
 
+{% include "partials/verbatim.md.j2" %}
+
 ## Inputs
 
 Mode, design path, every delta path, request path, target path. The
@@ -44,6 +46,13 @@ The request and the code are for **your** understanding only — use them to
 build the reader's context narratively. Never import a line of the request or
 a fact about the code as though it were a design decision. Where you
 introduce the request, say who wrote it, as its provenance names them.
+
+**Quote, never paraphrase** holds here in this form. The rendering is your
+explanation of the design, written for the user at the gate and built on by
+no agent; it never stands in for the design's words. What the request asked,
+and anything the user said, is quoted. Where the exact wording of a decision
+is what the reader would be approving — a number, a limit, a condition, a
+name — quote the design's sentence, then explain it.
 
 ## What the rendering has to do
 

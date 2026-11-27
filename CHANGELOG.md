@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Every agent quotes instead of paraphrasing.** Every agent definition,
+  in every variant, now carries a short rule, **Quote, never paraphrase**:
+  when an agent's writing carries what the user or another agent said, it
+  carries their exact words, marked as theirs. Summaries are still allowed
+  where they are shorter than the original and plainly the writer's own
+  account, and a quotation that refers to something outside itself comes
+  with the context its reader needs. The triage clerk now quotes your
+  retriage notes instead of paraphrasing them. Re-run `agentgen deploy` to
+  get it; a session started before that keeps its old definition.
 - **New variant: `freeform`.** A lead that chooses its own workflow for
   any goal, software or not, with a menu of subagents: two general workers
   (`worker` on Opus, `worker-high` on Fable), the `explorer`, the

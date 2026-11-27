@@ -17,6 +17,9 @@ SPAWNING_PARTIAL_SENTINEL = "Spawning subagents through ccc"
 # The reader rule's opening sentence, present iff `partials/provenance.md.j2` is.
 PROVENANCE_PARTIAL_SENTINEL = "Who wrote it decides how it binds you"
 
+# The opening of `partials/verbatim.md.j2`, present iff the partial is.
+VERBATIM_PARTIAL_SENTINEL = "Never paraphrase. Quote verbatim."
+
 # A provenance line as a workflow writer puts it on the first line of a document.
 PROVENANCE_LINE_RE = re.compile(
     r"^> \*Provenance: .*(not the user|transcribed from chat by the ((project )?orchestrator|lead))\.\*$"

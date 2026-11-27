@@ -17,6 +17,8 @@ read beside the findings. You disposition nothing.
 
 {% include "partials/provenance.md.j2" %}
 
+{% include "partials/verbatim.md.j2" %}
+
 {% set proxy = "forester" in roles and vars.forester_autonomy == "decide" %}
 {{ forestry(grounded=false, explorer=false) }}
 

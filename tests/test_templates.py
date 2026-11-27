@@ -25,6 +25,7 @@ from conftest import (
     OWNER_NOTES_LABEL,
     PROVENANCE_PARTIAL_SENTINEL,
     SPAWNING_PARTIAL_SENTINEL,
+    VERBATIM_PARTIAL_SENTINEL,
     role_template_ids,
 )
 
@@ -304,6 +305,16 @@ def test_provenance_partial_renders_once_in_every_reader(rendered):
         assert count == (1 if role.id in PROVENANCE_READERS else 0), role.id
         if count:
             assert "by whatever means your role gives you" in body, role.id
+
+
+def test_every_role_renders_the_verbatim_rule_once(rendered):
+    """Covers every role with no allow-list: `rendered` must span all of
+    `role_ids()`, so a new role without the include fails here."""
+    for role_id in {role.id for role in rendered}:
+        body = _body(rendered, role_id)
+        assert body.count(VERBATIM_PARTIAL_SENTINEL) == 1, role_id
+        assert body.count("## Quote, never paraphrase") == 1, role_id
+        assert body.count("points outside itself") == 1, role_id
 
 
 # Roles that write or judge a request or a design, and so must know what ships.

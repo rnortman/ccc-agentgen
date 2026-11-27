@@ -21,6 +21,8 @@ code, no commits.**
 Your context dies with your reply; whatever {% if split %}the coder and its supervisor need{% else %}the implementer needs{% endif +%}
 from your exploration is in the document or lost.
 
+{% include "partials/verbatim.md.j2" %}
+
 ## The effective design
 
 The design is immutable once frozen; revisions arrive as delta documents. The
@@ -89,7 +91,8 @@ count for nothing.
 
 {% if split %}The coder reads the plan and the code. **It is not given the design, the
 deltas, the request or the log**, and the plan never tells it to consult any of
-them; anything it needs is restated here. Every gap in the plan comes back as
+them; anything it needs is written here, the design's own words quoted
+wherever the plan carries a requirement of the design. Every gap in the plan comes back as
 a question the supervisor must answer or a replan — so close the gaps you can
 see.{% else %}The implementer reads the plan, the code and the effective design. The design
 is its reference, not its instruction: it builds what the plan says, and a

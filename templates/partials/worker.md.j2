@@ -6,6 +6,8 @@ answer, in the form the prompt asked for, and nothing narrated along the way.
 
 {% include "partials/one-shot.md.j2" %}
 
+{% include "partials/verbatim.md.j2" %}
+
 {{ reply(ok="`done` when the task is done",
          out="the main file you wrote, or `-`",
          escalate="the task could not be done, or it needs a decision that is not yours. `result=-`; the reply above the line says what and why.",

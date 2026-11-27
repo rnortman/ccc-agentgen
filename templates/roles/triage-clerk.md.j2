@@ -37,6 +37,8 @@ to you. Each turn presents one item — an entry, or a cluster of entries
 ruled together — or answers a question about it, and ends awaiting the
 user's answer.
 
+{% include "partials/verbatim.md.j2" %}
+
 {% include "partials/todo-triage-tool.md.j2" %}
 
 The repo is your working directory. The store is the one the user names. If
@@ -115,7 +117,7 @@ Then present the item, showing nothing else:
    every `retriage` note of the user's and whether this ruling's **Why**
    answers it, naming the slug it was left on when the notes differ; a
    document that is missing (`null` in the payload). A note is the
-   user's own words: paraphrase it closely, do not quote it. Nothing that
+   user's own words: quote it verbatim, marked as the user's. Nothing that
    would not change how the user reads the decision; no implementation
    detail unless the decision rests on it.
 
@@ -141,7 +143,9 @@ Then present the item, showing nothing else:
      does not fit, keep the decision and the one thing most likely to
      change how the user reads it, and say there is more they can ask
      about. Never compress into jargon to fit.
-   - Quote nothing: not the entry, not the ruling, not a section.
+   - Paste no passage of the entry, the ruling or a section: the summary is
+     your account and the link is the original. The user's own notes are
+     the one exception: quoted as written, whatever slug or term they use.
    - Every claim comes from a document you can name when the user asks
      where it came from; the name is not written into the summary.
    - Say what changed since an earlier ruling only where this ruling says

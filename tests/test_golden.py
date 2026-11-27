@@ -28,6 +28,7 @@ from conftest import (
     OWNER_NOTES_LABEL,
     PROVENANCE_LINE_RE,
     SPAWNING_PARTIAL_SENTINEL,
+    VERBATIM_PARTIAL_SENTINEL,
     role_template_ids,
 )
 
@@ -1454,6 +1455,46 @@ def test_triage_variant_carries_the_clerk(builds):
         assert "`triage` → `passes`" not in body, filename
         assert "rejected" not in body, filename
         assert "In this order" not in body, filename
+        assert "paraphrase it closely" not in body, filename
+        assert "Quote nothing" not in body, filename
+        flat = " ".join(body.split())
+        assert "quote it verbatim, marked as the user's" in flat, filename
+        assert "Paste no passage" in flat, filename
+        assert "whatever slug or term they use" in flat, filename
+
+
+def test_every_emitted_body_carries_the_verbatim_rule_once(built):
+    for role in built.roles:
+        for filename, body in built.bodies(role.id):
+            assert body.count(VERBATIM_PARTIAL_SENTINEL) == 1, (built.stem, filename)
+            assert body.count("## Quote, never paraphrase") == 1, (built.stem, filename)
+
+
+def test_no_definition_orders_a_paraphrase(built):
+    for role in built.roles:
+        for filename, body in built.bodies(role.id):
+            flat = " ".join(body.lower().split())
+            for banned in ("paraphrase it", "do not quote"):
+                assert banned not in flat, (built.stem, filename, banned)
+
+
+def test_split_planner_quotes_the_design(builds):
+    split = [b for b in builds.values() if {"planner", "coder"} <= set(b.by_id)]
+    assert split, "no shipped variant carries the planner in the split shape"
+    for build in split:
+        for filename, body in build.bodies("planner"):
+            flat = " ".join(body.split())
+            assert "anything it needs is restated here" not in flat, (build.stem, filename)
+            assert "the design's own words quoted" in flat, (build.stem, filename)
+
+
+def test_eli5_rendering_is_bounded_by_the_verbatim_rule(builds):
+    with_eli5 = [b for b in builds.values() if "eli5-explainer" in b.by_id]
+    assert with_eli5, "no shipped variant carries the eli5-explainer"
+    for build in with_eli5:
+        for filename, body in build.bodies("eli5-explainer"):
+            flat = " ".join(body.split())
+            assert "it never stands in for the design's words" in flat, (build.stem, filename)
 
 
 def test_triage_clerk_explains_the_forester_priority_scale(builds):
@@ -5262,7 +5303,7 @@ def test_freeform_workers_share_one_short_body(builds):
     assert worker.body == high.body
     assert not worker.overlays and not high.overlays
     assert SPAWNING_PARTIAL_SENTINEL not in worker.body
-    assert len(worker.body.splitlines()) < 40
+    assert len(worker.body.splitlines()) < 50
     assert worker.frontmatter["description"] != high.frontmatter["description"]
 
 
