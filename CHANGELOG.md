@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **New script: `scripts/agent_usage.py`.** Shows the tokens each agent type
+  used and what they would cost at API list prices, split by model. By
+  default it reads Claude Code's session logs under `~/.claude/projects`,
+  which also count Task-tool subagents and interactive sessions. With
+  `--source ccc` it reads ccc's audit log instead, which keeps longer history
+  and can also split by variant (`--by-variant`), profile or harness, and
+  counts Codex tokens. Filter with `--since`, `--until` and `--project`;
+  `--csv` writes the raw counts.
 - **`freeform` workers launch their own explorers.** `worker` and
   `worker-high` now carry the explorer rules and the `ccc` launch
   instructions, so a worker hands a code question to `ccc run explorer`
