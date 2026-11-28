@@ -151,6 +151,23 @@ def parse_date(s: str) -> datetime:
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
+def session_label(agent_setting: str | None, entrypoint: str | None) -> str:
+    """The agent a top-level session's usage is attributed to."""
+    if agent_setting:
+        return agent_setting
+    return "(interactive)" if entrypoint == "cli" else "(sdk, no agent)"
+
+
+def subagent_label(path: Path) -> str:
+    """The agent an in-process subagent's log is attributed to, from its .meta.json."""
+    agent_type = None
+    try:
+        agent_type = json.loads(path.with_suffix(".meta.json").read_text()).get("agentType")
+    except (OSError, ValueError):
+        pass
+    return f"task:{agent_type or '(unknown)'}"
+
+
 class Scanner:
     def __init__(self, since: datetime | None, until: datetime | None) -> None:
         self.since = since
@@ -186,18 +203,10 @@ class Scanner:
                     records.append(rec)
                     if entrypoint is None:
                         entrypoint = rec[4]
-        if agent is None:
-            agent = "(interactive)" if entrypoint == "cli" else "(sdk, no agent)"
-        self._record(agent, path.stem, records)
+        self._record(session_label(agent, entrypoint), path.stem, records)
 
     def scan_subagent_file(self, path: Path, session: str) -> None:
-        meta = path.with_suffix(".meta.json")
-        agent_type = None
-        try:
-            agent_type = json.loads(meta.read_text()).get("agentType")
-        except (OSError, ValueError):
-            pass
-        agent = f"task:{agent_type or '(unknown)'}"
+        agent = subagent_label(path)
         records = []
         with path.open("rb") as fh:
             for raw in fh:
